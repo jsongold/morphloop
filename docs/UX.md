@@ -16,7 +16,10 @@ Pack declared (YAML/JSON):
 - transitions,
 - wording.
 
-The concrete layout spec schema is not yet decided (ADR-0003).
+The direction (declarative layout spec) is adopted, but the concrete schema is not designed up front: it will be extracted from the first implementation, the DNS slice, and fixed after that (ADR-0012, partially revising ADR-0003).
+In v0.1 the UI is built as SDK components and the Software Engineering pack's layout is held as pack-side data, but no generic layout spec schema is fixed. Generalizing the layout spec is gated at v0.2 or later (ADR-0012).
+
+High-impact UX differences may lie not only in placement but also in behavior: when a hint is offered, under what condition a visualization is shown, how much the tutor intervenes. How much of that behavior the layout spec expresses is not yet decided; it is part of what is extracted from the implementation (ADR-0012).
 
 ## Primary layout (Software Engineering pack reference layout)
 This three-pane layout is not a fixed harness specification. It is the UX declaration of the Software Engineering pack, kept here as the reference layout (ADR-0003).
@@ -125,8 +128,9 @@ A 10-second mechanically accurate animation is more valuable than a polished 10-
 
 ## Tuning and evaluating UX
 UX is tuned by editing the pack's layout spec and raising the pack version; there is no harness-wide UX parameter or default to adjust (ADR-0002).
-Pack versions are compared through the `pack_version` recorded on events.
-UX can only be evaluated with metrics from real sessions. Synthetic learners cannot measure UX (ADR-0005).
+UX can only be evaluated with metrics from real sessions. Neither synthetic learners (`simulate`) nor `replay` can measure UX (ADR-0010, ADR-0011).
+The only real learner at present is the owner. The same person cannot learn the same skill twice, so pack versions cannot be compared on the same skill (ADR-0011).
+For now UX tuning is therefore a subjective judgement informed by the metrics. No statistical claim about UX is made until there are more learners or comparison across different skills becomes possible (ADR-0011).
 
 ## Persistence
 On reload/session resume restore:
