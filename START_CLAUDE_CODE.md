@@ -41,6 +41,9 @@ Implement the smallest complete vertical slice:
 
 **DNS diagnosis**
 
+This slice is the v0.1 gate (ADR-0012); it is Slice 1 in `docs/IMPLEMENTATION_PLAN.md`.
+Keep these contracts from this first slice, because they are expensive to retrofit: definition vs instance (ADR-0007), the event contract (ADR-0008), the core / domain adapter / pack boundary (ADR-0009) and provenance recording (ADR-0010).
+
 A learner should be able to:
 1. start/resume a session,
 2. receive a DNS practical activity,
@@ -53,9 +56,15 @@ A learner should be able to:
 9. receive structured evidence,
 10. update DNS mastery,
 11. view the timeline,
-12. highlight a DNS concept and ask AI using the quoted selection,
-13. reload the app and recover session/chat/highlight state.
+12. use the DNS visualization and its reality mapping: select a step, see the concrete mechanism and run the suggested observation command inside the activity (AC-C1 to AC-C3),
+13. highlight a DNS concept and ask AI using the quoted selection,
+14. reload the app and recover session/chat/highlight state.
 
-After that slice works, implement the adaptive diagnostic and policy flow and then the HTTP and DB indexing activities (ADR-0006).
+After that slice works, continue in slice order (ADR-0012):
+- Slice 2: adaptive loop (diagnostic, policy and a second lab),
+- Slice 3: the third lab, the evaluation commands (`simulate` / `replay` / `report`) and holdout tasks (ADR-0006, ADR-0011),
+- Slice 4: layout spec generalization and the dummy second pack.
+
+The order of Slice 2 and later may be revised based on the result of Slice 1.
 
 Do not build billing, teams, Kubernetes, a plugin marketplace, or a full authoring CMS.
