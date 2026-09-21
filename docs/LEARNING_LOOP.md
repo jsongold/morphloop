@@ -53,13 +53,12 @@ Reassess / next activity
 ## 1. Target
 A target is a desired competency profile, not a course.
 
-Example:
+Example (the MVP target; TCP skills are deferred, ADR-0006):
 ```yaml
 target:
   id: web-service-troubleshooter-foundation
   required_mastery:
     network.dns.resolution: 0.80
-    network.tcp.connection: 0.80
     web.http.request_lifecycle: 0.85
     db.indexing.basics: 0.75
 ```
