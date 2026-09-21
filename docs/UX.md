@@ -1,6 +1,26 @@
 # UX Specification
 
-## Primary layout
+## Harness fixed vs pack declared
+UX is decided per subject pack through a declarative layout spec (ADR-0003). A pack is pure data and ships no UI code.
+
+Harness fixed (applies to every pack):
+- the UI components provided by the SDK: terminal, editor, browser, visualization renderer, side pane, chat, etc. (ADR-0001). A new component is added to the SDK, never to a pack,
+- persistence of highlight, chat and pane state,
+- the abstraction → reality interaction mechanism,
+- every UI operation is emitted as an event,
+- the accessibility requirements.
+
+Pack declared (YAML/JSON):
+- component placement,
+- main-pane modes,
+- transitions,
+- wording.
+
+The concrete layout spec schema is not yet decided (ADR-0003).
+
+## Primary layout (Software Engineering pack reference layout)
+This three-pane layout is not a fixed harness specification. It is the UX declaration of the Software Engineering pack, kept here as the reference layout (ADR-0003).
+Packs for other domains may declare a different layout (e.g. an audio-first main pane).
 
 ```text
 ┌──────────────────────────────────────────────┬──────────────────────┐
@@ -21,11 +41,13 @@
 ```
 
 ## Main pane is practice-first
+This is a product principle and applies to every pack, whatever layout it declares.
+
 The default screen for a practical activity is the environment.
 
 Do not make a long lesson article the main pane.
 
-Possible main-pane modes:
+Main-pane modes are declared by the pack (ADR-0003). The Software Engineering pack's modes, as an example:
 - Mission
 - Visualize
 - Practice
@@ -100,6 +122,11 @@ Use:
 - query-plan execution flow.
 
 A 10-second mechanically accurate animation is more valuable than a polished 10-minute video.
+
+## Tuning and evaluating UX
+UX is tuned by editing the pack's layout spec and raising the pack version; there is no harness-wide UX parameter or default to adjust (ADR-0002).
+Pack versions are compared through the `pack_version` recorded on events.
+UX can only be evaluated with metrics from real sessions. Synthetic learners cannot measure UX (ADR-0005).
 
 ## Persistence
 On reload/session resume restore:
