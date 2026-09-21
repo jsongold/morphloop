@@ -16,21 +16,68 @@ The event log must support:
 ```json
 {
   "event_id": "evt_...",
+  "position": 10452,
   "event_type": "terminal.command",
   "event_version": 1,
   "occurred_at": "2026-09-21T10:00:00Z",
+  "recorded_at": "2026-09-21T10:00:00Z",
+  "idempotency_key": "...",
+  "causation_id": "evt_...",
+  "correlation_id": "...",
   "learner_id": "usr_...",
   "session_id": "ses_...",
-  "activity_id": "act_...",
+  "attempt_id": "att_...",
+  "activity_definition_id": "diagnose-dns-resolver-failure-v1",
   "skill_ids": ["network.dns.resolution"],
   "actor": "learner",
   "payload": {},
   "metadata": {
     "pack_id": "software-engineering",
-    "pack_version": "0.1.0"
+    "pack_version": "0.1.0",
+    "pack_content_hash": "..."
   }
 }
 ```
+
+Field notes:
+- `position` (ADR-0008): monotonically increasing value assigned by the database. It is the only source of event order.
+- `occurred_at` / `recorded_at` (ADR-0008): `occurred_at` is the time at the source of the event; `recorded_at` is the time the database recorded it. Neither is used for ordering.
+- `idempotency_key` (ADR-0008): carried by events sent by the client and the terminal bridge.
+- `causation_id` (ADR-0008): the event that directly caused this event.
+- `correlation_id` (ADR-0008): groups related events, such as one attempt or one chat round trip.
+- `attempt_id` + `activity_definition_id` (ADR-0007): `attempt_id` is the runtime `ActivityAttempt`; `activity_definition_id` is the pack-internal id of the `ActivityDefinition` it was started from. The fully qualified definition is `pack_id` + `pack_version` + definition id. These replace the former single activity id.
+- `metadata.pack_content_hash` (ADR-0010): pack content hash; see Provenance.
+
+## Ordering, atomicity and idempotency
+
+Defined by ADR-0008. Learning state (`LearnerSkillState`, session resume state, highlights, chat) is a projection derived from events. The MVP uses a single PostgreSQL database with synchronous projections; it is neither a full event-sourcing/CQRS framework nor a mutable database with an audit log.
+
+- Ordering: the timeline and rebuilds are ordered by `position`. `occurred_at` is never used for ordering. Order within a session is `session_id` + `position`.
+- Known caveat: with concurrent transactions, the order in which positions are assigned may differ from commit order. This is not a problem in the MVP because projections are updated synchronously inside the same transaction and no asynchronous consumer follows `position`. Revisit when an asynchronous consumer is introduced.
+- Atomicity: appending an event and updating the corresponding projection happen in the same database transaction. A state where only one of them succeeded must not exist.
+- Idempotency: resending an event with the same `idempotency_key` does not create a new event; the existing event is returned.
+- Concurrency: learner-skill updates for the same learner are serialized. The mechanism is decided at implementation time.
+- Append-only enforcement: UPDATE and DELETE on `learning_events` are forbidden at the database level, not only by application convention (AC-F1). The mechanism is decided at implementation time.
+- Rebuild: the harness provides a way to discard projections and rebuild them from events. Tests verify that the rebuilt state matches the live state.
+- Schema evolution: stored events are never rewritten. `event_version` identifies the stored shape, and older versions are upcast at read time.
+
+## Provenance
+
+Defined by ADR-0010. `pack_version` alone is not enough to reproduce or compare results. Events record:
+
+- harness version
+- `pack_id`, `pack_version`, pack content hash
+- `name@version` of the registry implementations in use (learner model / policy / assessment)
+- domain adapter version (ADR-0009)
+- lab image digest and fixture id (at lab start)
+- evaluator rubric id and version
+- for events that used an LLM: provider, model, prompt version, generation parameters
+
+`pack_version` is a human-facing label. The pack content hash, computed from the contents of the pack directory, is the source of truth for pack identity; an edit that forgot to bump the version is still detected by the hash.
+
+Principle: record everything once at session start, and record anything that can change on the event where it occurs.
+
+Undecided (ADR-0010): which provenance item is carried by which event, and whether `eval/` is included in the pack content hash.
 
 ## Event families
 
@@ -99,7 +146,9 @@ The event log must support:
 }
 ```
 
-Command output may be stored separately/chunked if large but must remain referenceable.
+`sequence` is a payload value giving display order within one terminal. The global order of events is decided by `position` (ADR-0008).
+
+Command output may be stored separately/chunked if large but must remain referenceable: each `terminal.output` chunk is an event (ADR-0008).
 
 ## Highlight model
 
@@ -152,8 +201,11 @@ The rendered UI should visibly quote the selected source.
 }
 ```
 
+The chain `evaluation.completed` → `evidence.created` → `learner_skill.updated` can be followed through `causation_id`: each event points to the event that directly caused it. This satisfies the learner update audit (AC-F3, ADR-0008).
+
 ## Storage rule
 Never mutate historical learning events.
 Corrections are new events.
+This rule is enforced at the database level (ADR-0008); see Ordering, atomicity and idempotency.
 
-PII/secrets from terminal output require redaction hooks before persistence.
+PII/secrets from terminal output require redaction hooks before persistence. The hook specification is undecided (ADR-0008).
