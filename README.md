@@ -1,6 +1,6 @@
 # Adaptive Interactive Learning OS / Harness — Claude Code Handoff
 
-This package contains the implementation specification for an open-source domain-agnostic adaptive performance-learning engine.
+This repository is the Harness (SDK) for an open-source domain-agnostic adaptive performance-learning engine: it provides the engine, building blocks and contracts. Content and data (subject packs and evaluation assets) live separately under `contents/<pack-id>/`, read by path rather than imported.
 
 Start with:
 
@@ -8,7 +8,8 @@ Start with:
 2. `docs/PRODUCT.md`
 3. `docs/MVP.md`
 4. `docs/ACCEPTANCE_CRITERIA.md`
-5. the remaining architecture documents.
+5. `docs/decisions/` (ADRs — authoritative where they diverge from other docs)
+6. the remaining architecture documents.
 
 ## Core idea
 
