@@ -23,11 +23,12 @@ Deliver:
 - session lifecycle,
 - highlight persistence,
 - chat persistence,
-- subject-pack loader and schema validation.
+- subject-pack loader and schema validation; the loader receives a `contents/<pack-id>/` path and the harness never imports `contents/` (ADR-0001),
+- `pack_version` recorded on every event (ADR-0002).
 
 Exit:
 - events can reconstruct a simple session,
-- dummy pack loads.
+- dummy pack loads from the harness test fixtures, not from `contents/` (ADR-0006).
 
 ## Phase 2 — Adaptive loop
 Deliver:
@@ -35,11 +36,14 @@ Deliver:
 - learner skill state,
 - diagnostic activity lifecycle,
 - evidence objects,
-- initial learner model,
-- simple policy engine.
+- algorithm registry for learner model / policy / assessment strategy (ADR-0004),
+- initial learner model and simple policy engine as registry implementations,
+- configuration of implementations and all parameters from the pack declaration, with no harness defaults (ADR-0002, ADR-0004),
+- `simulate`: synthetic learners measuring learning efficiency of a pack's algorithm configuration (ADR-0005; command name provisional).
 
 Exit:
-- simulated evidence changes next activity selection.
+- simulated evidence changes next activity selection,
+- changing a pack parameter changes the simulation result.
 
 ## Phase 3 — Practice environment
 Deliver:
@@ -56,14 +60,23 @@ Exit:
 ## Phase 4 — Software Engineering pack
 Deliver:
 - DNS lab,
+- HTTP lab (concrete fixture not yet decided, ADR-0006),
 - DB indexing lab,
 - skill definitions,
 - evaluators,
 - references,
-- diagrams/animation specs.
+- diagrams/animation specs,
+- algorithm and parameter declarations for the three skills (ADR-0004),
+- `replay`: recompute a recorded session under a different pack version (ADR-0005),
+- `report`: per-pack primary and secondary metrics (ADR-0005),
+- pack `eval/` assets (`golden/`, `learners/`, `sessions/`) (ADR-0005).
+
+TCP is deferred (ADR-0006).
+`replay` and `report` are placed here because they need the event store (Phase 1), the registry (Phase 2) and real recorded sessions from real activities. Command names are provisional.
 
 Exit:
-- adaptive loop works with real activities.
+- adaptive loop works with real activities,
+- a recorded session replays under a second pack version and the report compares them.
 
 ## Phase 5 — Contextual AI
 Deliver:
@@ -79,6 +92,8 @@ Exit:
 
 ## Phase 6 — UX integration
 Deliver:
+- layout spec renderer: SDK UI components arranged by the pack's declarative layout spec (ADR-0001, ADR-0003; spec schema not yet decided),
+- Software Engineering pack layout declaration covering the items below,
 - main practice pane,
 - side context pane,
 - persistent chat,

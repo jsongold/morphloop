@@ -5,18 +5,22 @@ Prove that the generic adaptive loop works with real Software Engineering practi
 
 Do NOT attempt to build the complete curriculum.
 
+The MVP proves the loop with a pair: this repository (the Harness/SDK) and the `contents/software-engineering/` subject pack (ADR-0001).
+The harness provides the engine, UI components and algorithm registry; the pack declares the UX layout and the algorithm configuration with all parameters (ADR-0002, ADR-0003, ADR-0004).
+
 ## Learning scope
-Initial pack:
+Initial pack: three skills, each backed by a practical lab (ADR-0006).
+
 ### Networking/Web
 - DNS resolution
-- TCP connection establishment/retransmission basics
 - HTTP request/response lifecycle
 
 ### Database
-- basic indexing
-- `EXPLAIN` / query plan interpretation
+- basic indexing and `EXPLAIN` / query plan interpretation
 
-This is enough to test multiple practical environments and abstraction→reality mappings.
+TCP is deferred beyond the MVP (ADR-0006); see Out of scope.
+
+Three lab-backed skills let AC-A1 be met without replacing practice with quizzes. This is enough to test multiple practical environments and abstraction→reality mappings.
 
 ## Required user journey
 
@@ -83,6 +87,15 @@ Useful tools:
 - schema/index inspection
 - `CREATE INDEX`
 
+### Lab C: HTTP request/response lifecycle
+A practical lab in which the learner diagnoses a failure in the HTTP request/response lifecycle (ADR-0006).
+The concrete fixture is not yet decided.
+
+Candidate useful tools (not final):
+- `curl -v`
+- response status/headers inspection
+- server log inspection
+
 ## Required visualization examples
 1. DNS resolution sequence with links to:
    - `/etc/resolv.conf`
@@ -95,6 +108,7 @@ Useful tools:
    - real query execution.
 
 ## Out of scope
+- TCP skills and TCP lab (deferred, ADR-0006)
 - Full security curriculum
 - Full Linux curriculum
 - English pack implementation

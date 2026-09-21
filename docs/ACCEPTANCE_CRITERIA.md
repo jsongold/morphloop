@@ -109,6 +109,32 @@ Software Engineering skills/activities load through the subject-pack interface.
 ### AC-G3 Dummy second pack
 A minimal test pack with a non-software skill can load and run through the same assessment/activity/evidence interfaces.
 This is a structural test only; no English product UI is required.
+The dummy pack lives in the harness test fixtures, not under `contents/` (ADR-0006).
+
+## H. Pack-declared configuration
+
+### AC-H1 Declarative layout
+The UX layout is rendered from the pack's declarative layout spec; the harness contains no hard-coded Software Engineering layout (ADR-0003).
+
+### AC-H2 Pack-declared algorithms
+The learner model, policy and assessment strategy implementations and all their parameters are read from the pack declaration; the harness holds no default values (ADR-0002, ADR-0004).
+Note: handling of a missing required parameter is not yet decided (ADR-0002, ADR-0004).
+
+### AC-H3 Pack version on events
+Every event records `pack_version`, and changing the pack version makes its events identifiable as a different version (ADR-0002).
+
+## I. Evaluation and tuning
+
+Command names (`simulate`, `replay`, `report`) are provisional; the exact CLI shape is not yet decided (ADR-0005).
+
+### AC-I1 Simulation
+A simulation with synthetic learners yields a learning-efficiency metric (number of activities to reach target mastery) for the pack's algorithm configuration (ADR-0005).
+
+### AC-I2 Replay
+A recorded session can be replayed under a different pack version, recomputing learner state for comparison (ADR-0005).
+
+### AC-I3 Report
+A per-pack report outputs the primary metric and the secondary metrics (ADR-0005).
 
 ## MVP is complete only when
 A user can:

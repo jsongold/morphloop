@@ -1,6 +1,6 @@
 # Initial Claude Code Prompt
 
-Read `CLAUDE.md` and every file under `docs/` before making architectural decisions.
+Read `CLAUDE.md`, the ADRs under `docs/decisions/` and every file under `docs/` before making architectural decisions.
 
 Your goal is to implement the MVP of **Adaptive Interactive Learning OS / Harness** described in this repository.
 
@@ -28,6 +28,7 @@ Work autonomously toward the acceptance criteria.
    - abstraction → reality navigation.
 9. When you find a conflict between docs, prioritize in this order:
    - `CLAUDE.md`
+   - ADRs in `docs/decisions/`
    - `docs/ACCEPTANCE_CRITERIA.md`
    - `docs/MVP.md`
    - `docs/PRODUCT.md`
@@ -55,6 +56,6 @@ A learner should be able to:
 12. highlight a DNS concept and ask AI using the quoted selection,
 13. reload the app and recover session/chat/highlight state.
 
-After that slice works, implement the adaptive diagnostic and policy flow and then the DB indexing activity.
+After that slice works, implement the adaptive diagnostic and policy flow and then the HTTP and DB indexing activities (ADR-0006).
 
 Do not build billing, teams, Kubernetes, a plugin marketplace, or a full authoring CMS.
