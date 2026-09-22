@@ -13,8 +13,13 @@ WORKDIR /app
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
+# The repo currently has no static assets directory; standalone output
+# expects one to exist for the runner stage's COPY to succeed.
+RUN mkdir -p public
 
 # ---- runner: minimal production image --------------------------------------
 FROM node:22-alpine AS runner
