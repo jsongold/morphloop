@@ -12,18 +12,34 @@ core and API tests to run without Postgres, an LLM provider, Docker or a PTY:
 - :class:`FakeTerminalBridge` -- sessions that echo input to output.
 - :class:`InMemoryPackSource` -- packs as ``{location: {path: bytes}}``.
 
+It also holds a fake domain adapter (``harness.core.domain_adapter``):
+:class:`FakeDomainAdapter` with :class:`FakeCommandExitCheck`,
+:class:`FakeFixtureProvider` and :class:`FakeTerminalTool`.
+
 This module may import ``harness.core``; core must never import it.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from harness.core.domain_adapter import (
+    AdapterParamsError,
+    Check,
+    CheckObservation,
+    CommandDetector,
+    DetectedCommand,
+    DomainAdapter,
+    FixtureProvider,
+    TerminalLaunch,
+    TerminalTool,
+)
 from harness.core.ports import (
     AppendRequest,
     AppendResult,
@@ -33,7 +49,9 @@ from harness.core.ports import (
     ExecRequest,
     ExecResult,
     IdempotencyConflictError,
+    ImageRef,
     JsonObject,
+    LabFile,
     LabInfo,
     LabNotFoundError,
     LabRuntime,
@@ -43,9 +61,11 @@ from harness.core.ports import (
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    NetworkMode,
     PackFileNotFoundError,
     PackLocationNotFoundError,
     PackSource,
+    ResourceLimits,
     StoredEvent,
     TerminalBridge,
     TerminalBridgeError,
@@ -54,6 +74,7 @@ from harness.core.ports import (
     TerminalSession,
     TerminalSize,
     check_pack_path,
+    to_plain_object,
 )
 
 
@@ -416,3 +437,137 @@ def _check_conformance() -> None:  # pragma: no cover - evaluated by mypy only
     _lab: LabRuntime = FakeLabRuntime()
     _terminal: TerminalBridge = FakeTerminalBridge()
     _pack: PackSource = InMemoryPackSource({})
+
+
+# --- Domain adapter ---------------------------------------------------------
+
+
+def _require_argv(params: JsonObject) -> tuple[str, ...]:
+    argv = params.get("argv")
+    if not isinstance(argv, list | tuple) or not all(isinstance(a, str) for a in argv):
+        raise AdapterParamsError("params.argv must be an array of strings")
+    return tuple(str(a) for a in argv)
+
+
+class FakeCommandExitCheck:
+    """:class:`~harness.core.domain_adapter.Check` passing when ``params.argv``
+    exits with ``params.expected_exit_code`` inside the lab."""
+
+    def __init__(self, *, timeout_seconds: float, max_output_bytes: int) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._max_output_bytes = max_output_bytes
+
+    def validate_params(self, params: JsonObject) -> None:
+        _require_argv(params)
+        code = params.get("expected_exit_code")
+        if not isinstance(code, int) or isinstance(code, bool):
+            raise AdapterParamsError("params.expected_exit_code must be an integer")
+
+    def run(self, lab: LabRuntime, lab_instance_id: str, params: JsonObject) -> CheckObservation:
+        argv = _require_argv(params)
+        result = lab.exec(
+            lab_instance_id,
+            ExecRequest(
+                argv=argv,
+                timeout_seconds=self._timeout_seconds,
+                max_output_bytes=self._max_output_bytes,
+                env={},
+                workdir=None,
+            ),
+        )
+        return CheckObservation(
+            passed=not result.timed_out and result.exit_code == params["expected_exit_code"],
+            observed={
+                "argv": list(argv),
+                "exit_code": result.exit_code,
+                "timed_out": result.timed_out,
+            },
+        )
+
+
+class FakeFixtureProvider:
+    """:class:`~harness.core.domain_adapter.FixtureProvider` copying the params
+    into the lab as ``/etc/morphloop/fixture.json``. ``required_params`` are the
+    keys ``validate_params`` insists on."""
+
+    def __init__(
+        self,
+        *,
+        limits: ResourceLimits,
+        network: NetworkMode,
+        required_params: Sequence[str] = (),
+    ) -> None:
+        self._limits = limits
+        self._network: NetworkMode = network
+        self._required = tuple(required_params)
+
+    def validate_params(self, params: JsonObject) -> None:
+        missing = [key for key in self._required if key not in params]
+        if missing:
+            raise AdapterParamsError(f"missing params: {', '.join(missing)}")
+
+    def build_lab_spec(self, image: ImageRef, params: JsonObject) -> LabSpec:
+        content = json.dumps(to_plain_object(params), sort_keys=True).encode()
+        return LabSpec(
+            image=image,
+            limits=self._limits,
+            network=self._network,
+            env={},
+            files=(LabFile(path="/etc/morphloop/fixture.json", content=content, mode=0o644),),
+            workdir=None,
+        )
+
+
+class FakeCommandDetector:
+    """Treats each input line (ended by CR or LF) as one command; ignores output."""
+
+    def __init__(self) -> None:
+        self._line = bytearray()
+
+    def feed_input(self, data: bytes) -> Sequence[DetectedCommand]:
+        commands: list[DetectedCommand] = []
+        for byte in data:
+            if byte in b"\r\n":
+                text = self._line.decode("utf-8", errors="replace").strip()
+                self._line.clear()
+                if text:
+                    commands.append(DetectedCommand(command=text, cwd=None))
+            else:
+                self._line.append(byte)
+        return commands
+
+    def feed_output(self, data: bytes) -> Sequence[DetectedCommand]:
+        return ()
+
+
+class FakeTerminalTool:
+    """:class:`~harness.core.domain_adapter.TerminalTool` running ``argv``."""
+
+    def __init__(self, argv: tuple[str, ...] = ("/bin/sh", "-l")) -> None:
+        self._launch = TerminalLaunch(argv=argv, env={}, workdir=None)
+
+    def launch(self) -> TerminalLaunch:
+        return self._launch
+
+    def new_command_detector(self) -> CommandDetector:
+        return FakeCommandDetector()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FakeDomainAdapter:
+    """:class:`~harness.core.domain_adapter.DomainAdapter` built from given items."""
+
+    adapter_id: str
+    version: str
+    fixtures: Mapping[str, FixtureProvider] = field(default_factory=dict)
+    checks: Mapping[str, Check] = field(default_factory=dict)
+    tools: Mapping[str, TerminalTool] = field(default_factory=dict)
+
+
+def _check_domain_adapter_conformance() -> None:  # pragma: no cover - evaluated by mypy only
+    limits = ResourceLimits(cpus=1, memory_bytes=1, pids=1, lifetime_seconds=1)
+    _check: Check = FakeCommandExitCheck(timeout_seconds=1, max_output_bytes=1)
+    _fixture: FixtureProvider = FakeFixtureProvider(limits=limits, network="none")
+    _tool: TerminalTool = FakeTerminalTool()
+    _detector: CommandDetector = FakeCommandDetector()
+    _adapter: DomainAdapter = FakeDomainAdapter(adapter_id="fake", version="0.1.0")
