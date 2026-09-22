@@ -36,7 +36,3 @@ The product is practice-first: terminal/editor/browser/database activities are p
 Every abstraction should have a path to the actual implementation and observable system state:
 
 `abstract → mechanism → implementation → observation → operation`
-
-## Initial development command for Claude Code
-
-Use the prompt in `START_CLAUDE_CODE.md`.
