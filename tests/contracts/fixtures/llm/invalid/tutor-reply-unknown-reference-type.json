@@ -1,0 +1,24 @@
+{
+  "description": "Only highlight and event references exist in v1.",
+  "schema": "schemas/llm/tutor.reply/1.json",
+  "expected_error_paths": [
+    "$.references[2]"
+  ],
+  "instance": {
+    "text": "What does dig tell you about which server answered?",
+    "references": [
+      {
+        "type": "highlight",
+        "id": "hl_01J9ZQ4HL0001"
+      },
+      {
+        "type": "event",
+        "id": "evt_01J9ZQ4EVT0005"
+      },
+      {
+        "type": "visualization",
+        "id": "dns-resolution-sequence"
+      }
+    ]
+  }
+}

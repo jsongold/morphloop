@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/llm/generator.activity_candidate/1.json",
+  "title": "Generator activity candidate output v1",
+  "description": "Structured output of the Generator for one Template: a candidate activity Definition (ADR-0014). Holds only what the model decides. Everything the Template declares (target skills, difficulty, evaluator, generation timing) and everything the harness assigns (definition id, definition hash, provenance) is not part of the candidate. The harness materializes a Definition by merging Template fields with this candidate, validates it (schema; for a lab activity, checks fail in the broken state and pass after the reference solution), and only then stores it; a candidate is never presented. Deliberately self-contained rather than a $ref to the pack activity-definition schema: the candidate is an input to materialization, not a Definition. The candidate composes only items registered in a domain adapter (ADR-0009): fixture_id and check_id must be registered ids and params must satisfy that item's registered parameter spec. These are harness-side checks. The reference_solution is stored with the Definition but never shown to the learner, nor given to the tutor in hint mode.",
+  "type": "object",
+  "required": [
+    "title",
+    "mission",
+    "fixtures",
+    "checks",
+    "hints",
+    "reference_solution"
+  ],
+  "properties": {
+    "title": {
+      "description": "Learner-facing title.",
+      "type": "string",
+      "minLength": 1
+    },
+    "mission": {
+      "description": "Learner-facing mission brief. Must not reveal the fault or the fix.",
+      "type": "string",
+      "minLength": 1
+    },
+    "fixtures": {
+      "description": "Registered environment fixture templates to compose, in order. Empty for an activity without a lab.",
+      "type": "array",
+      "items": {
+        "title": "Fixture use",
+        "type": "object",
+        "required": [
+          "fixture_id",
+          "params"
+        ],
+        "properties": {
+          "fixture_id": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+          },
+          "params": {
+            "$ref": "#/$defs/params"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "checks": {
+      "description": "Registered deterministic checks that define success.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "title": "Check use",
+        "type": "object",
+        "required": [
+          "check_id",
+          "params"
+        ],
+        "properties": {
+          "check_id": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+          },
+          "params": {
+            "$ref": "#/$defs/params"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "hints": {
+      "description": "Progressive hints, least revealing first. May be empty.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "reference_solution": {
+      "description": "Secret. Used only by validation and post-completion review.",
+      "type": "object",
+      "required": [
+        "explanation",
+        "sandbox_steps"
+      ],
+      "properties": {
+        "explanation": {
+          "description": "What is wrong and how the fix resolves it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sandbox_steps": {
+          "description": "Commands that apply the fix, run by validation only inside the learner sandbox, never on the host (ADR-0009). Empty for an activity without a lab.",
+          "type": "array",
+          "items": {
+            "title": "Sandbox step",
+            "type": "object",
+            "required": [
+              "argv"
+            ],
+            "properties": {
+              "argv": {
+                "description": "Argument vector; executed without a shell.",
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "params": {
+      "description": "Parameters for a registered adapter item, as a name/value list (a closed shape usable by provider structured outputs; an open object is not). Harness-side checks: names are unique and match the item's registered parameter spec, values have the declared types.",
+      "type": "array",
+      "items": {
+        "title": "Parameter",
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+          },
+          "value": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

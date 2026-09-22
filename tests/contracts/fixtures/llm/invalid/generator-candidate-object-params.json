@@ -1,0 +1,64 @@
+{
+  "description": "params is a name/value list, not an open object.",
+  "schema": "schemas/llm/generator.activity_candidate/1.json",
+  "expected_error_paths": [
+    "$.fixtures[0].params"
+  ],
+  "instance": {
+    "title": "Internal names stopped resolving",
+    "mission": "Requests to api.internal fail from the app container. Find out why and restore resolution.",
+    "fixtures": [
+      {
+        "fixture_id": "dns.resolver_stack",
+        "params": {
+          "zone": "internal"
+        }
+      },
+      {
+        "fixture_id": "dns.fault.wrong_nameserver",
+        "params": [
+          {
+            "name": "nameserver",
+            "value": "10.0.0.99"
+          },
+          {
+            "name": "affects_all_hosts",
+            "value": true
+          }
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "check_id": "dns.resolver_answers",
+        "params": [
+          {
+            "name": "name",
+            "value": "api.internal"
+          },
+          {
+            "name": "min_answers",
+            "value": 1
+          }
+        ]
+      }
+    ],
+    "hints": [
+      "Which server is the container actually asking?",
+      "Compare /etc/resolv.conf with the resolver you expect."
+    ],
+    "reference_solution": {
+      "explanation": "resolv.conf points to a nameserver that does not exist; pointing it back at the zone resolver restores answers.",
+      "sandbox_steps": [
+        {
+          "argv": [
+            "sed",
+            "-i",
+            "s/10.0.0.99/10.0.0.53/",
+            "/etc/resolv.conf"
+          ]
+        }
+      ]
+    }
+  }
+}

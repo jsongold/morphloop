@@ -1,0 +1,9 @@
+{
+  "description": "Nothing to judge: no evidence items.",
+  "schema": "schemas/llm/evaluator.judgment/1.json",
+  "instance": {
+    "success": false,
+    "rationale": "The learner ran no commands before submitting.",
+    "evidence": []
+  }
+}

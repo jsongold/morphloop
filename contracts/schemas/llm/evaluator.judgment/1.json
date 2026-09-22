@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/llm/evaluator.judgment/1.json",
+  "title": "Evaluator judgment output v1",
+  "description": "Structured output of an LLM evaluator for one Evaluation: its judgment over the deterministic check results and the attempt's action sequence (ADR-0013). The model never produces check results; those are observations recorded by the harness. Mapping: 'success' and 'rationale' fill the evaluation.completed v1 payload (the harness adds evaluation_id, evaluator, lab_instance_id, checks and provenance); each 'evidence' item becomes one evidence.created v1 payload with the item's fields copied verbatim (the harness adds evidence_id and evaluation_id). Field schemas are taken from those payloads by $ref. Harness-side checks: each skill_id must be a skill under test in the attempt's Definition; each supporting_event_id must be an event given to the model in this call; dimension must be in the pack-declared vocabulary.",
+  "type": "object",
+  "required": [
+    "success",
+    "rationale",
+    "evidence"
+  ],
+  "properties": {
+    "success": {
+      "description": "Overall judgment of the attempt. A passing final check is not by itself success at the skill.",
+      "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/evaluation.completed/1.json#/properties/success"
+    },
+    "rationale": {
+      "description": "Why the overall judgment was made. Non-null here; evaluation.completed allows null only for evaluations without an LLM.",
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "description": "Evidence items, one per (skill, dimension) judgment. May be empty when the attempt shows nothing to judge.",
+      "type": "array",
+      "items": {
+        "title": "Evidence item",
+        "description": "Accidental success, hint dependence and systematic diagnosis are expressed through signal + dimension (pack vocabulary) + rationale, not as a verdict on the final state.",
+        "type": "object",
+        "required": [
+          "skill_id",
+          "signal",
+          "strength",
+          "dimension",
+          "rationale",
+          "supporting_event_ids"
+        ],
+        "properties": {
+          "skill_id": {
+            "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/evidence.created/1.json#/properties/skill_id"
+          },
+          "signal": {
+            "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/evidence.created/1.json#/properties/signal"
+          },
+          "strength": {
+            "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/evidence.created/1.json#/properties/strength"
+          },
+          "dimension": {
+            "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/evidence.created/1.json#/properties/dimension"
+          },
+          "rationale": {
+            "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/evidence.created/1.json#/properties/rationale"
+          },
+          "supporting_event_ids": {
+            "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/evidence.created/1.json#/properties/supporting_event_ids"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,17 @@
+{
+  "description": "Hint reply citing a highlight and a terminal command event.",
+  "schema": "schemas/llm/tutor.reply/1.json",
+  "instance": {
+    "text": "What does dig tell you about which server answered?",
+    "references": [
+      {
+        "type": "highlight",
+        "id": "hl_01J9ZQ4HL0001"
+      },
+      {
+        "type": "event",
+        "id": "evt_01J9ZQ4EVT0005"
+      }
+    ]
+  }
+}
