@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/activity-template.json",
+  "title": "Activity Template",
+  "description": "Input to the generation path Template -> Generator -> candidate -> validation -> finalized ActivityDefinition (ADR-0014). The same Template serves every timing; only when the path runs and where the result is stored differ. It declares everything that is not a model decision (skills, difficulty, evaluator, tools, image, remediation) and bounds what the Generator may compose: only the listed fixtures and checks, all registered in a domain adapter (ADR-0009). The candidate shape is contracts/schemas/llm/generator.activity_candidate/1.json. Withheld from the learner and from the tutor context: the brief may describe the fault.",
+  "type": "object",
+  "required": [
+    "id",
+    "produces",
+    "holdout",
+    "activity_type",
+    "skills",
+    "difficulty",
+    "allowed_fixtures",
+    "allowed_checks",
+    "image",
+    "tools",
+    "evaluator",
+    "solution_step_timeout_seconds",
+    "brief"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "produces": {
+      "description": "Kind of Definition generated. v0.1 generates activities only.",
+      "const": "activity"
+    },
+    "holdout": {
+      "description": "True for a holdout Template (ADR-0011). A holdout Template is always 'authoring': an explicit other timing is rejected here, and the Importer also rejects a holdout Template that would inherit a non-authoring pack default (ADR-0014, AC-J5).",
+      "type": "boolean"
+    },
+    "timing": {
+      "description": "Overrides manifest content_generation.default_timing for this Template.",
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/generation_timing"
+    },
+    "activity_type": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+    },
+    "skills": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/skill_targets"
+    },
+    "difficulty": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/difficulty"
+    },
+    "allowed_fixtures": {
+      "description": "Fixture providers the Generator may compose. Empty for a Template without a lab.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+      }
+    },
+    "allowed_checks": {
+      "description": "Deterministic checks the Generator may compose.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+      }
+    },
+    "image": {
+      "description": "Lab image for generated environments. Fixed by the Template; never chosen by the Generator. Null for a Template without a lab.",
+      "anyOf": [
+        {
+          "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/oci_image"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tools": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+      }
+    },
+    "evaluator": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "remediation": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/remediation"
+    },
+    "solution_step_timeout_seconds": {
+      "description": "Copied onto every reference-solution step at materialization (the candidate carries no timeouts).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    },
+    "brief": {
+      "description": "Author instructions to the Generator: the failure class to build, constraints, what the mission must not reveal.",
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "holdout": {
+            "const": true
+          }
+        },
+        "required": [
+          "holdout"
+        ]
+      },
+      "then": {
+        "properties": {
+          "timing": {
+            "const": "authoring"
+          }
+        }
+      }
+    },
+    {
+      "description": "A lab-backed Template (any allowed fixture) must pin an image.",
+      "if": {
+        "properties": {
+          "allowed_fixtures": {
+            "minItems": 1
+          }
+        },
+        "required": [
+          "allowed_fixtures"
+        ]
+      },
+      "then": {
+        "properties": {
+          "image": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "diagnose-dns-resolver-failure-v1.solution",
+  "activity_id": "diagnose-dns-resolver-failure-v1",
+  "apply": [
+    {
+      "argv": [
+        "cp",
+        "/opt/lab/resolv.conf.good",
+        "/etc/resolv.conf"
+      ],
+      "timeout_seconds": 10
+    }
+  ],
+  "explanation": "/etc/resolv.conf points at an address with no DNS server. Restoring the lab resolver makes api.internal resolve again."
+}

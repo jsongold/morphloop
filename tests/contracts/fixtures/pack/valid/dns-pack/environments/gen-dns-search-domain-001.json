@@ -1,0 +1,12 @@
+{
+  "id": "gen-dns-search-domain-001.env",
+  "fixture": "dns.broken-resolver",
+  "image": {
+    "repository": "ghcr.io/morphloop/dns-lab",
+    "digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+  },
+  "params": {
+    "fault": "missing_search_domain",
+    "service_name": "api"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "gen-dns-search-domain-001.solution",
+  "activity_id": "gen-dns-search-domain-001",
+  "apply": [
+    {
+      "argv": [
+        "sed",
+        "-i",
+        "$ a search internal",
+        "/etc/resolv.conf"
+      ],
+      "timeout_seconds": 30
+    }
+  ],
+  "explanation": "The short name `api` is not qualified because the search domain is missing from /etc/resolv.conf."
+}

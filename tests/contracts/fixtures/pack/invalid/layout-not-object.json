@@ -1,0 +1,12 @@
+{
+  "description": "The provisional layout spec is at least a JSON object.",
+  "schema": "schemas/pack/layout.json",
+  "expected_error_paths": [
+    "$"
+  ],
+  "instance": [
+    {
+      "main": "terminal"
+    }
+  ]
+}

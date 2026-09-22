@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/defs.json",
+  "title": "Pack shared definitions",
+  "description": "Definitions shared by the pack file schemas only. Harness-wide shapes (ids, content hash, versions, provenance) live in schemas/common/ and are referenced, not redefined.",
+  "$defs": {
+    "generation_timing": {
+      "description": "When the generation path runs (ADR-0014). v0.1 implements 'authoring' only; the Importer refuses the other two until they are implemented. Holdout Templates are always 'authoring'.",
+      "enum": [
+        "authoring",
+        "pooled",
+        "just_in_time"
+      ]
+    },
+    "relative_path": {
+      "description": "POSIX path relative to the pack root. No leading '/', no '.' or '..' segments, no backslashes, no whitespace.",
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(^|/)\\.{1,2}(/|$))[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$"
+    },
+    "version_range": {
+      "description": "Comma-separated comparator list, all of which must hold, e.g. '>=0.1.0,<0.2.0' (ADR-0009). Versions compare as SemVer.",
+      "type": "string",
+      "pattern": "^(>=|<=|>|<|==)[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}(,(>=|<=|>|<|==)[0-9A-Za-z][0-9A-Za-z.+_-]{0,63})*$"
+    },
+    "document_hash": {
+      "description": "Content hash of a parsed pack document: 'sha256:' + hex SHA-256 of the RFC 8785 (JCS) canonical JSON of the document. Independent of YAML/JSON formatting. A document never contains its own hash.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/content-hash.json"
+    },
+    "document_ref": {
+      "title": "Reference to another pack document by path and hash",
+      "type": "object",
+      "required": [
+        "path",
+        "content_hash"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "content_hash": {
+          "$ref": "#/$defs/document_hash"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sandbox_argv": {
+      "description": "argv executed inside the learner sandbox only, never through a shell and never on the host (ADR-0009). argv[0] has no whitespace, so a whole shell command line cannot be smuggled in as one element.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "prefixItems": [
+        {
+          "type": "string",
+          "pattern": "^\\S{1,256}$"
+        }
+      ],
+      "items": {
+        "type": "string",
+        "maxLength": 4096,
+        "pattern": "^[^\\u0000]*$"
+      }
+    },
+    "oci_image": {
+      "title": "Container image pinned by digest",
+      "description": "Lab image referenced by digest, never by tag (ADR-0010, ADR-0015).",
+      "type": "object",
+      "required": [
+        "repository",
+        "digest"
+      ],
+      "properties": {
+        "repository": {
+          "description": "Registry host (optional port) and repository path, without tag or digest, e.g. 'ghcr.io/morphloop/dns-lab'.",
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(:[0-9]{1,5})?(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "digest": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/content-hash.json"
+        }
+      },
+      "additionalProperties": false
+    },
+    "media_ref": {
+      "title": "External media reference",
+      "description": "Large asset held outside the pack: URI plus content hash of the bytes (ADR-0015). The store kind is not yet decided, so any absolute URI scheme is accepted.",
+      "type": "object",
+      "required": [
+        "uri",
+        "sha256",
+        "media_type",
+        "alt"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048,
+          "pattern": "^[a-z][a-z0-9+.-]*://\\S+$"
+        },
+        "sha256": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/content-hash.json"
+        },
+        "media_type": {
+          "type": "string",
+          "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+        },
+        "alt": {
+          "description": "Text alternative (accessibility is harness-fixed, ADR-0003).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "markdown": {
+      "description": "Learner- or author-facing text; CommonMark. Rendered as text, never executed.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000
+    },
+    "skill_targets": {
+      "title": "Skills an activity or Template trains",
+      "type": "object",
+      "required": [
+        "primary"
+      ],
+      "properties": {
+        "primary": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/skill_id"
+          }
+        },
+        "secondary": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/skill_id"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "difficulty": {
+      "description": "Pack-relative difficulty in [0, 1]; comparison between pack versions is per Template (ADR-0014).",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "adapter_params": {
+      "description": "Parameters for a domain-adapter item. Opaque to core; the adapter validates them against its own schema at import (ADR-0009). By convention a key named 'argv' is always a sandbox argv.",
+      "type": "object",
+      "properties": {
+        "argv": {
+          "$ref": "#/$defs/sandbox_argv"
+        }
+      }
+    },
+    "remediation": {
+      "title": "Links to remediation content",
+      "type": "object",
+      "properties": {
+        "references": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+          }
+        },
+        "visualizations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

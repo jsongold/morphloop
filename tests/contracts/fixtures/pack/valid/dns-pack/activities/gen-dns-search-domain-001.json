@@ -1,0 +1,52 @@
+{
+  "id": "gen-dns-search-domain-001",
+  "title": "The short name api does not resolve",
+  "activity_type": "diagnose",
+  "skills": {
+    "primary": [
+      "network.dns.resolution"
+    ]
+  },
+  "difficulty": 0.6,
+  "origin": {
+    "type": "generated",
+    "template_id": "diagnose-dns-failure",
+    "timing": "authoring"
+  },
+  "instructions": {
+    "mission": "Clients call `http://api/health` and fail, although `api.internal` answers. Find out why and fix it."
+  },
+  "hints": [
+    "Compare the fully qualified name with the short one."
+  ],
+  "environment": "gen-dns-search-domain-001.env",
+  "tools": [
+    "dns.terminal"
+  ],
+  "checks": [
+    {
+      "check": "dns.command_exit",
+      "params": {
+        "argv": [
+          "curl",
+          "-fsS",
+          "http://api/health"
+        ],
+        "expected_exit_code": 0
+      }
+    }
+  ],
+  "evaluator": "dns-diagnosis-v1",
+  "reference_solution": {
+    "path": "activities/gen-dns-search-domain-001.solution.json",
+    "content_hash": "sha256:c5b5fe43ff84eb90660e409533ee0f3ad625a58e999d725a2f4c066ca1ceea11"
+  },
+  "remediation": {
+    "references": [
+      "network.dns.resolver"
+    ],
+    "visualizations": [
+      "dns-resolution-flow"
+    ]
+  }
+}

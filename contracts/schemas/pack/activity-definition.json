@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/activity-definition.json",
+  "title": "ActivityDefinition",
+  "description": "A finalized, immutable learner task (ADR-0007, ADR-0014). Hand-written and generated Definitions have this same shape, for every generation timing. Identity is id + document hash (defs.json#/$defs/document_hash), which activity.started records. The reference solution is a separate document bound here by path + hash, so it is never serialized with the activity. Only title, activity_type, skills, difficulty, instructions, hints and remediation may reach the learner or the tutor in hint mode (whitelist).",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "activity_type",
+    "skills",
+    "origin",
+    "instructions",
+    "tools",
+    "checks",
+    "evaluator"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+    },
+    "activity_type": {
+      "description": "Kind of task, e.g. inspect / diagnose / repair / explain. Open token; the core does not branch on it.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+    },
+    "skills": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/skill_targets"
+    },
+    "difficulty": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/difficulty"
+    },
+    "origin": {
+      "description": "Authored by hand, or produced by the generation path from a Template (ADR-0014).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "authored"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "template_id",
+            "timing"
+          ],
+          "properties": {
+            "type": {
+              "const": "generated"
+            },
+            "template_id": {
+              "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+            },
+            "timing": {
+              "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/generation_timing"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "instructions": {
+      "title": "Learner-facing mission",
+      "type": "object",
+      "required": [
+        "mission"
+      ],
+      "properties": {
+        "mission": {
+          "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+        }
+      },
+      "additionalProperties": false
+    },
+    "hints": {
+      "description": "Progressive hints, least revealing first. Learner-facing; must not contain the full fix.",
+      "type": "array",
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+      }
+    },
+    "environment": {
+      "description": "EnvironmentDefinition id. Absent for activities without a lab.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "tools": {
+      "description": "Tool adapters available to the learner, as adapter item ids (e.g. a terminal).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+      }
+    },
+    "checks": {
+      "description": "Deterministic success checks: observations of environment facts, run by domain-adapter code; any command runs in the sandbox (ADR-0009, ADR-0013). The attempt succeeds only if all pass. Results feed evaluation.completed.checks.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check_ref"
+      }
+    },
+    "evaluator": {
+      "description": "EvaluatorDefinition (rubric) id.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "reference_solution": {
+      "description": "The ReferenceSolution document. Withheld from the learner and from the tutor during an unfinished attempt (AC-J6).",
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/document_ref"
+    },
+    "remediation": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/remediation"
+    }
+  },
+  "additionalProperties": false,
+  "if": {
+    "required": [
+      "environment"
+    ]
+  },
+  "then": {
+    "description": "A lab-backed activity must be verifiable before serving (AC-J2): at least one check and a reference solution.",
+    "required": [
+      "reference_solution"
+    ],
+    "properties": {
+      "checks": {
+        "minItems": 1
+      }
+    }
+  },
+  "$defs": {
+    "check_ref": {
+      "title": "Deterministic check reference",
+      "type": "object",
+      "required": [
+        "check",
+        "params"
+      ],
+      "properties": {
+        "check": {
+          "description": "Check registered by a domain adapter declared in the manifest, as '<adapter_id>.<name>'.",
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+        },
+        "params": {
+          "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/adapter_params"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

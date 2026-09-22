@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/evaluator.json",
+  "title": "EvaluatorDefinition (rubric)",
+  "description": "Rubric for judging an attempt (ADR-0007, ADR-0013). Deterministic observations are the activity's own checks; this rubric declares what the LLM evaluator judges on top of those facts. Identified in evaluation.completed by id + document hash. The LLM implementation, prompt and model are the manifest's registry.evaluator. A rubric without 'semantic' is deterministic-only (required for holdout, ADR-0011). Withheld from the learner and from the tutor during an unfinished attempt: guidance may name the expected root cause.",
+  "type": "object",
+  "required": [
+    "id",
+    "title"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+    },
+    "semantic": {
+      "type": "object",
+      "required": [
+        "dimensions",
+        "guidance"
+      ],
+      "properties": {
+        "dimensions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "description"
+            ],
+            "properties": {
+              "id": {
+                "description": "Evidence dimension, from the skill's evidence_dimensions vocabulary.",
+                "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+              },
+              "description": {
+                "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "guidance": {
+          "description": "What distinguishes systematic diagnosis from lucky success, hint dependence, unnecessary changes, etc.",
+          "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+        }
+      },
+      "additionalProperties": false
+    },
+    "misconceptions": {
+      "description": "Misconception vocabulary the evaluator and learner model may report (skill-state misconceptions tokens).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "description"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+          },
+          "description": {
+            "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

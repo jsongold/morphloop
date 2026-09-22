@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/layout.json",
+  "title": "Layout spec (provisional, deliberately permissive)",
+  "description": "UX layout data interpreted by a UI (ADR-0003, ADR-0015). The generic layout spec schema is NOT fixed in v0.1 (ADR-0012); it is extracted from the first implementation in Slice 4 (AC-H1). This schema only guarantees a JSON object, so the Importer can hash and project it and the API can serve it. Any structure inside is unstable, owned by the standard UI, and may be ignored by a custom UI. Open by design (no additionalProperties: false).",
+  "type": "object"
+}

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/reference.json",
+  "title": "Reference (concept content)",
+  "description": "Short concept explanation shown in the side pane (AC-D1). 'id' is the content_id and 'version' the content_version recorded by content.opened / content.highlighted. Sections follow docs/SUBJECT_PACK.md 'References'. Large media are referenced by URI + hash, never bundled (ADR-0015).",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "title",
+    "summary",
+    "sections"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "version": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+    },
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+    },
+    "summary": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+    },
+    "aliases": {
+      "description": "Terms that map a highlighted text to this concept.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "skills": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/skill_id"
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "body"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "what",
+              "why",
+              "mechanism",
+              "example",
+              "observe",
+              "failure_modes"
+            ]
+          },
+          "body": {
+            "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "media": {
+      "type": "array",
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/media_ref"
+      }
+    }
+  },
+  "additionalProperties": false
+}

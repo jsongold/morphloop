@@ -1,0 +1,12 @@
+{
+  "id": "dns-broken-resolver-v1",
+  "fixture": "dns.broken-resolver",
+  "image": {
+    "repository": "ghcr.io/morphloop/dns-lab",
+    "digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+  },
+  "params": {
+    "fault": "wrong_nameserver",
+    "service_name": "api.internal"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "layout": {
+    "main": {
+      "modes": [
+        "practice",
+        "visualize",
+        "review"
+      ],
+      "default_mode": "practice",
+      "components": [
+        "terminal"
+      ]
+    },
+    "side": {
+      "component": "concept_pane"
+    },
+    "bottom": {
+      "component": "ai_chat",
+      "persistent": true
+    }
+  }
+}

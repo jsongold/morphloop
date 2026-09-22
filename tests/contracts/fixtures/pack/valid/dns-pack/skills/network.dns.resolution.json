@@ -1,0 +1,16 @@
+{
+  "id": "network.dns.resolution",
+  "title": "DNS name resolution",
+  "description": "Explain, observe, diagnose and repair how a host resolves a name to an address.",
+  "prerequisites": [],
+  "mastery_threshold": 0.8,
+  "evidence_dimensions": [
+    "explain",
+    "observe",
+    "diagnose",
+    "repair"
+  ],
+  "tags": [
+    "networking"
+  ]
+}

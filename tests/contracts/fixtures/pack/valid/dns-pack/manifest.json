@@ -1,0 +1,143 @@
+{
+  "pack_format": 1,
+  "pack_id": "software-engineering",
+  "pack_version": "0.1.0",
+  "title": "Software Engineering Fundamentals",
+  "description": "DNS vertical slice fixture (contract tests only; not a real pack).",
+  "domain_adapters": {
+    "dns": ">=0.1.0,<0.2.0"
+  },
+  "registry": {
+    "learner_model": {
+      "implementation": "llm-learner-model@0.1.0",
+      "llm": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "prompt_id": "learner-model-update",
+        "prompt_version": "1",
+        "generation_parameters": {
+          "temperature": 0,
+          "max_tokens": 4000
+        }
+      },
+      "context_budget_tokens": 8000,
+      "options": {
+        "max_mastery_delta": 0.3
+      },
+      "output_schema": "https://morphloop.dev/contracts/schemas/llm/learner_model.update/1.json"
+    },
+    "evaluator": {
+      "implementation": "llm-evaluator@0.1.0",
+      "llm": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "prompt_id": "evaluator-judgment",
+        "prompt_version": "1",
+        "generation_parameters": {
+          "temperature": 0,
+          "max_tokens": 4000
+        }
+      },
+      "context_budget_tokens": 8000,
+      "options": {},
+      "output_schema": "https://morphloop.dev/contracts/schemas/llm/evaluator.judgment/1.json"
+    },
+    "tutor": {
+      "implementation": "llm-tutor@0.1.0",
+      "llm": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "prompt_id": "tutor-reply",
+        "prompt_version": "1",
+        "generation_parameters": {
+          "temperature": 0,
+          "max_tokens": 4000
+        }
+      },
+      "context_budget_tokens": 8000,
+      "options": {},
+      "output_schema": "https://morphloop.dev/contracts/schemas/llm/tutor.reply/1.json"
+    },
+    "generator": {
+      "implementation": "llm-generator@0.1.0",
+      "llm": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "prompt_id": "activity-generation",
+        "prompt_version": "1",
+        "generation_parameters": {
+          "temperature": 0,
+          "max_tokens": 4000
+        }
+      },
+      "context_budget_tokens": 8000,
+      "options": {},
+      "output_schema": "https://morphloop.dev/contracts/schemas/llm/generator.activity_candidate/1.json"
+    }
+  },
+  "content_generation": {
+    "default_timing": "authoring",
+    "max_regenerations": 3
+  },
+  "files": {
+    "activities/diagnose-dns-resolver-failure-v1.json": {
+      "kind": "activity"
+    },
+    "activities/diagnose-dns-resolver-failure-v1.solution.json": {
+      "kind": "reference_solution"
+    },
+    "activities/gen-dns-search-domain-001.generation.json": {
+      "kind": "generation_record"
+    },
+    "activities/gen-dns-search-domain-001.json": {
+      "kind": "activity"
+    },
+    "activities/gen-dns-search-domain-001.solution.json": {
+      "kind": "reference_solution"
+    },
+    "environments/dns-broken-resolver-v1.json": {
+      "kind": "environment"
+    },
+    "environments/gen-dns-search-domain-001.json": {
+      "kind": "environment"
+    },
+    "evaluators/dns-diagnosis-v1.json": {
+      "kind": "evaluator"
+    },
+    "prompts/activity-generation.md": {
+      "kind": "prompt",
+      "prompt_id": "activity-generation",
+      "prompt_version": "1"
+    },
+    "prompts/evaluator-judgment.md": {
+      "kind": "prompt",
+      "prompt_id": "evaluator-judgment",
+      "prompt_version": "1"
+    },
+    "prompts/learner-model-update.md": {
+      "kind": "prompt",
+      "prompt_id": "learner-model-update",
+      "prompt_version": "1"
+    },
+    "prompts/tutor-reply.md": {
+      "kind": "prompt",
+      "prompt_id": "tutor-reply",
+      "prompt_version": "1"
+    },
+    "references/network.dns.resolver.json": {
+      "kind": "reference"
+    },
+    "skills/network.dns.resolution.json": {
+      "kind": "skill"
+    },
+    "templates/diagnose-dns-failure.json": {
+      "kind": "activity_template"
+    },
+    "ux/layout.json": {
+      "kind": "layout"
+    },
+    "visualizations/dns-resolution-flow.json": {
+      "kind": "visualization"
+    }
+  }
+}

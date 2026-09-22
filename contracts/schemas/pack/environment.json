@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/environment.json",
+  "title": "EnvironmentDefinition",
+  "description": "Fixture for a disposable lab (ADR-0007, ADR-0009). Referenced from lab.started by definition id + hash. Everything here runs only inside the learner sandbox. Withheld from the learner and from the tutor context: params may describe the injected fault.",
+  "type": "object",
+  "required": [
+    "id",
+    "fixture",
+    "image",
+    "params"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "fixture": {
+      "description": "Fixture provider registered by a domain adapter declared in the manifest, as '<adapter_id>.<name>'. Recorded as lab provenance fixture_id.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+    },
+    "image": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/oci_image"
+    },
+    "params": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/adapter_params"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/skill.json",
+  "title": "SkillDefinition",
+  "description": "An atomic learnable competency (ADR-0007). 'id' is the skill_id: stable across pack versions and never reused for a different meaning.",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "description",
+    "prerequisites",
+    "mastery_threshold",
+    "evidence_dimensions"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/skill_id"
+    },
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+    },
+    "description": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+    },
+    "prerequisites": {
+      "description": "skill_ids that should be mastered first. May be empty.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/skill_id"
+      }
+    },
+    "mastery_threshold": {
+      "description": "mastery_probability at or above which the skill counts as mastered. Pack-declared; the harness has no default (ADR-0002).",
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1
+    },
+    "evidence_dimensions": {
+      "description": "Kinds of evidence that count toward this skill, e.g. explain / observe / diagnose / repair.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+      }
+    }
+  },
+  "additionalProperties": false
+}

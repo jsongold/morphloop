@@ -1,0 +1,45 @@
+{
+  "description": "Timing is one of authoring / pooled / just_in_time.",
+  "schema": "schemas/pack/activity-template.json",
+  "expected_error_paths": [
+    "$.timing"
+  ],
+  "instance": {
+    "id": "diagnose-dns-failure",
+    "produces": "activity",
+    "holdout": false,
+    "timing": "runtime",
+    "activity_type": "diagnose",
+    "skills": {
+      "primary": [
+        "network.dns.resolution"
+      ]
+    },
+    "difficulty": 0.6,
+    "allowed_fixtures": [
+      "dns.broken-resolver"
+    ],
+    "allowed_checks": [
+      "dns.name_resolves",
+      "dns.command_exit"
+    ],
+    "image": {
+      "repository": "ghcr.io/morphloop/dns-lab",
+      "digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+    },
+    "tools": [
+      "dns.terminal"
+    ],
+    "evaluator": "dns-diagnosis-v1",
+    "remediation": {
+      "references": [
+        "network.dns.resolver"
+      ],
+      "visualizations": [
+        "dns-resolution-flow"
+      ]
+    },
+    "solution_step_timeout_seconds": 30,
+    "brief": "Build a resolver misconfiguration that breaks name lookup of one internal service while the service itself stays healthy. The mission must not name the misconfigured file."
+  }
+}

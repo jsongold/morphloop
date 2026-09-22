@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/reference-solution.json",
+  "title": "ReferenceSolution",
+  "description": "Known-good fix for one ActivityDefinition, kept in its own file (kind 'reference_solution') so it is never serialized with the activity. Used only for pre-serving validation (checks pass after 'apply', AC-J2) and post-completion review. Never given to the learner; never placed in the tutor context during an unfinished attempt (AC-J6, ADR-0014).",
+  "type": "object",
+  "required": [
+    "id",
+    "activity_id",
+    "apply",
+    "explanation"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "activity_id": {
+      "description": "The ActivityDefinition this solves. The activity binds back to this file by path + hash.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "apply": {
+      "description": "Steps run in order inside the sandbox of a freshly started lab. Empty for activities without a lab.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "argv",
+          "timeout_seconds"
+        ],
+        "properties": {
+          "argv": {
+            "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/sandbox_argv"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "explanation": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+    }
+  },
+  "additionalProperties": false
+}

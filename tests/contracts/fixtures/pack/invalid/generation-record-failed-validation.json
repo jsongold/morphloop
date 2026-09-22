@@ -1,0 +1,86 @@
+{
+  "description": "Only a validated candidate is finalized and recorded as generated files (ADR-0014).",
+  "schema": "schemas/pack/generation-record.json",
+  "expected_error_paths": [
+    "$.validation.outcome"
+  ],
+  "instance": {
+    "timing": "authoring",
+    "template": {
+      "template_id": "diagnose-dns-failure",
+      "template_hash": "sha256:7e97c044806a5a3a71f5c44a86ff25ccb9c4094952969157372e97cd04e6fca8"
+    },
+    "generator": {
+      "implementation": "llm-generator@0.1.0",
+      "llm": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "prompt_id": "activity-generation",
+        "prompt_version": "1",
+        "generation_parameters": {
+          "temperature": 0,
+          "max_tokens": 4000
+        }
+      }
+    },
+    "generated_at": "2026-09-22T09:00:00Z",
+    "outputs": [
+      {
+        "kind": "activity",
+        "path": "activities/gen-dns-search-domain-001.json",
+        "definition_id": "gen-dns-search-domain-001",
+        "definition_hash": "sha256:2720be410344624df936ad3ef6b9f61aea34c90a2237cf348360541b495b465b"
+      },
+      {
+        "kind": "environment",
+        "path": "environments/gen-dns-search-domain-001.json",
+        "definition_id": "gen-dns-search-domain-001.env",
+        "definition_hash": "sha256:db11db79a163fa143bdaafc4fab8c2bd578424815b28b456783f647fb1d94eed"
+      },
+      {
+        "kind": "reference_solution",
+        "path": "activities/gen-dns-search-domain-001.solution.json",
+        "definition_id": "gen-dns-search-domain-001.solution",
+        "definition_hash": "sha256:c5b5fe43ff84eb90660e409533ee0f3ad625a58e999d725a2f4c066ca1ceea11"
+      }
+    ],
+    "validation": {
+      "outcome": "failed",
+      "steps": [
+        {
+          "step": "schema",
+          "outcome": "passed",
+          "lab": null
+        },
+        {
+          "step": "adapter_references",
+          "outcome": "passed",
+          "lab": null
+        },
+        {
+          "step": "checks_fail_in_broken_state",
+          "outcome": "passed",
+          "lab": {
+            "image_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+            "fixture_id": "dns.broken-resolver"
+          }
+        },
+        {
+          "step": "checks_pass_after_solution",
+          "outcome": "passed",
+          "lab": {
+            "image_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+            "fixture_id": "dns.broken-resolver"
+          }
+        }
+      ]
+    },
+    "rejected_candidates": [
+      {
+        "attempt": 1,
+        "failed_step": "checks_pass_after_solution",
+        "reason": "dns.command_exit still failed after applying the reference solution."
+      }
+    ]
+  }
+}

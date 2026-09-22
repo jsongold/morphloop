@@ -1,0 +1,82 @@
+{
+  "description": "Observation commands are sandbox argv arrays.",
+  "schema": "schemas/pack/visualization.json",
+  "expected_error_paths": [
+    "$.diagram.steps[1].reality.observe[0].argv"
+  ],
+  "instance": {
+    "id": "dns-resolution-flow",
+    "version": "1",
+    "title": "How api.internal becomes an address",
+    "skills": [
+      "network.dns.resolution"
+    ],
+    "diagram": {
+      "type": "sequence",
+      "actors": [
+        {
+          "id": "app",
+          "label": "Application"
+        },
+        {
+          "id": "stub",
+          "label": "OS stub resolver"
+        },
+        {
+          "id": "recursive",
+          "label": "Recursive resolver"
+        },
+        {
+          "id": "authoritative",
+          "label": "Authoritative server"
+        }
+      ],
+      "steps": [
+        {
+          "id": "lookup",
+          "from": "app",
+          "to": "stub",
+          "label": "getaddrinfo(api.internal)"
+        },
+        {
+          "id": "query",
+          "from": "stub",
+          "to": "recursive",
+          "label": "DNS query (UDP 53)",
+          "explanation": "The stub resolver asks the nameserver listed in its configuration.",
+          "reality": {
+            "mechanism": "glibc reads /etc/resolv.conf and sends a UDP query to each `nameserver` in order.",
+            "observe": [
+              {
+                "argv": "cat /etc/resolv.conf",
+                "purpose": "See which nameserver is asked.",
+                "look_for": "The `nameserver` lines."
+              },
+              {
+                "argv": [
+                  "dig",
+                  "api.internal"
+                ],
+                "purpose": "Send the same query by hand.",
+                "look_for": "status and SERVER in the footer."
+              }
+            ],
+            "artifacts": [
+              {
+                "kind": "file",
+                "locator": "/etc/resolv.conf",
+                "description": "Stub resolver configuration."
+              }
+            ]
+          }
+        },
+        {
+          "id": "authority",
+          "from": "recursive",
+          "to": "authoritative",
+          "label": "Ask the zone's server"
+        }
+      ]
+    }
+  }
+}

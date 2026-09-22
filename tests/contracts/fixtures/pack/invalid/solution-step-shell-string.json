@@ -1,0 +1,18 @@
+{
+  "description": "Reference solution steps are argv arrays.",
+  "schema": "schemas/pack/reference-solution.json",
+  "expected_error_paths": [
+    "$.apply[0].argv"
+  ],
+  "instance": {
+    "id": "diagnose-dns-resolver-failure-v1.solution",
+    "activity_id": "diagnose-dns-resolver-failure-v1",
+    "apply": [
+      {
+        "argv": "cp /opt/lab/resolv.conf.good /etc/resolv.conf",
+        "timeout_seconds": 10
+      }
+    ],
+    "explanation": "/etc/resolv.conf points at an address with no DNS server. Restoring the lab resolver makes api.internal resolve again."
+  }
+}
