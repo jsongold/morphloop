@@ -41,6 +41,12 @@ versions, provenance). They are not redefined here.
   generator CLI. `activity.started.activity_definition_hash`,
   `lab.started.environment` and `evaluation.completed.evaluator` carry it.
   Cross-document bindings use `{path, content_hash}`.
+- **Pack content hash (ADR-0010).** The pack's identity covers every file in
+  the pack, including `eval/` and the manifest: `sha256:` + hex SHA-256 of
+  the RFC 8785 canonical JSON of the sorted list of
+  `{path, content_hash}` for all files, where each file's `content_hash` is
+  the SHA-256 of its raw bytes. Any change to any file, holdout assets
+  included, yields a new pack identity. Computed by the Importer.
 - **No harness defaults (ADR-0002).** Every tunable value is required where it
   is used. Examples: `mastery_threshold`, `max_regenerations`, every LLM
   parameter, reference-solution step timeouts.

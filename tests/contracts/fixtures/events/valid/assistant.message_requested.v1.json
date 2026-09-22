@@ -17,6 +17,7 @@
     "message_id": "msg_01J9ZQ4MSG0001",
     "thread_id": "thr_01J9ZQ4THR0001",
     "text": "Why is this necessary?",
+    "requested_mode": "explain",
     "references": [
       {
         "type": "highlight",

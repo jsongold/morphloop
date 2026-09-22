@@ -481,9 +481,12 @@ paths:
         (referenced highlights, current activity, recent terminal actions;
         AC-D5, AC-E1, AC-E2), calls the tutor and appends
         `assistant.message_generated`. The response carries both stored
-        events. The harness picks the reply mode (e.g. hint during an
-        unfinished attempt, AC-E3) and never puts the reference solution in the
-        tutor context during an unfinished attempt (AC-J6).
+        events. The learner may ask for a reply mode with `requested_mode`
+        (values declared by the pack); when it is omitted or null the harness
+        chooses. The harness decides the final mode and may override the
+        request (e.g. hint during an unfinished attempt, AC-E3), and never puts
+        the reference solution in the tutor context during an unfinished
+        attempt (AC-J6).
         If the tutor call fails or its output is invalid, the request event
         stays recorded and the response is `502`; resending the same
         `idempotency_key` appends no second request event and retries the
@@ -1245,6 +1248,8 @@ components:
             - type: 'null'
         text:
           $ref: https://morphloop.dev/contracts/schemas/events/payloads/assistant.message_requested/1.json#/properties/text
+        requested_mode:
+          $ref: https://morphloop.dev/contracts/schemas/events/payloads/assistant.message_requested/1.json#/properties/requested_mode
         references:
           description: Explicit references, e.g. the highlight an "Ask AI" quotes (AC-D3). Highlights must already be appended.
           $ref: https://morphloop.dev/contracts/schemas/events/payloads/assistant.message_requested/1.json#/properties/references
