@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/ws/payloads/pong.json",
+  "title": "pong payload",
+  "description": "Server reply to a ping. Carries no data of its own; echoes the ping's correlation_id in the envelope.",
+  "type": "object",
+  "additionalProperties": false
+}

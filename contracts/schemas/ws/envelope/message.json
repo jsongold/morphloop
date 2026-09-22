@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/ws/envelope/message.json",
+  "title": "WebSocket message",
+  "description": "A complete WebSocket message on the terminal/notification connection: envelope fields plus the type-specific payload. Closed.",
+  "$ref": "https://morphloop.dev/contracts/schemas/ws/envelope/fields.json",
+  "allOf": [
+    {
+      "$ref": "https://morphloop.dev/contracts/schemas/ws/dispatch.json"
+    }
+  ],
+  "unevaluatedProperties": false
+}

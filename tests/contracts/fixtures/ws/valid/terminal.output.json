@@ -1,0 +1,11 @@
+{
+  "type": "terminal.output",
+  "protocol_version": 1,
+  "correlation_id": "att_01J9ZQ4ATT0001",
+  "idempotency_key": "term_01J9ZQ4TRM0001:out:19",
+  "payload": {
+    "data": ";; connection timed out; no servers could be reached\r\n",
+    "encoding": "utf-8",
+    "sequence": 19
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "type": "lab.status",
+  "protocol_version": 1,
+  "correlation_id": "att_01J9ZQ4ATT0001",
+  "idempotency_key": null,
+  "payload": {
+    "lab_instance_id": "lab_01J9ZQ4LAB0001",
+    "status": "ready",
+    "terminal_id": "term_01J9ZQ4TRM0001"
+  }
+}

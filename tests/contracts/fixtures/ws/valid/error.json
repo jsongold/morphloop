@@ -1,0 +1,10 @@
+{
+  "type": "error",
+  "protocol_version": 1,
+  "correlation_id": "att_01J9ZQ4ATT0001",
+  "idempotency_key": null,
+  "payload": {
+    "code": "lab_not_ready",
+    "message": "Lab instance is still starting; retry after lab.status=ready."
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/ws/payloads/ping.json",
+  "title": "ping payload",
+  "description": "Client liveness check. Carries no data of its own; use the envelope's correlation_id to match the reply pong.",
+  "type": "object",
+  "additionalProperties": false
+}

@@ -1,0 +1,16 @@
+{
+  "description": "terminal.resize requires both cols and rows.",
+  "schema": "schemas/ws/envelope/message.json",
+  "expected_error_paths": [
+    "$.payload"
+  ],
+  "instance": {
+    "type": "terminal.resize",
+    "protocol_version": 1,
+    "correlation_id": null,
+    "idempotency_key": null,
+    "payload": {
+      "cols": 120
+    }
+  }
+}

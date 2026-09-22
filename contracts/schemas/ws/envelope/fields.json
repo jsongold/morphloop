@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/ws/envelope/fields.json",
+  "title": "WebSocket message envelope fields (open base)",
+  "description": "Shared envelope fields for every WebSocket message on the terminal/notification connection. Not closed: validate against envelope/message.json, never against this schema alone. The payload is checked by dispatch.json. Unlike the event envelope (contracts/schemas/events/), there is no separate 'append' vs 'stored' variant: WebSocket messages are not persisted; only the events some of them cause are.",
+  "type": "object",
+  "required": [
+    "type",
+    "protocol_version",
+    "correlation_id",
+    "idempotency_key",
+    "payload"
+  ],
+  "properties": {
+    "type": {
+      "description": "Message type discriminator, e.g. 'terminal.input'. The full enum lives in dispatch.json.",
+      "type": "string",
+      "minLength": 1
+    },
+    "protocol_version": {
+      "description": "WebSocket protocol version for this whole message catalog (not per message type: see contracts/schemas/ws/README.md). v0.1 is 1.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "correlation_id": {
+      "description": "Groups related messages (one attempt, one ping/pong round trip) and, where a message reports on a stored event, may echo that event's correlation_id (ADR-0008). Null when not meaningful for this message.",
+      "anyOf": [
+        {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/correlation_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "idempotency_key": {
+      "description": "Set by dispatch.json for message types that cause a learner or terminal-bridge event (ADR-0008): resending the same key must not duplicate the effect. Null for message types that do not directly cause a stored event.",
+      "anyOf": [
+        {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/idempotency_key"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

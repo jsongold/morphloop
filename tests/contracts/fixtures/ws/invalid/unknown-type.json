@@ -1,0 +1,14 @@
+{
+  "description": "Only registered message types are accepted.",
+  "schema": "schemas/ws/envelope/message.json",
+  "expected_error_paths": [
+    "$.type"
+  ],
+  "instance": {
+    "type": "terminal.teleport",
+    "protocol_version": 1,
+    "correlation_id": null,
+    "idempotency_key": null,
+    "payload": {}
+  }
+}

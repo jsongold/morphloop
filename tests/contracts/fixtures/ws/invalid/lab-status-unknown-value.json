@@ -1,0 +1,18 @@
+{
+  "description": "status must be one of the registered lifecycle values.",
+  "schema": "schemas/ws/envelope/message.json",
+  "expected_error_paths": [
+    "$.payload.status"
+  ],
+  "instance": {
+    "type": "lab.status",
+    "protocol_version": 1,
+    "correlation_id": "att_01J9ZQ4ATT0001",
+    "idempotency_key": null,
+    "payload": {
+      "lab_instance_id": "lab_01J9ZQ4LAB0001",
+      "status": "crashed",
+      "terminal_id": null
+    }
+  }
+}

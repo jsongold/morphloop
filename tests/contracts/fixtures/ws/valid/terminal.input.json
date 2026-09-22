@@ -1,0 +1,9 @@
+{
+  "type": "terminal.input",
+  "protocol_version": 1,
+  "correlation_id": "att_01J9ZQ4ATT0001",
+  "idempotency_key": null,
+  "payload": {
+    "data": "dig api.internal\n"
+  }
+}

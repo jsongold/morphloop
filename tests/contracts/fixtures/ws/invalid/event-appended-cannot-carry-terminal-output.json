@@ -1,0 +1,22 @@
+{
+  "description": "terminal.output events are pushed directly as their own message type, never re-announced through event.appended (see contracts/schemas/ws/README.md).",
+  "schema": "schemas/ws/envelope/message.json",
+  "expected_error_paths": [
+    "$.payload"
+  ],
+  "instance": {
+    "type": "event.appended",
+    "protocol_version": 1,
+    "correlation_id": "att_01J9ZQ4ATT0001",
+    "idempotency_key": null,
+    "payload": {
+      "event_id": "evt_01J9ZQ4EVT0006",
+      "event_type": "terminal.output",
+      "event_version": 1,
+      "position": 6,
+      "occurred_at": "2026-09-22T10:06:00Z",
+      "attempt_id": "att_01J9ZQ4ATT0001",
+      "activity_definition_id": "diagnose-dns-resolver-failure-v1"
+    }
+  }
+}

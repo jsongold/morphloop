@@ -1,0 +1,10 @@
+{
+  "type": "terminal.exit",
+  "protocol_version": 1,
+  "correlation_id": "att_01J9ZQ4ATT0001",
+  "idempotency_key": null,
+  "payload": {
+    "exit_code": 0,
+    "signal": null
+  }
+}

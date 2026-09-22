@@ -1,0 +1,7 @@
+{
+  "type": "pong",
+  "protocol_version": 1,
+  "correlation_id": "ping-001",
+  "idempotency_key": null,
+  "payload": {}
+}

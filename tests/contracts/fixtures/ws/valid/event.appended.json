@@ -1,0 +1,15 @@
+{
+  "type": "event.appended",
+  "protocol_version": 1,
+  "correlation_id": "att_01J9ZQ4ATT0001",
+  "idempotency_key": null,
+  "payload": {
+    "event_id": "evt_01J9ZQ4EVT0007",
+    "event_type": "activity.completed",
+    "event_version": 1,
+    "position": 7,
+    "occurred_at": "2026-09-22T10:07:00Z",
+    "attempt_id": "att_01J9ZQ4ATT0001",
+    "activity_definition_id": "diagnose-dns-resolver-failure-v1"
+  }
+}

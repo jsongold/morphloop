@@ -1,0 +1,14 @@
+{
+  "description": "protocol_version is an integer, not a string.",
+  "schema": "schemas/ws/envelope/message.json",
+  "expected_error_paths": [
+    "$.protocol_version"
+  ],
+  "instance": {
+    "type": "ping",
+    "protocol_version": "1",
+    "correlation_id": null,
+    "idempotency_key": null,
+    "payload": {}
+  }
+}

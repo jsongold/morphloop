@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/ws/payloads/event.appended.json",
+  "title": "event.appended payload",
+  "description": "Thin notification that a new event was appended to a session's timeline (ADR-0008), for any event type OTHER than terminal.output, which streams directly as its own 'terminal.output' WebSocket message instead (see contracts/schemas/ws/README.md, 'why event.appended does not embed the stored event'). Carries just enough (event_id, position, event_type/version, occurred_at, attempt scoping) for the UI to append a timeline row or refetch; it does not embed the stored event (contracts/schemas/events/envelope/stored.json). A client that needs the payload calls GET /sessions/{id}/timeline.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "event_version",
+    "position",
+    "occurred_at",
+    "attempt_id",
+    "activity_definition_id"
+  ],
+  "properties": {
+    "event_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/event_id"
+    },
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z_]*(\\.[a-z][a-z_]*)+$"
+    },
+    "event_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "position": {
+      "description": "DB-assigned, monotonically increasing; the only event order (ADR-0008).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurred_at": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/timestamp.json"
+    },
+    "attempt_id": {
+      "anyOf": [
+        {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/attempt_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "activity_definition_id": {
+      "anyOf": [
+        {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "not": {
+    "required": [
+      "event_type"
+    ],
+    "properties": {
+      "event_type": {
+        "const": "terminal.output"
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "properties": {
+        "attempt_id": {
+          "type": "null"
+        },
+        "activity_definition_id": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "properties": {
+        "attempt_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/attempt_id"
+        },
+        "activity_definition_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+        }
+      }
+    }
+  ]
+}

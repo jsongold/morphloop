@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/ws/dispatch.json",
+  "title": "WebSocket message type dispatch",
+  "description": "Maps a message 'type' to its payload schema and, per type, can override envelope fields (e.g. force a required, non-null idempotency_key) when a message maps 1:1 onto a stored event. v0.1 has no message type that does: see contracts/schemas/ws/README.md, 'Idempotency and correlation'. Adding a type means adding a payload file and a branch here. Mirrors contracts/schemas/events/dispatch.json.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "enum": [
+        "terminal.input",
+        "terminal.resize",
+        "ping",
+        "terminal.output",
+        "terminal.exit",
+        "lab.status",
+        "event.appended",
+        "error",
+        "pong"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "terminal.input"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "https://morphloop.dev/contracts/schemas/ws/payloads/terminal.input.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "terminal.resize"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "https://morphloop.dev/contracts/schemas/ws/payloads/terminal.resize.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "ping"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "https://morphloop.dev/contracts/schemas/ws/payloads/ping.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "terminal.output"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "https://morphloop.dev/contracts/schemas/ws/payloads/terminal.output.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "terminal.exit"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "https://morphloop.dev/contracts/schemas/ws/payloads/terminal.exit.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "lab.status"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "https://morphloop.dev/contracts/schemas/ws/payloads/lab.status.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "event.appended"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "https://morphloop.dev/contracts/schemas/ws/payloads/event.appended.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "error"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "https://morphloop.dev/contracts/schemas/ws/payloads/error.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "pong"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "https://morphloop.dev/contracts/schemas/ws/payloads/pong.json"
+          }
+        }
+      }
+    }
+  ]
+}
