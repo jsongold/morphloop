@@ -1,0 +1,56 @@
+# Dependency-direction contracts for AC-G1 (see docs/decisions/0009-extension-boundary.md,
+# 0015, 0017). Enforces the extension boundary described in CLAUDE.md:
+#   harness.core            -- domain-agnostic core; must not import adapters/api/cli/testing/domains.
+#   harness.adapters.*      -- one technical adapter per library; must not import each other,
+#                               nor harness.api/harness.cli/domains.
+#   domains.*               -- domain adapter layer; must not import harness.adapters/api/cli.
+#   harness.api / harness.cli -- wiring layer; may import everything, so no contract restricts it.
+#
+# The pack (contents/<pack-id>/) is pure data and is never imported by Python code, so it is
+# not, and cannot be, a node in this graph.
+[importlinter]
+root_packages =
+    harness
+    domains
+
+[importlinter:contract:core-is-domain-agnostic]
+name = harness.core must not import adapters, api, cli, testing or domains
+type = forbidden
+source_modules =
+    harness.core
+forbidden_modules =
+    harness.adapters
+    harness.api
+    harness.cli
+    harness.testing
+    domains
+
+[importlinter:contract:adapters-are-independent]
+name = harness.adapters.* libraries must not import each other
+type = independence
+modules =
+    harness.adapters.postgres
+    harness.adapters.llm
+    harness.adapters.docker_lab
+    harness.adapters.pty
+    harness.adapters.fs_pack_source
+
+[importlinter:contract:adapters-do-not-import-wiring-or-domains]
+name = harness.adapters.* must not import api, cli or domains
+type = forbidden
+source_modules =
+    harness.adapters
+forbidden_modules =
+    harness.api
+    harness.cli
+    domains
+
+[importlinter:contract:domains-do-not-import-adapters-or-wiring]
+name = domains.* must not import harness.adapters, harness.api or harness.cli
+type = forbidden
+source_modules =
+    domains
+forbidden_modules =
+    harness.adapters
+    harness.api
+    harness.cli
