@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.morphloop.test/fixtures/main.json",
+  "type": "object",
+  "required": ["name", "widget"],
+  "properties": {
+    "name": { "type": "string" },
+    "widget": { "$ref": "https://schemas.morphloop.test/fixtures/widget.json" }
+  },
+  "additionalProperties": false
+}
