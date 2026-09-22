@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/common/ids.json",
+  "title": "Identifiers",
+  "description": "Identifier formats shared by all contracts. Runtime instance ids are '<prefix>_<1-64 alphanumerics>' (ADR-0007); the part after the prefix is opaque (ULID, UUID hex, etc. are all valid). Definition ids are pack-internal and stable for a given definition; they are fully qualified by pack_id + pack_version.",
+  "$defs": {
+    "event_id": {
+      "description": "LearningEvent id.",
+      "type": "string",
+      "pattern": "^evt_[0-9A-Za-z]{1,64}$"
+    },
+    "learner_id": {
+      "description": "Learner id.",
+      "type": "string",
+      "pattern": "^usr_[0-9A-Za-z]{1,64}$"
+    },
+    "session_id": {
+      "description": "LearningSession id.",
+      "type": "string",
+      "pattern": "^ses_[0-9A-Za-z]{1,64}$"
+    },
+    "attempt_id": {
+      "description": "ActivityAttempt id (runtime instance, ADR-0007).",
+      "type": "string",
+      "pattern": "^att_[0-9A-Za-z]{1,64}$"
+    },
+    "lab_instance_id": {
+      "description": "LabInstance id. A lab reset creates a new one.",
+      "type": "string",
+      "pattern": "^lab_[0-9A-Za-z]{1,64}$"
+    },
+    "evaluation_id": {
+      "description": "Evaluation id.",
+      "type": "string",
+      "pattern": "^evl_[0-9A-Za-z]{1,64}$"
+    },
+    "evidence_id": {
+      "description": "Evidence id.",
+      "type": "string",
+      "pattern": "^ev_[0-9A-Za-z]{1,64}$"
+    },
+    "highlight_id": {
+      "description": "Highlight id.",
+      "type": "string",
+      "pattern": "^hl_[0-9A-Za-z]{1,64}$"
+    },
+    "thread_id": {
+      "description": "Conversation thread id.",
+      "type": "string",
+      "pattern": "^thr_[0-9A-Za-z]{1,64}$"
+    },
+    "message_id": {
+      "description": "Chat message id.",
+      "type": "string",
+      "pattern": "^msg_[0-9A-Za-z]{1,64}$"
+    },
+    "terminal_id": {
+      "description": "Terminal (PTY session) id.",
+      "type": "string",
+      "pattern": "^term_[0-9A-Za-z]{1,64}$"
+    },
+    "pack_id": {
+      "description": "Subject pack id, e.g. 'software-engineering'.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "definition_id": {
+      "description": "Pack-internal Definition id (activity, environment, evaluator, visualization, content, prompt), e.g. 'diagnose-dns-resolver-failure-v1'.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "skill_id": {
+      "description": "Skill id, e.g. 'network.dns.resolution'. Stable across pack versions, never reused (ADR-0007).",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "adapter_id": {
+      "description": "Domain adapter id (ADR-0009), e.g. 'dns'.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "adapter_item_id": {
+      "description": "Id of a check / fixture / tool registered in a domain adapter, e.g. 'dns.resolver_answers'.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "token": {
+      "description": "Short lowercase symbolic value (mode, pane, dimension, role).",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "local_ref": {
+      "description": "Opaque in-document reference without whitespace (step id, anchor).",
+      "type": "string",
+      "pattern": "^\\S{1,256}$"
+    },
+    "idempotency_key": {
+      "description": "Producer-chosen key; a resend with the same key returns the existing event (ADR-0008). Unique across the event store, so producers namespace it.",
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,255}$"
+    },
+    "correlation_id": {
+      "description": "Groups related events (one attempt, one chat round trip). May reuse an existing id such as an attempt_id.",
+      "type": "string",
+      "pattern": "^[0-9A-Za-z_.:-]{1,128}$"
+    }
+  }
+}

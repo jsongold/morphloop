@@ -1,0 +1,31 @@
+{
+  "event_id": "evt_01J9ZQ4EVT0015",
+  "position": 15,
+  "event_type": "assistant.message_requested",
+  "event_version": 1,
+  "occurred_at": "2026-09-22T10:15:00Z",
+  "recorded_at": "2026-09-22T10:15:00.123Z",
+  "idempotency_key": "client:assistant.message_requested:15",
+  "causation_id": null,
+  "correlation_id": "thr_01J9ZQ4THR0001",
+  "learner_id": "usr_01J9ZQ4USR0001",
+  "session_id": "ses_01J9ZQ4SES0001",
+  "attempt_id": null,
+  "activity_definition_id": null,
+  "actor": "learner",
+  "payload": {
+    "message_id": "msg_01J9ZQ4MSG0001",
+    "thread_id": "thr_01J9ZQ4THR0001",
+    "text": "Why is this necessary?",
+    "references": [
+      {
+        "type": "highlight",
+        "id": "hl_01J9ZQ4HL0001"
+      },
+      {
+        "type": "event",
+        "id": "evt_01J9ZQ4EVT0005"
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "description": "Timestamps are UTC with a 'Z' suffix.",
+  "schema": "schemas/events/envelope/stored.json",
+  "expected_error_paths": [
+    "$.occurred_at"
+  ],
+  "instance": {
+    "event_id": "evt_01J9ZQ4EVT0004",
+    "position": 4,
+    "event_type": "lab.reset",
+    "event_version": 1,
+    "occurred_at": "2026-09-22T19:00:00+09:00",
+    "recorded_at": "2026-09-22T10:04:00.123Z",
+    "idempotency_key": "client:lab.reset:4",
+    "causation_id": null,
+    "correlation_id": "att_01J9ZQ4ATT0001",
+    "learner_id": "usr_01J9ZQ4USR0001",
+    "session_id": "ses_01J9ZQ4SES0001",
+    "attempt_id": "att_01J9ZQ4ATT0001",
+    "activity_definition_id": "diagnose-dns-resolver-failure-v1",
+    "actor": "learner",
+    "payload": {
+      "lab_instance_id": "lab_01J9ZQ4LAB0001"
+    }
+  }
+}

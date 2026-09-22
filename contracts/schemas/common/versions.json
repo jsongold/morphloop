@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/common/versions.json",
+  "title": "Versions",
+  "$defs": {
+    "version_label": {
+      "description": "Human-facing version label (pack_version, harness version, prompt version). Not an identity; content hashes are (ADR-0010).",
+      "type": "string",
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+    },
+    "name_at_version": {
+      "description": "'name@version' reference to a registry implementation (ADR-0004), e.g. 'llm-learner-model@1.0.0'.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}@[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+    }
+  }
+}

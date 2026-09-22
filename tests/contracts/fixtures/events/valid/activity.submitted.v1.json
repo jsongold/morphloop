@@ -1,0 +1,19 @@
+{
+  "event_id": "evt_01J9ZQ4EVT0007",
+  "position": 7,
+  "event_type": "activity.submitted",
+  "event_version": 1,
+  "occurred_at": "2026-09-22T10:07:00Z",
+  "recorded_at": "2026-09-22T10:07:00.123Z",
+  "idempotency_key": "client:activity.submitted:7",
+  "causation_id": null,
+  "correlation_id": "att_01J9ZQ4ATT0001",
+  "learner_id": "usr_01J9ZQ4USR0001",
+  "session_id": "ses_01J9ZQ4SES0001",
+  "attempt_id": "att_01J9ZQ4ATT0001",
+  "activity_definition_id": "diagnose-dns-resolver-failure-v1",
+  "actor": "learner",
+  "payload": {
+    "lab_instance_id": "lab_01J9ZQ4LAB0001"
+  }
+}

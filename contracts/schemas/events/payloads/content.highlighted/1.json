@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/content.highlighted/1.json",
+  "title": "content.highlighted payload v1",
+  "description": "The learner created a persistent highlight on content.",
+  "type": "object",
+  "required": [
+    "highlight_id",
+    "content_id",
+    "content_version",
+    "selected_text",
+    "start_offset",
+    "end_offset",
+    "semantic_anchor",
+    "context_before",
+    "context_after"
+  ],
+  "properties": {
+    "highlight_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/highlight_id"
+    },
+    "content_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "content_version": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+    },
+    "selected_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "start_offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "end_offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "semantic_anchor": {
+      "anyOf": [
+        {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/local_ref"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "context_before": {
+      "type": "string"
+    },
+    "context_after": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

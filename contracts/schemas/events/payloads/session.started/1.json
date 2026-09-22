@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/session.started/1.json",
+  "title": "session.started payload v1",
+  "description": "A learning session began. Carries every provenance item constant for the session.",
+  "type": "object",
+  "required": [
+    "provenance"
+  ],
+  "properties": {
+    "provenance": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/provenance.json#/$defs/session"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,46 @@
+{
+  "event_id": "evt_01J9ZQ4EVT0008",
+  "position": 8,
+  "event_type": "evaluation.completed",
+  "event_version": 1,
+  "occurred_at": "2026-09-22T10:08:00Z",
+  "recorded_at": "2026-09-22T10:08:00.123Z",
+  "idempotency_key": null,
+  "causation_id": "evt_01J9ZQ4EVT0007",
+  "correlation_id": "att_01J9ZQ4ATT0001",
+  "learner_id": "usr_01J9ZQ4USR0001",
+  "session_id": "ses_01J9ZQ4SES0001",
+  "attempt_id": "att_01J9ZQ4ATT0001",
+  "activity_definition_id": "diagnose-dns-resolver-failure-v1",
+  "actor": "system",
+  "payload": {
+    "evaluation_id": "evl_01J9ZQ4EVL0001",
+    "evaluator": {
+      "definition_id": "dns-resolver-rubric",
+      "definition_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "lab_instance_id": "lab_01J9ZQ4LAB0001",
+    "checks": [
+      {
+        "check_id": "dns.resolver_answers",
+        "passed": true,
+        "observed": {
+          "name": "api.internal",
+          "answer_count": 1
+        }
+      }
+    ],
+    "success": true,
+    "rationale": "Service resolves after the resolver fix.",
+    "provenance": {
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "prompt_id": "dns-evaluator",
+      "prompt_version": "1",
+      "generation_parameters": {
+        "temperature": 0.2,
+        "max_tokens": 1024
+      }
+    }
+  }
+}

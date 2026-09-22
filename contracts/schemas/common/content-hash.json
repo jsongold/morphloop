@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/common/content-hash.json",
+  "title": "Content hash",
+  "description": "SHA-256 content hash, 'sha256:' + 64 lowercase hex (ADR-0016). Used for pack content, Definition identity and OCI image digests.",
+  "type": "string",
+  "pattern": "^sha256:[0-9a-f]{64}$"
+}

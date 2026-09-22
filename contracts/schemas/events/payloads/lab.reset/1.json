@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/lab.reset/1.json",
+  "title": "lab.reset payload v1",
+  "description": "The learner asked to reset the lab to its known fixture.",
+  "type": "object",
+  "required": [
+    "lab_instance_id"
+  ],
+  "properties": {
+    "lab_instance_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/lab_instance_id"
+    }
+  },
+  "additionalProperties": false
+}

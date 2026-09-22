@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/terminal.command/1.json",
+  "title": "terminal.command payload v1",
+  "description": "The learner ran a command in a lab terminal.",
+  "type": "object",
+  "required": [
+    "terminal_id",
+    "lab_instance_id",
+    "sequence",
+    "command",
+    "cwd"
+  ],
+  "properties": {
+    "terminal_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/terminal_id"
+    },
+    "lab_instance_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/lab_instance_id"
+    },
+    "sequence": {
+      "description": "Display order within one terminal, shared with output chunks.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cwd": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/visualization.step_selected/1.json",
+  "title": "visualization.step_selected payload v1",
+  "description": "The learner selected a step of a visualization (exposes its reality mapping).",
+  "type": "object",
+  "required": [
+    "visualization_id",
+    "content_version",
+    "step_id"
+  ],
+  "properties": {
+    "visualization_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "content_version": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+    },
+    "step_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/local_ref"
+    }
+  },
+  "additionalProperties": false
+}

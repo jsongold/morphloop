@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/content.opened/1.json",
+  "title": "content.opened payload v1",
+  "description": "The learner opened pack content (concept, explanation, visualization) in a pane.",
+  "type": "object",
+  "required": [
+    "content_id",
+    "content_version",
+    "pane",
+    "source_highlight_id"
+  ],
+  "properties": {
+    "content_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "content_version": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+    },
+    "pane": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+    },
+    "source_highlight_id": {
+      "anyOf": [
+        {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/highlight_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

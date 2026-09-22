@@ -1,0 +1,30 @@
+{
+  "description": "Only registered versions of a type are accepted.",
+  "schema": "schemas/events/envelope/stored.json",
+  "expected_error_paths": [
+    "$.event_version"
+  ],
+  "instance": {
+    "event_id": "evt_01J9ZQ4EVT0005",
+    "position": 5,
+    "event_type": "terminal.command",
+    "event_version": 2,
+    "occurred_at": "2026-09-22T10:05:00Z",
+    "recorded_at": "2026-09-22T10:05:00.123Z",
+    "idempotency_key": "client:terminal.command:5",
+    "causation_id": null,
+    "correlation_id": "att_01J9ZQ4ATT0001",
+    "learner_id": "usr_01J9ZQ4USR0001",
+    "session_id": "ses_01J9ZQ4SES0001",
+    "attempt_id": "att_01J9ZQ4ATT0001",
+    "activity_definition_id": "diagnose-dns-resolver-failure-v1",
+    "actor": "learner",
+    "payload": {
+      "terminal_id": "term_01J9ZQ4TRM0001",
+      "lab_instance_id": "lab_01J9ZQ4LAB0001",
+      "sequence": 18,
+      "command": "dig api.internal",
+      "cwd": "/workspace"
+    }
+  }
+}

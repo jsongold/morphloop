@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/envelope/stored.json",
+  "title": "Stored event",
+  "description": "An event as read back from the store: append request + DB-assigned fields.",
+  "$ref": "https://morphloop.dev/contracts/schemas/events/envelope/fields.json",
+  "allOf": [
+    {
+      "$ref": "https://morphloop.dev/contracts/schemas/events/dispatch.json"
+    }
+  ],
+  "required": [
+    "position",
+    "recorded_at"
+  ],
+  "properties": {
+    "position": {
+      "description": "DB-assigned, monotonically increasing; the only event order.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "recorded_at": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/timestamp.json"
+    }
+  },
+  "unevaluatedProperties": false
+}

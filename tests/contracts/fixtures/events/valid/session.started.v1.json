@@ -1,0 +1,32 @@
+{
+  "event_id": "evt_01J9ZQ4EVT0001",
+  "position": 1,
+  "event_type": "session.started",
+  "event_version": 1,
+  "occurred_at": "2026-09-22T10:01:00Z",
+  "recorded_at": "2026-09-22T10:01:00.123Z",
+  "idempotency_key": "client:session.started:1",
+  "causation_id": null,
+  "correlation_id": null,
+  "learner_id": "usr_01J9ZQ4USR0001",
+  "session_id": "ses_01J9ZQ4SES0001",
+  "attempt_id": null,
+  "activity_definition_id": null,
+  "actor": "learner",
+  "payload": {
+    "provenance": {
+      "harness_version": "0.1.0",
+      "pack": {
+        "pack_id": "software-engineering",
+        "pack_version": "0.1.0",
+        "pack_content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "registry_implementations": {
+        "learner_model": "llm-learner-model@1.0.0"
+      },
+      "domain_adapters": {
+        "dns": "0.1.0"
+      }
+    }
+  }
+}

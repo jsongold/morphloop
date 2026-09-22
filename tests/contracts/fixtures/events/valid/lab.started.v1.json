@@ -1,0 +1,29 @@
+{
+  "event_id": "evt_01J9ZQ4EVT0003",
+  "position": 3,
+  "event_type": "lab.started",
+  "event_version": 1,
+  "occurred_at": "2026-09-22T10:03:00Z",
+  "recorded_at": "2026-09-22T10:03:00.123Z",
+  "idempotency_key": null,
+  "causation_id": "evt_01J9ZQ4EVT0002",
+  "correlation_id": "att_01J9ZQ4ATT0001",
+  "learner_id": "usr_01J9ZQ4USR0001",
+  "session_id": "ses_01J9ZQ4SES0001",
+  "attempt_id": "att_01J9ZQ4ATT0001",
+  "activity_definition_id": "diagnose-dns-resolver-failure-v1",
+  "actor": "system",
+  "payload": {
+    "lab_instance_id": "lab_01J9ZQ4LAB0001",
+    "environment": {
+      "definition_id": "broken-dns-resolver",
+      "definition_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "trigger": "initial",
+    "replaces_lab_instance_id": null,
+    "provenance": {
+      "image_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "fixture_id": "dns.broken_resolver"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "event_id": "evt_01J9ZQ4EVT0012",
+  "position": 12,
+  "event_type": "content.opened",
+  "event_version": 1,
+  "occurred_at": "2026-09-22T10:12:00Z",
+  "recorded_at": "2026-09-22T10:12:00.123Z",
+  "idempotency_key": "client:content.opened:12",
+  "causation_id": null,
+  "correlation_id": null,
+  "learner_id": "usr_01J9ZQ4USR0001",
+  "session_id": "ses_01J9ZQ4SES0001",
+  "attempt_id": null,
+  "activity_definition_id": null,
+  "actor": "learner",
+  "payload": {
+    "content_id": "concept.network.dns",
+    "content_version": "0.1.0",
+    "pane": "side",
+    "source_highlight_id": "hl_01J9ZQ4HL0001"
+  }
+}

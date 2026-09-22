@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/common/provenance.json",
+  "title": "Provenance",
+  "description": "Provenance blocks (ADR-0010, ADR-0016). Items constant for a session go on session.started ('session'); items that can change go on the event where they occur ('lab', 'llm', 'definition_ref').",
+  "$defs": {
+    "pack": {
+      "title": "Pack identity",
+      "description": "pack_content_hash is the source of truth for pack identity (ADR-0010).",
+      "type": "object",
+      "required": [
+        "pack_id",
+        "pack_version",
+        "pack_content_hash"
+      ],
+      "properties": {
+        "pack_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/pack_id"
+        },
+        "pack_version": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+        },
+        "pack_content_hash": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/content-hash.json"
+        }
+      },
+      "additionalProperties": false
+    },
+    "session": {
+      "title": "Session-constant provenance",
+      "type": "object",
+      "required": [
+        "harness_version",
+        "pack",
+        "registry_implementations",
+        "domain_adapters"
+      ],
+      "properties": {
+        "harness_version": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+        },
+        "pack": {
+          "$ref": "#/$defs/pack"
+        },
+        "registry_implementations": {
+          "description": "Registry role -> 'name@version' in use, e.g. {'learner_model': 'llm-learner-model@1.0.0'} (ADR-0004).",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+          },
+          "additionalProperties": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/name_at_version"
+          },
+          "minProperties": 1
+        },
+        "domain_adapters": {
+          "description": "Domain adapter id -> adapter version (ADR-0009).",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_id"
+          },
+          "additionalProperties": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "llm": {
+      "title": "LLM provenance",
+      "description": "Carried by every event produced with an LLM. The full prompt is a system log, not part of the event (ADR-0016).",
+      "type": "object",
+      "required": [
+        "provider",
+        "model",
+        "prompt_id",
+        "prompt_version",
+        "generation_parameters"
+      ],
+      "properties": {
+        "provider": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+        },
+        "model": {
+          "type": "string",
+          "pattern": "^\\S{1,128}$"
+        },
+        "prompt_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+        },
+        "prompt_version": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+        },
+        "generation_parameters": {
+          "description": "Provider-neutral generation parameters as sent.",
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "lab": {
+      "title": "Lab provenance",
+      "description": "Recorded when a LabInstance starts (ADR-0010).",
+      "type": "object",
+      "required": [
+        "image_digest",
+        "fixture_id"
+      ],
+      "properties": {
+        "image_digest": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/content-hash.json"
+        },
+        "fixture_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+        }
+      },
+      "additionalProperties": false
+    },
+    "definition_ref": {
+      "title": "Definition reference",
+      "description": "Pack-internal id plus content hash of a Definition (ADR-0007, ADR-0014).",
+      "type": "object",
+      "required": [
+        "definition_id",
+        "definition_hash"
+      ],
+      "properties": {
+        "definition_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+        },
+        "definition_hash": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/content-hash.json"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
