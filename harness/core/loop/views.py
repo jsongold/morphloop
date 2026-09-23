@@ -41,9 +41,10 @@ class PackView:
 
     pack: PackRef
     title: str
+    latest: bool
 
     def to_dict(self) -> dict[str, PlainJson]:
-        return {"pack": pack_provenance(self.pack), "title": self.title}
+        return {"pack": pack_provenance(self.pack), "title": self.title, "latest": self.latest}
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

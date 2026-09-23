@@ -222,10 +222,16 @@ class LearningLoop:
     # --- packs -------------------------------------------------------------
 
     def list_packs(self, pack_id: str | None = None) -> list[PackView]:
-        """Imported pack versions, newest import order not tracked (see README notes)."""
+        """Imported pack versions in import order per pack_id; ``latest`` marks the
+        newest import of each pack_id, the only one new sessions should start on."""
+        refs = self._catalog.list_packs(pack_id)
         return [
-            PackView(pack=ref, title=self._catalog.get_pack(ref).title)
-            for ref in self._catalog.list_packs(pack_id)
+            PackView(
+                pack=ref,
+                title=self._catalog.get_pack(ref).title,
+                latest=i + 1 == len(refs) or refs[i + 1].pack_id != ref.pack_id,
+            )
+            for i, ref in enumerate(refs)
         ]
 
     # --- sessions ----------------------------------------------------------

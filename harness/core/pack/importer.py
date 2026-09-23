@@ -24,7 +24,9 @@ Every problem found in steps 3 to 6 is collected and reported together in
 hash and never overwritten: re-importing identical content is a no-op
 (``created=False``); stored documents that differ from what this import would
 write raise :class:`PackProjectionConflictError`. Dropping the three
-projections and importing again rebuilds them.
+projections and importing again rebuilds them (import order then follows the
+re-import order). The pack document records ``import_seq``: its import order within
+the pack_id, assigned once at first import; the highest is the latest import.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from harness.core.domain_adapter import DomainAdapterRegistry, ItemKind, ItemRef
 from harness.core.pack.canonical_json import document_hash, pack_content_hash, sha256_hash
 from harness.core.pack.model import (
     DEFINITION_PROJECTION,
+    IMPORT_SEQ,
     KIND_SCHEMAS,
     MANIFEST_NAMES,
     MANIFEST_SCHEMA,
@@ -44,6 +47,7 @@ from harness.core.pack.model import (
     PROJECTION_FORMAT,
     SECRET_PROJECTION,
     PackRef,
+    import_seq,
 )
 from harness.core.pack.parsing import PackParseError, parse_document, parse_text
 from harness.core.ports import EventStore, PackSource, PlainJson, to_plain_json
@@ -271,11 +275,19 @@ class PackImporter:
         with self._store.transaction() as tx:
             existing = tx.get_projection(PACK_PROJECTION, parsed.ref.key)
             if existing is None:
+                # Import order within a pack_id: the newest import is the one new
+                # sessions start on. A re-import of an existing hash keeps its seq.
+                # ponytail: concurrent imports of one pack_id may tie; the key breaks it.
+                siblings = tx.list_projection(PACK_PROJECTION, key_prefix=parsed.ref.pack_id + "/")
+                seq = 1 + max((import_seq(doc) for _, doc in siblings), default=0)
                 for (name, key), document in parsed.projections().items():
+                    if name == PACK_PROJECTION:
+                        document = {**_obj(document), IMPORT_SEQ: seq}
                     tx.put_projection(name, key, document)
                 return ImportResult(ref=parsed.ref, created=True)
+            existing_pack = {k: v for k, v in existing.items() if k != IMPORT_SEQ}
             stored: dict[tuple[str, str], PlainJson] = {
-                (PACK_PROJECTION, parsed.ref.key): to_plain_json(existing)
+                (PACK_PROJECTION, parsed.ref.key): to_plain_json(existing_pack)
             }
             for name in (DEFINITION_PROJECTION, SECRET_PROJECTION):
                 for key, stored_doc in tx.list_projection(name, key_prefix=parsed.ref.key + "/"):
