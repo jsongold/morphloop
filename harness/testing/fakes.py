@@ -54,6 +54,7 @@ from harness.core.ports import (
     LabFile,
     LabInfo,
     LabNotFoundError,
+    LabNotReadyError,
     LabRuntime,
     LabRuntimeError,
     LabSpec,
@@ -276,6 +277,9 @@ class FakeLLMProvider:
 # --- Lab runtime ------------------------------------------------------------
 
 
+_READINESS_MAX_OUTPUT_BYTES = 4096
+
+
 def _succeed(lab_instance_id: str, request: ExecRequest) -> ExecResult:
     return ExecResult(
         exit_code=0,
@@ -292,6 +296,12 @@ class FakeLabRuntime:
 
     ``exec_handler`` decides each command's result (default: exit 0, no output).
     ``exec_calls`` records ``(lab_instance_id, request)`` in call order.
+
+    ``spec.command`` is only recorded (nothing runs in process). A
+    ``spec.readiness`` probe is run once through ``exec_handler`` at the end
+    of :meth:`start`, and :class:`LabNotReadyError` is raised unless it exits
+    ``0``: no time passes in a fake, so retrying would only loop over the same
+    answer. The probe appears in ``exec_calls`` like any other command.
     """
 
     def __init__(self, exec_handler: Callable[[str, ExecRequest], ExecResult] = _succeed) -> None:
@@ -303,6 +313,24 @@ class FakeLabRuntime:
         if lab_instance_id in self.labs:
             raise LabRuntimeError(f"lab {lab_instance_id!r} already exists")
         self.labs[lab_instance_id] = spec
+        if spec.readiness is not None:
+            probe = spec.readiness
+            result = self.exec(
+                lab_instance_id,
+                ExecRequest(
+                    argv=probe.argv,
+                    timeout_seconds=probe.timeout_seconds,
+                    max_output_bytes=_READINESS_MAX_OUTPUT_BYTES,
+                    env={},
+                    workdir=None,
+                ),
+            )
+            if result.timed_out or result.exit_code != 0:
+                del self.labs[lab_instance_id]
+                raise LabNotReadyError(
+                    f"lab {lab_instance_id!r} is not ready: {list(probe.argv)} exited "
+                    f"{result.exit_code!r}"
+                )
         return LabInfo(
             lab_instance_id=lab_instance_id,
             runtime_ref=f"fake-{lab_instance_id}",

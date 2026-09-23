@@ -22,10 +22,12 @@ from harness.core.ports import (
     ImageRef,
     LabFile,
     LabNotFoundError,
+    LabNotReadyError,
     LabRuntime,
     LabRuntimeError,
     LabSpec,
     NetworkMode,
+    ReadinessProbe,
     ResourceLimits,
 )
 
@@ -82,6 +84,8 @@ def make_spec(
     files: tuple[LabFile, ...] = (),
     memory_bytes: int = 64 * MIB,
     lifetime_seconds: int = 600,
+    command: tuple[str, ...] | None = None,
+    readiness: ReadinessProbe | None = None,
 ) -> LabSpec:
     return LabSpec(
         image=BUSYBOX,
@@ -92,6 +96,8 @@ def make_spec(
         env={"LAB_GREETING": "hello"},
         files=files,
         workdir="/work",
+        command=command,
+        readiness=readiness,
     )
 
 
@@ -171,6 +177,79 @@ def test_files_are_copied_with_mode(runtime: DockerLabRuntime, new_id: Callable[
     assert run(runtime, lab_id, "cat", "/etc/lab/nested/conf.txt").stdout == b"a=1\n"
     assert run(runtime, lab_id, "stat", "-c", "%a", "/etc/lab/nested/conf.txt").stdout == b"640\n"
     assert run(runtime, lab_id, "/usr/local/bin/hello").stdout == b"hi\n"
+
+
+def test_declared_command_is_the_labs_main_process(
+    runtime: DockerLabRuntime, client: docker.DockerClient, new_id: Callable[[], str]
+) -> None:
+    lab_id = new_id()
+    command = ("sh", "-c", "echo booted > /work/boot.log; exec sleep 300")
+    info = runtime.start(lab_id, make_spec(network="none", command=command))
+
+    assert client.containers.get(info.runtime_ref).attrs["Config"]["Cmd"] == list(command)
+    assert run(runtime, lab_id, "cat", "/work/boot.log").stdout == b"booted\n"
+    # The declared argv replaced the image default and is PID 1 in the lab.
+    assert b"sleep\x00300\x00" == run(runtime, lab_id, "cat", "/proc/1/cmdline").stdout
+
+
+def test_start_returns_only_after_the_readiness_probe_succeeds(
+    runtime: DockerLabRuntime, new_id: Callable[[], str]
+) -> None:
+    lab_id = new_id()
+    spec = make_spec(
+        network="none",
+        command=("sh", "-c", "sleep 2; touch /work/ready; exec sleep 300"),
+        readiness=ReadinessProbe(
+            argv=("test", "-e", "/work/ready"), timeout_seconds=30, interval_seconds=0.1
+        ),
+    )
+
+    started = time.monotonic()
+    runtime.start(lab_id, spec)
+    elapsed = time.monotonic() - started
+
+    # start() waited for the lab's own service, not just for the container.
+    assert elapsed >= 2
+    assert run(runtime, lab_id, "test", "-e", "/work/ready").exit_code == 0
+
+
+def test_lab_that_never_becomes_ready_fails_the_start_and_is_cleaned_up(
+    runtime: DockerLabRuntime, client: docker.DockerClient, new_id: Callable[[], str]
+) -> None:
+    lab_id = new_id()
+    spec = make_spec(
+        network="none",
+        command=("sleep", "300"),
+        readiness=ReadinessProbe(
+            argv=("test", "-e", "/work/never"), timeout_seconds=1, interval_seconds=0.1
+        ),
+    )
+
+    started = time.monotonic()
+    with pytest.raises(LabNotReadyError, match="not ready"):
+        runtime.start(lab_id, spec)
+
+    assert time.monotonic() - started < 15
+    assert runtime.status(lab_id) == "absent"
+    filters: dict[str, str | list[str] | bool] = {"label": f"{LABEL_LAB_ID}={lab_id}"}
+    assert client.containers.list(all=True, filters=filters) == []
+
+
+def test_main_process_that_stops_before_ready_fails_the_start(
+    runtime: DockerLabRuntime, new_id: Callable[[], str]
+) -> None:
+    lab_id = new_id()
+    spec = make_spec(
+        network="none",
+        command=("sh", "-c", "sleep 1; exit 3"),
+        readiness=ReadinessProbe(
+            argv=("test", "-e", "/work/never"), timeout_seconds=20, interval_seconds=0.2
+        ),
+    )
+
+    with pytest.raises(LabRuntimeError, match="ready"):
+        runtime.start(lab_id, spec)
+    assert runtime.status(lab_id) == "absent"
 
 
 def test_exec_results(runtime: DockerLabRuntime, new_id: Callable[[], str]) -> None:

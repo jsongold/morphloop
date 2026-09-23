@@ -17,9 +17,12 @@ from domains.dns.fixtures import (
     BOOT_PATH,
     CONFIG_PATH,
     INITIAL_RESOLV_CONF_PATH,
+    LAB_COMMAND,
     LAB_NETWORK,
+    LAB_READINESS,
     LAB_RESOURCE_LIMITS,
     LABD_PATH,
+    READY_PATH,
     ResolverLabFixture,
     explicit_params,
 )
@@ -55,9 +58,24 @@ def test_build_lab_spec() -> None:
         "address": "127.0.10.20",
     }
     assert config["services"][0]["port"] == 8080
-    # The main shell's startup hook runs boot (see fixtures module docstring).
-    hook = spec.env["ZDOTDIR"] + "/.zshenv"
-    assert BOOT_PATH.encode() in files[hook].content
+    assert config["ready_file"] == READY_PATH
+
+
+def test_lab_declares_its_main_process_and_readiness() -> None:
+    spec = ResolverLabFixture().build_lab_spec(IMAGE, PARAMS)
+    # The boot script is the main process; nothing is injected into a shell rc.
+    assert spec.command == LAB_COMMAND == ("/bin/sh", BOOT_PATH)
+    assert dict(spec.env) == {}
+    # boot ends by exec-ing labd in the foreground: it is the lab's process.
+    boot = {f.path: f.content for f in spec.files}[BOOT_PATH].decode()
+    last = boot.splitlines()[-1]
+    assert last.startswith("exec python3 ") and LABD_PATH in last and CONFIG_PATH in last
+    assert not boot.endswith("&\n") and "/etc/resolv.conf" in boot
+    # Ready only once labd has bound its sockets and created the ready file.
+    assert spec.readiness == LAB_READINESS
+    assert spec.readiness is not None
+    assert spec.readiness.argv == ("test", "-e", READY_PATH)
+    assert spec.readiness.timeout_seconds > spec.readiness.interval_seconds > 0
 
 
 def test_build_lab_spec_is_deterministic() -> None:

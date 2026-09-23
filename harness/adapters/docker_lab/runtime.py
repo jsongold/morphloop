@@ -47,8 +47,15 @@ boundaries, ADR-0009):
 - Logging driver ``none``: the main process's output is not needed (learners
   work through the terminal bridge), and it must not fill the host disk.
 
-The main process is the image's default command, started with a TTY and
-open stdin so that images whose default command is a shell keep running.
+The main process is ``spec.command`` as an argv (never a shell string), or
+the image's default command when the spec gives none. It is started with a
+TTY and open stdin so that images whose command is a shell keep running.
+When the spec declares a :class:`ReadinessProbe`, :meth:`DockerLabRuntime.start`
+runs it inside the lab every ``interval_seconds`` until it exits ``0`` and
+returns only then; if ``timeout_seconds`` pass, or the main process stops
+first, the start fails (:class:`LabNotReadyError`) and the lab is cleaned up
+like any other failed start. Without a probe, start returns as soon as the
+container is running, which only says the main process was created.
 
 Commands that time out are killed with ``SIGKILL``: every exec carries a
 random token in its environment, and on timeout a fixed script (``/bin/sh``
@@ -83,9 +90,11 @@ from harness.core.ports import (
     LabFile,
     LabInfo,
     LabNotFoundError,
+    LabNotReadyError,
     LabRuntimeError,
     LabSpec,
     LabStatus,
+    ReadinessProbe,
 )
 
 LABEL_MANAGED = "io.morphloop.lab.managed"
@@ -102,6 +111,10 @@ _KILL_BY_TOKEN_SCRIPT = (
     'kill -KILL "${d#/proc/}" 2>/dev/null; '
     "fi; done; true"
 )
+
+_READINESS_MAX_OUTPUT_BYTES = 4096
+"""Output kept from one readiness attempt; only its tail reaches the error."""
+_READINESS_ERROR_CHARS = 200
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
 _STATUS_MAP: dict[str, LabStatus] = {
@@ -124,6 +137,12 @@ def _name_suffix(lab_instance_id: str) -> str:
     if _SAFE_NAME_RE.fullmatch(lab_instance_id):
         return lab_instance_id
     return hashlib.sha256(lab_instance_id.encode()).hexdigest()[:32]
+
+
+def _tail(output: bytes) -> str:
+    """The end of a readiness attempt's output, as one printable line."""
+    text = output.decode("utf-8", errors="replace").strip()
+    return (text[-_READINESS_ERROR_CHARS:] or "no output").replace("\n", " ")
 
 
 def _files_tar(files: list[LabFile]) -> bytes:
@@ -335,6 +354,7 @@ class DockerLabRuntime:
         limits = spec.limits
         container = self._client.containers.create(
             image_ref,
+            command=None if spec.command is None else list(spec.command),
             name=f"morphloop-lab-{suffix}",
             labels=labels,
             environment=dict(spec.env),
@@ -362,6 +382,8 @@ class DockerLabRuntime:
             raise LabRuntimeError(
                 f"lab {lab_instance_id!r} did not stay running (status {container.status!r})"
             )
+        if spec.readiness is not None:
+            self._await_ready(lab_instance_id, container, spec.readiness)
         timer = threading.Timer(limits.lifetime_seconds, self._expire, args=(lab_instance_id,))
         timer.daemon = True
         with self._lock:
@@ -372,6 +394,53 @@ class DockerLabRuntime:
             runtime_ref=str(container.id),
             image_digest=spec.image.digest,
             status="running",
+        )
+
+    def _await_ready(
+        self, lab_instance_id: str, container: Container, probe: ReadinessProbe
+    ) -> None:
+        """Poll ``probe`` inside the lab until it exits 0, or give up.
+
+        Each attempt may use the whole remaining budget, so a probe that hangs
+        costs no more than ``timeout_seconds`` in total. The container is
+        re-checked before every attempt: a main process that exits (a failed
+        boot script) is reported as such instead of as a timeout.
+        """
+        deadline = time.monotonic() + probe.timeout_seconds
+        attempts = 0
+        last = "it was never run"
+        while True:
+            container.reload()
+            if container.status != "running":
+                raise LabNotReadyError(
+                    f"lab {lab_instance_id!r} stopped before it was ready "
+                    f"(status {container.status!r}); readiness probe {list(probe.argv)}"
+                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            attempts += 1
+            result = self.exec(
+                lab_instance_id,
+                ExecRequest(
+                    argv=probe.argv,
+                    timeout_seconds=remaining,
+                    max_output_bytes=_READINESS_MAX_OUTPUT_BYTES,
+                    env={},
+                    workdir=None,
+                ),
+            )
+            if not result.timed_out and result.exit_code == 0:
+                return
+            last = (
+                "it timed out"
+                if result.timed_out
+                else f"it exited {result.exit_code}: {_tail(result.stderr or result.stdout)}"
+            )
+            time.sleep(min(probe.interval_seconds, max(0.0, deadline - time.monotonic())))
+        raise LabNotReadyError(
+            f"lab {lab_instance_id!r} was not ready after {probe.timeout_seconds}s: readiness "
+            f"probe {list(probe.argv)} ran {attempts} time(s) and {last}"
         )
 
     def _ensure_image(self, repository: str, digest: str) -> str:

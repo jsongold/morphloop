@@ -36,20 +36,19 @@ one fault, and is translated into the explicit form by
 
 The health endpoint answers :data:`FAULT_FORM_HEALTH_BODY` in that form.
 
-How the lab comes up (see "Image requirements" below). ``LabSpec`` has no
-field for the lab's main command: the Docker runtime runs the image's default
-command (for ``nicolaka/netshoot`` an interactive ``zsh``). The provider
-therefore sets ``ZDOTDIR`` (zsh) and ``ENV`` (POSIX ``sh``) so that the main
-shell sources a hook which runs ``/opt/lab/bin/boot`` once per lab. ``boot``
-overwrites ``/etc/resolv.conf`` in place (Docker bind-mounts it), starts
-``labd.py`` (``domains/dns/sandbox/labd.py``) in the background and waits
-briefly until it has bound its sockets (``/opt/lab/run/ready``). This hook
-is an interim workaround until the lab Port can name a start command.
+How the lab comes up. The spec names its own main process,
+``/bin/sh /opt/lab/bin/boot`` (:data:`LAB_COMMAND`): ``boot`` overwrites
+``/etc/resolv.conf`` in place (Docker bind-mounts it), then ``exec``s
+``labd.py`` (``domains/dns/sandbox/labd.py``), which serves the zone and the
+services for the life of the lab. The spec also declares a readiness probe
+(:data:`LAB_READINESS`) on ``/opt/lab/run/ready``, the file ``labd`` creates
+once every socket is bound, so the runtime returns from ``start`` only when
+the lab really answers. The learner's interactive shell is a separate
+session opened by the terminal bridge, not this process.
 
-Image requirements: ``/bin/sh``; ``python3`` >= 3.8 (runs ``labd.py``); a
-default command that is an interactive ``zsh`` or ``sh`` (for the hook);
-``getent`` and ``dig`` for the checks; ``bash`` >= 4.4, ``od`` and ``tr`` for
-the terminal tool.
+Image requirements: ``/bin/sh`` and ``test``; ``python3`` >= 3.8 (runs
+``labd.py``); ``getent`` and ``dig`` for the checks; ``bash`` >= 4.4, ``od``
+and ``tr`` for the terminal tool.
 
 Resource limits and the default network live here as module constants for
 v0.1, because ``environment.json`` has no field for them (their final home is
@@ -70,6 +69,7 @@ from harness.core.ports.lab_runtime import (
     LabFile,
     LabSpec,
     NetworkMode,
+    ReadinessProbe,
     ResourceLimits,
 )
 
@@ -92,7 +92,18 @@ CONFIG_PATH = f"{LAB_ROOT}/lab.json"
 INITIAL_RESOLV_CONF_PATH = f"{LAB_ROOT}/resolv.conf.initial"
 RUN_DIR = f"{LAB_ROOT}/run"
 READY_PATH = f"{RUN_DIR}/ready"
-HOOK_DIR = f"{LAB_ROOT}/hook"
+
+LAB_COMMAND = ("/bin/sh", BOOT_PATH)
+"""Main process of every ``dns.resolver_lab`` lab: the boot script, which
+ends by ``exec``-ing the lab daemon."""
+
+LAB_READINESS = ReadinessProbe(
+    argv=("test", "-e", READY_PATH),
+    timeout_seconds=30.0,
+    interval_seconds=0.2,
+)
+"""Ready when ``labd`` has bound the zone server and every service socket:
+it creates :data:`READY_PATH` only then (``domains/dns/sandbox/labd.py``)."""
 
 FAULT_FORM_HEALTH_BODY = "ok\n"
 FAULT_FORM_DNS_PORT = 53
@@ -101,19 +112,16 @@ FAULTS = ("wrong_nameserver",)
 _MAX_NAMESERVERS = 3  # resolvers ignore more (MAXNS)
 _MAX_HEALTH_BODY = 4096
 
-# Runs inside the lab only. Fixed text: no pack-derived value is interpolated.
+# Runs inside the lab only, as its main process. Fixed text: no pack-derived
+# value is interpolated.
 _BOOT_SCRIPT = f"""#!/bin/sh
-# Starts the dns.resolver_lab services once per lab instance.
-mkdir {RUN_DIR} 2>/dev/null || exit 0
+# Main process of a dns.resolver_lab lab instance.
+set -e
+mkdir -p {RUN_DIR}
 # /etc/resolv.conf is bind-mounted by Docker: overwrite it in place.
 cat {INITIAL_RESOLV_CONF_PATH} > /etc/resolv.conf
-python3 {LABD_PATH} {CONFIG_PATH} </dev/null >{RUN_DIR}/labd.log 2>&1 &
-i=0
-while [ ! -e {READY_PATH} ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
-exit 0
+exec python3 {LABD_PATH} {CONFIG_PATH} </dev/null >{RUN_DIR}/labd.log 2>&1
 """.encode()
-
-_HOOK = f"[ -r {BOOT_PATH} ] && /bin/sh {BOOT_PATH}\n".encode()
 
 _LABD_SOURCE = resources.files("domains.dns.sandbox").joinpath("labd.py").read_bytes()
 
@@ -298,7 +306,7 @@ class ResolverLabFixture:
             image=image,
             limits=LAB_RESOURCE_LIMITS,
             network=args.network,
-            env={"ZDOTDIR": HOOK_DIR, "ENV": f"{HOOK_DIR}/env.sh"},
+            env={},
             files=(
                 LabFile(path=CONFIG_PATH, content=config, mode=0o644),
                 LabFile(
@@ -306,8 +314,8 @@ class ResolverLabFixture:
                 ),
                 LabFile(path=LABD_PATH, content=_LABD_SOURCE, mode=0o755),
                 LabFile(path=BOOT_PATH, content=_BOOT_SCRIPT, mode=0o755),
-                LabFile(path=f"{HOOK_DIR}/.zshenv", content=_HOOK, mode=0o644),
-                LabFile(path=f"{HOOK_DIR}/env.sh", content=_HOOK, mode=0o644),
             ),
             workdir=None,
+            command=LAB_COMMAND,
+            readiness=LAB_READINESS,
         )

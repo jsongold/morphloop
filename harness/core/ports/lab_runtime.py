@@ -10,11 +10,14 @@ Security by construction. The spec types deliberately have no field for host
 bind mounts or volumes, the Docker socket, privileged mode, added
 capabilities, devices, host networking or host PID/IPC namespaces, so core
 cannot ask for them. Files reach a lab only as bytes copied in
-(:class:`LabFile`). Commands are argv tuples, never shell strings (:data:`Argv`),
-and run only inside the lab. Adapters MUST additionally: run the lab
-unprivileged with all capabilities dropped that the image does not strictly
-need and ``no-new-privileges``; pull the image by digest only; apply every
-:class:`ResourceLimits` value; and never mount anything from the host.
+(:class:`LabFile`). Every command -- the lab's main process
+(:attr:`LabSpec.command`), its readiness probe (:class:`ReadinessProbe`) and
+each :class:`ExecRequest` -- is an argv tuple, never a shell string
+(:data:`Argv`), and runs only inside the lab. Adapters MUST additionally:
+run the lab unprivileged with all capabilities dropped that the image does
+not strictly need and ``no-new-privileges``; pull the image by digest only;
+apply every :class:`ResourceLimits` value; and never mount anything from the
+host.
 
 Lab instance ids are assigned by core (ADR-0016: IDs are arguments, not a
 Port). Resetting creates a new LabInstance with a new id (``lab.reset`` /
@@ -117,12 +120,53 @@ class LabFile:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ReadinessProbe:
+    """How a runtime decides that a lab's own services are up (ADR-0009).
+
+    A command run inside the lab like any other (an :data:`Argv`, never a
+    shell string), retried every ``interval_seconds`` until it exits ``0`` or
+    ``timeout_seconds`` pass since the main process started. The first exit
+    code ``0`` means ready; a lab that never gets there fails to start
+    (:class:`LabNotReadyError`).
+
+    The Port deliberately knows nothing about what "up" means in a domain --
+    a listening port, a zone that answers, a migrated database. Naming one
+    command is enough, and choosing it belongs to the domain adapter's
+    fixture provider, which also knows what the image provides.
+    """
+
+    argv: Argv
+    timeout_seconds: float
+    interval_seconds: float
+
+    def __post_init__(self) -> None:
+        check_argv(self.argv)
+        if self.timeout_seconds <= 0 or self.interval_seconds <= 0:
+            raise ValueError("timeout_seconds and interval_seconds must be positive")
+        if self.interval_seconds > self.timeout_seconds:
+            raise ValueError("interval_seconds must not exceed timeout_seconds")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class LabSpec:
     """Everything needed to start one lab instance.
 
     ``network``: ``"none"`` gives loopback only; ``"isolated"`` gives a private
     per-lab network with no route to the host or to other labs, and no internet
     egress. ``workdir`` ``None`` means the image default.
+
+    ``command`` is the argv that runs as the lab's main process, an
+    :data:`Argv` like every other command here, so a whole command line can
+    never be handed to a host shell (ADR-0009). ``None`` means the image's
+    default command. The lab lives exactly as long as that process does.
+
+    ``readiness`` declares when the lab is usable; ``None`` means "running is
+    ready", i.e. the runtime returns from :meth:`LabRuntime.start` as soon as
+    the main process is up. A lab whose services take time to bind should
+    declare a probe instead of leaving the first caller to race them.
+
+    Both default to ``None`` so that a spec that declares neither behaves
+    exactly as it did before they existed.
     """
 
     image: ImageRef
@@ -131,10 +175,14 @@ class LabSpec:
     env: Mapping[str, str]
     files: Sequence[LabFile]
     workdir: str | None
+    command: Argv | None = None
+    readiness: ReadinessProbe | None = None
 
     def __post_init__(self) -> None:
         if self.workdir is not None:
             _check_container_path("workdir", self.workdir)
+        if self.command is not None:
+            check_argv(self.command)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -200,21 +248,34 @@ class LabNotFoundError(LabRuntimeError):
     """The lab instance does not exist or is no longer running."""
 
 
+class LabNotReadyError(LabRuntimeError):
+    """The lab's main process started but its :class:`ReadinessProbe` never
+    succeeded within ``timeout_seconds``. The lab is destroyed, as for any
+    other failed start."""
+
+
 class LabRuntime(Protocol):
     """Disposable, isolated lab instances (synchronous; see ``harness.core.ports``)."""
 
     def start(self, lab_instance_id: str, spec: LabSpec) -> LabInfo:
-        """Start a new lab from ``spec`` and return once it is running.
+        """Start a new lab from ``spec`` and return once it is ready.
+
+        The main process is ``spec.command`` (the image default when it is
+        ``None``). When ``spec.readiness`` is given, the runtime polls that
+        probe and returns only after it succeeds, so a caller that gets a
+        :class:`LabInfo` can use the lab's services immediately.
 
         Raises :class:`LabRuntimeError` if the id is already in use or the lab
-        cannot be started; a partially started lab is cleaned up first.
+        cannot be started, and :class:`LabNotReadyError` if the probe does not
+        succeed in time; a partially started lab is cleaned up first.
         """
         ...
 
     def reset(self, lab_instance_id: str, *, new_lab_instance_id: str, spec: LabSpec) -> LabInfo:
         """Destroy ``lab_instance_id`` and start a fresh lab from ``spec``.
 
-        Nothing from the old instance survives. Returns the new instance.
+        Nothing from the old instance survives. The new lab is started exactly
+        as :meth:`start` does, readiness included. Returns the new instance.
         """
         ...
 
