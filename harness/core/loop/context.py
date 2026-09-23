@@ -113,6 +113,23 @@ def tutor_reference_ids(
     return ids
 
 
+def build_memo_context(
+    *, highlight: JsonObject, thread: Sequence[StoredEvent]
+) -> dict[str, JsonValue]:
+    """The memo summarizer's context: the highlight and its thread's chat so far.
+
+    Learner-facing material only (AC-J6): the highlight payload and the stored
+    chat events of the thread up to and including the reply that triggered the
+    memo. The reference solution is never on this path; call
+    :func:`assert_no_reference_solution` when a mission is active, as the tutor
+    does.
+    """
+    return {
+        "highlight": to_plain_object(highlight),
+        "thread": [event_summary(event) for event in thread],
+    }
+
+
 def assert_no_reference_solution(context: JsonObject, solution: ReferenceSolution | None) -> None:
     """Fail if the solution's explanation leaked into a tutor context (AC-J6)."""
     if solution is None:

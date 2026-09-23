@@ -48,7 +48,9 @@ class AttemptStartRequest(_Body):
 class ClientEventRequest(_Body):
     """``ClientEventRequest``: the producer part of a learner UI event append."""
 
-    event_type: Literal["content.highlighted", "content.opened", "visualization.step_selected"]
+    event_type: Literal[
+        "content.highlighted", "content.opened", "visualization.step_selected", "memo.edited"
+    ]
     event_version: int
     occurred_at: AwareDatetime
     idempotency_key: str

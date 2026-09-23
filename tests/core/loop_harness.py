@@ -144,7 +144,11 @@ REFERENCE: dict[str, Any] = {
     "sections": [{"kind": "what", "body": "A stub resolver forwards queries to a nameserver."}],
 }
 
-LAYOUT: dict[str, Any] = {"panes": [{"id": "terminal", "kind": "terminal"}]}
+LAYOUT: dict[str, Any] = {
+    "layout": {"side": {"component": "concept_pane"}},
+    "panes": [{"id": "terminal", "kind": "terminal"}],
+    "memo": {"region": "side"},
+}
 
 
 def _activity() -> dict[str, Any]:
@@ -212,6 +216,15 @@ def _manifest(files: Mapping[str, Any]) -> dict[str, Any]:
                     "recent_events_limit": 30,
                 },
             },
+            "memo_summarizer": {
+                "implementation": "llm-memo-summarizer@0.1.0",
+                "llm": _llm("memo-summary"),
+                "output_schema": (
+                    "https://morphloop.dev/contracts/schemas/llm/memo_summarizer.note/1.json"
+                ),
+                "context_budget_tokens": 4000,
+                "options": {},
+            },
         },
         "files": dict(files),
     }
@@ -233,6 +246,7 @@ def pack_files() -> dict[str, bytes]:
         "prompts/learner-model-update.md": "learner-model-update",
         "prompts/evaluator-judgment.md": "evaluator-judgment",
         "prompts/tutor-reply.md": "tutor-reply",
+        "prompts/memo-summary.md": "memo-summary",
     }
     index: dict[str, Any] = {path: {"kind": kind} for path, (kind, _) in documents.items()}
     for path, prompt_id in prompts.items():
@@ -396,6 +410,15 @@ def _tutor_handler(request: LLMRequest) -> JsonObject:
     return tutor_output()
 
 
+def memo_output(*, title: str = "Resolver note", body: str = "A short note.") -> JsonObject:
+    """A schema-valid ``memo_summarizer.note`` output."""
+    return {"title": title, "body": body}
+
+
+def _memo_summarizer_handler(request: LLMRequest) -> JsonObject:
+    return memo_output()
+
+
 class RoleLLM:
     """An :class:`~harness.core.ports.LLMProvider` answering per role.
 
@@ -408,6 +431,7 @@ class RoleLLM:
             "evaluator": _evaluator_handler,
             "learner_model": _learner_model_handler,
             "tutor": _tutor_handler,
+            "memo_summarizer": _memo_summarizer_handler,
             **handlers,
         }
         self.requests: list[LLMRequest] = []

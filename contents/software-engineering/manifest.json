@@ -88,6 +88,22 @@
       "output_schema": "https://morphloop.dev/contracts/schemas/llm/generator.activity_candidate/1.json",
       "context_budget_tokens": 16000,
       "options": {}
+    },
+    "memo_summarizer": {
+      "implementation": "llm-memo-summarizer@0.1.0",
+      "llm": {
+        "provider": "openai",
+        "model": "gpt-5.4-2026-03-05",
+        "prompt_id": "memo-summary",
+        "prompt_version": "1",
+        "generation_parameters": {
+          "max_tokens": 2000,
+          "reasoning_effort": "low"
+        }
+      },
+      "output_schema": "https://morphloop.dev/contracts/schemas/llm/memo_summarizer.note/1.json",
+      "context_budget_tokens": 6000,
+      "options": {}
     }
   },
   "content_generation": {
@@ -123,6 +139,11 @@
     "prompts/learner-model-update.md": {
       "kind": "prompt",
       "prompt_id": "learner-model-update",
+      "prompt_version": "1"
+    },
+    "prompts/memo-summary.md": {
+      "kind": "prompt",
+      "prompt_id": "memo-summary",
       "prompt_version": "1"
     },
     "prompts/tutor-reply.md": {

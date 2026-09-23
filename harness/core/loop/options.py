@@ -1,9 +1,9 @@
 """Pack-declared options of the roles the loop drives (ADR-0002, ADR-0004).
 
 The harness holds no defaults: a missing option is an error, never a fallback.
-v0.1 drives two roles from here, ``evaluator`` and ``tutor``; ``learner_model``
-is resolved through the algorithm registry
-(:func:`harness.core.learner_model.resolve.load_learner_model`).
+v0.1 drives three roles from here, ``evaluator``, ``tutor`` and the optional
+``memo_summarizer``; ``learner_model`` is resolved through the algorithm
+registry (:func:`harness.core.learner_model.resolve.load_learner_model`).
 
 Options honoured (``contents/<pack>/manifest.json``, ``registry.<role>.options``):
 
@@ -31,10 +31,13 @@ from harness.core.registry.algorithms import RegistrySelection
 
 EVALUATOR_ROLE = "evaluator"
 TUTOR_ROLE = "tutor"
+MEMO_SUMMARIZER_ROLE = "memo_summarizer"
 EVALUATOR_IMPLEMENTATION = "llm-evaluator@0.1.0"
 TUTOR_IMPLEMENTATION = "llm-tutor@0.1.0"
+MEMO_SUMMARIZER_IMPLEMENTATION = "llm-memo-summarizer@0.1.0"
 EVALUATOR_SCHEMA_ID = "https://morphloop.dev/contracts/schemas/llm/evaluator.judgment/1.json"
 TUTOR_SCHEMA_ID = "https://morphloop.dev/contracts/schemas/llm/tutor.reply/1.json"
+MEMO_SUMMARIZER_SCHEMA_ID = "https://morphloop.dev/contracts/schemas/llm/memo_summarizer.note/1.json"
 
 _EVALUATOR_OPTIONS = frozenset({"include_reference_solution"})
 _TUTOR_OPTIONS = frozenset(
@@ -46,6 +49,7 @@ _TUTOR_OPTIONS = frozenset(
         "recent_events_limit",
     }
 )
+_MEMO_SUMMARIZER_OPTIONS: frozenset[str] = frozenset()
 
 
 class PackOptionError(ValueError):
@@ -205,6 +209,34 @@ def role_selection(registry: Mapping[str, RegistrySelection], role: str) -> Regi
     if selection is None:
         raise PackOptionError(f"the pack declares no registry.{role}")
     return selection
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MemoSummarizerOptions:
+    """Parsed ``registry.memo_summarizer`` of one pack."""
+
+    selection: RegistrySelection
+
+    @property
+    def context_budget_tokens(self) -> int:
+        return self.selection.context_budget_tokens
+
+    @classmethod
+    def parse(cls, selection: RegistrySelection) -> MemoSummarizerOptions:
+        _check_implementation(selection, MEMO_SUMMARIZER_IMPLEMENTATION)
+        _check_output_schema(selection, MEMO_SUMMARIZER_SCHEMA_ID)
+        _options(selection, _MEMO_SUMMARIZER_OPTIONS)
+        return cls(selection=selection)
+
+
+def memo_summarizer_options(
+    registry: Mapping[str, RegistrySelection],
+) -> MemoSummarizerOptions | None:
+    """The pack's summarizer selection, or ``None`` when the pack records no memos."""
+    selection = registry.get(MEMO_SUMMARIZER_ROLE)
+    if selection is None:
+        return None
+    return MemoSummarizerOptions.parse(selection)
 
 
 def evaluator_options(registry: Mapping[str, RegistrySelection]) -> EvaluatorOptions:

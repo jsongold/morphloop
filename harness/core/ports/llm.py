@@ -31,7 +31,7 @@ from typing import Literal, Protocol
 
 from harness.core.ports.json_types import JsonObject, PlainJson
 
-type LLMRole = Literal["tutor", "evaluator", "learner_model", "generator"]
+type LLMRole = Literal["tutor", "evaluator", "learner_model", "generator", "memo_summarizer"]
 type MessageRole = Literal["system", "user", "assistant"]
 type GenerationParameter = str | int | float | bool | None
 

@@ -1,6 +1,6 @@
-"""The two LLM roles the loop calls directly: evaluator and tutor (ADR-0013).
+"""The three LLM roles the loop calls directly: evaluator, tutor and the memo summarizer (ADR-0013).
 
-Both follow the same shape as the registered learner model
+All follow the same shape as the registered learner model
 (:mod:`harness.core.learner_model.llm`): the pack declares the provider, model,
 prompt and generation parameters; core builds one structured-output request,
 checks the size against the pack's context budget, validates the output against
@@ -8,10 +8,10 @@ its contract schema and then applies the semantic rules no schema can express
 (``contracts/schemas/llm/README.md``). An output that fails changes no state
 (AC-E4): these functions raise and append nothing.
 
-The learner model stays in the algorithm registry (ADR-0004). Evaluator and
-tutor are not registry roles in v0.1 (:meth:`AlgorithmRegistry.governed_roles`),
-so their selections are read here and their implementation name is checked
-against the one v0.1 provides.
+The learner model stays in the algorithm registry (ADR-0004). Evaluator, tutor
+and the memo summarizer are not registry roles in v0.1
+(:meth:`AlgorithmRegistry.governed_roles`), so their selections are read here
+and their implementation name is checked against the one v0.1 provides.
 """
 
 from __future__ import annotations
@@ -25,8 +25,10 @@ from harness.core.contract_schemas import ContractSchemas, ContractValidationErr
 from harness.core.loop.errors import InvalidRequestError, LLMFailedError
 from harness.core.loop.options import (
     EVALUATOR_SCHEMA_ID,
+    MEMO_SUMMARIZER_SCHEMA_ID,
     TUTOR_SCHEMA_ID,
     EvaluatorOptions,
+    MemoSummarizerOptions,
     TutorOptions,
 )
 from harness.core.ports import (
@@ -104,6 +106,15 @@ class TutorReply:
 
     text: str
     references: tuple[JsonObject, ...]
+    provenance: LLMProvenance
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MemoNote:
+    """Validated ``memo_summarizer.note`` output plus the provenance to record."""
+
+    title: str
+    body: str
     provenance: LLMProvenance
 
 
@@ -274,6 +285,49 @@ class LLMTutor:
         return TutorReply(
             text=str(output["text"]), references=tuple(references), provenance=provenance
         )
+
+
+class LLMMemoSummarizer:
+    """``llm-memo-summarizer@0.1.0``: writes one learning note per highlight thread."""
+
+    def __init__(
+        self,
+        *,
+        options: MemoSummarizerOptions,
+        prompt: str,
+        llm: LLMProvider,
+        schemas: ContractSchemas,
+    ) -> None:
+        if not prompt:
+            raise InvalidRequestError("the memo summarizer prompt is empty")
+        self._options = options
+        self._prompt = prompt
+        self._llm = llm
+        self._schemas = schemas
+        self._output_schema = schemas.bundle(MEMO_SUMMARIZER_SCHEMA_ID)
+
+    def build_request(self, context: JsonObject) -> LLMRequest:
+        user = render_context(context)
+        _check_budget(
+            "memo_summarizer", self._options.context_budget_tokens, self._prompt, user
+        )
+        return LLMRequest(
+            role="memo_summarizer",
+            llm=self._options.selection.llm,
+            messages=(
+                LLMMessage(role="system", content=self._prompt),
+                LLMMessage(role="user", content=user),
+            ),
+            output_schema_id=MEMO_SUMMARIZER_SCHEMA_ID,
+            output_schema=self._output_schema,
+        )
+
+    def summarize(self, context: JsonObject) -> MemoNote:
+        """One note. Raises :class:`LLMFailedError` without changing state."""
+        output, provenance = _call(
+            self._llm, self.build_request(context), self._schemas, MEMO_SUMMARIZER_SCHEMA_ID
+        )
+        return MemoNote(title=str(output["title"]), body=str(output["body"]), provenance=provenance)
 
 
 def json_value(value: Mapping[str, JsonValue]) -> JsonValue:
