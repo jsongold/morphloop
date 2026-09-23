@@ -283,10 +283,9 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
   // ---------- client events ----------
 
   const appendEvent = useCallback(
-    async (req: Omit<ClientEventRequest, "occurred_at" | "idempotency_key" | "attempt_id" | "event_version">) => {
+    async (req: Omit<ClientEventRequest, "occurred_at" | "idempotency_key" | "attempt_id">) => {
       const body = {
         ...req,
-        event_version: 1,
         occurred_at: nowTimestamp(),
         idempotency_key: newIdempotencyKey(),
         attempt_id: attempt && attempt.status !== "completed" ? attempt.attempt_id : null,
@@ -305,6 +304,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
       setSteps((s) => ({ ...s, [vizId]: stepId }));
       appendEvent({
         event_type: "visualization.step_selected",
+        event_version: 1,
         payload: { visualization_id: vizId, content_version: vizDoc.content_version, step_id: stepId },
       }).catch((e) => setActionError(errText(e)));
     },
@@ -320,6 +320,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
         setOpenDoc(doc);
         await appendEvent({
           event_type: "content.opened",
+          event_version: 1,
           payload: {
             content_id: summary.definition_id,
             content_version: summary.content_version,
@@ -339,6 +340,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
       try {
         const ev = (await appendEvent({
           event_type: "content.highlighted",
+          event_version: 2,
           payload: {
             highlight_id: newHighlightId(),
             source: t.source,
@@ -399,6 +401,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
       try {
         await appendEvent({
           event_type: "memo.edited",
+          event_version: 1,
           payload: { memo_id: memoId, title, body },
         });
         setMemos((prev) =>
