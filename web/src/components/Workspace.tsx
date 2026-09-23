@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api";
 import { newHighlightId, newIdempotencyKey, nowTimestamp } from "@/lib/ids";
 import { interpretLayout, modeView, type InterpretedLayout, type TocItem } from "@/lib/layout";
 import { readSelection, type SelectionTarget } from "@/lib/selection";
+import { normalizeHighlightPayload } from "@/lib/types";
 import type {
   ActivityView,
   AttemptState,
@@ -140,7 +141,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
         const catalog = content.items;
         lastPos.current = tl.last_position;
         setTimeline(tl.events);
-        setHighlights(hls.events);
+        setHighlights(hls.events.map((h) => ({ ...h, payload: normalizeHighlightPayload(h.payload) })));
         setChat(chatRes.events);
         setMemos(memoRes.memos);
         setAttempt(state.active_attempt);

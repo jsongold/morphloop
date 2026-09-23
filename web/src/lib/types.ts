@@ -116,6 +116,25 @@ export function packSourceContentVersion(s: HighlightSource): VersionLabel | nul
   return s.kind === "pack" ? s.content_version : null;
 }
 
+/**
+ * A `content.highlighted` payload in v2 shape. The server serves stored events
+ * as-is, so a v1 highlight (top-level `content_id`/`content_version`, no
+ * `source`) survives old sessions; it reads as `source: {kind: "pack", ...}`
+ * (contracts/schemas/events/payloads/content.highlighted/2.json).
+ */
+export function normalizeHighlightPayload(p: ContentHighlightedPayload): ContentHighlightedPayload {
+  if ((p as ContentHighlightedPayload & { source?: unknown }).source) return p;
+  const legacy = p as unknown as { content_id?: string; content_version?: string };
+  return {
+    ...p,
+    source: {
+      kind: "pack",
+      content_id: legacy.content_id ?? "",
+      content_version: legacy.content_version ?? "",
+    },
+  } as ContentHighlightedPayload;
+}
+
 export interface ContentHighlightedPayload {
   highlight_id: HighlightId;
   source: HighlightSource;
