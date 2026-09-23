@@ -46,6 +46,7 @@ path and hash, and never merged into the activity document (AC-J6).
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -88,6 +89,7 @@ ACTIVITY_SCHEMA_ID = ContractSchemas.id_for("schemas/pack/activity-definition.js
 ENVIRONMENT_SCHEMA_ID = ContractSchemas.id_for("schemas/pack/environment.json")
 SOLUTION_SCHEMA_ID = ContractSchemas.id_for("schemas/pack/reference-solution.json")
 RECORD_SCHEMA_ID = ContractSchemas.id_for("schemas/pack/generation-record.json")
+VISUALIZATION_SCHEMA_ID = ContractSchemas.id_for("schemas/pack/visualization.json")
 
 GENERATOR_ROLE = "generator"
 AUTHORING = "authoring"
@@ -99,6 +101,7 @@ FIXED_STEP = "checks_pass_after_solution"
 
 ACTIVITY_DIR = "activities"
 ENVIRONMENT_DIR = "environments"
+VISUALIZATION_DIR = "visualizations"
 ID_PREFIX = "gen-"
 MAX_AUTO_SUFFIX = 999
 
@@ -189,6 +192,7 @@ class _Accepted:
     activity: Document
     environment: Document | None
     solution: Document
+    visualizations: tuple[Document, ...]
     steps: tuple[Document, ...]
     provenance: LLMProvenance
 
@@ -296,6 +300,9 @@ class ActivityGenerator:
                     template=template,
                     activity_id=activity_id,
                     paths=paths,
+                    visualizations={
+                        key: _obj(f.content) for key, f in by_kind.get("visualization", {}).items()
+                    },
                 )
             except _Rejected as exc:
                 rejected.append(
@@ -461,6 +468,7 @@ class ActivityGenerator:
         template: Document,
         activity_id: str,
         paths: _Paths,
+        visualizations: Mapping[str, Document],
     ) -> _Accepted:
         output = candidate.output
         assert output is not None
@@ -493,10 +501,12 @@ class ActivityGenerator:
             solution_path=paths.solution,
             solution_hash=document_hash(solution),
         )
+        bound = _bind_visualizations(activity, environment, visualizations)
         documents: list[tuple[Document, str, str]] = [
             (activity, ACTIVITY_SCHEMA_ID, "activity"),
             (solution, SOLUTION_SCHEMA_ID, "reference solution"),
         ]
+        documents += [(v, VISUALIZATION_SCHEMA_ID, f"visualization {v['id']}") for v in bound]
         if environment is not None:
             documents.append((environment, ENVIRONMENT_SCHEMA_ID, "environment"))
         for document, schema_id, where in documents:
@@ -527,6 +537,7 @@ class ActivityGenerator:
             activity=activity,
             environment=environment,
             solution=solution,
+            visualizations=tuple(bound),
             steps=tuple(steps),
             provenance=candidate.provenance,
         )
@@ -694,6 +705,9 @@ class ActivityGenerator:
         if accepted.environment is not None:
             outputs.append(_output("environment", paths.environment, accepted.environment))
         outputs.append(_output("reference_solution", paths.solution, accepted.solution))
+        outputs += [
+            _output("visualization", _visualization_path(v), v) for v in accepted.visualizations
+        ]
         record: Document = {
             "timing": AUTHORING,
             "template": {
@@ -758,7 +772,10 @@ def _refuse_existing(
     on_disk: set[str],
 ) -> None:
     """A finalized Definition is immutable: never write over one (ADR-0014)."""
-    clash = sorted(on_disk & set(paths.every()))
+    bound_prefix = f"{VISUALIZATION_DIR}/{activity_id}."
+    clash = sorted(
+        on_disk & set(paths.every()) | {p for p in on_disk if p.startswith(bound_prefix)}
+    )
     if clash:
         raise CommandError(
             f"{location} already holds {clash}; a finalized Definition is never rewritten "
@@ -902,6 +919,62 @@ def _activity_document(
     return document
 
 
+def _visualization_path(visualization: Document) -> str:
+    return f"{VISUALIZATION_DIR}/{_text(visualization['id'])}.json"
+
+
+def _bind_visualizations(
+    activity: Document, environment: Document | None, sources: Mapping[str, Document]
+) -> list[Document]:
+    """Per-activity copies of the bound visualizations the activity names (AC-C2, AC-C3).
+
+    A visualization with ``environment_bindings`` shows literal lab values (a
+    host, a port...). Its copy swaps each literal for this environment's value,
+    so every command in it targets the generated lab; the activity then names
+    the copy. Unbound visualizations are shared as they are.
+    """
+    remediation = activity.get("remediation")
+    if not isinstance(remediation, dict):
+        return []
+    params = _obj(environment["params"]) if environment is not None else {}
+    bound: list[Document] = []
+    names: list[PlainJson] = []
+    for entry in _items(remediation.get("visualizations")):
+        source = sources.get(_text(entry))
+        bindings = source.get("environment_bindings") if source is not None else None
+        if source is None or not isinstance(bindings, dict):
+            names.append(entry)
+            continue
+        missing = sorted(set(bindings) - set(params))
+        if missing:
+            raise _Rejected(
+                ADAPTER_STEP,
+                f"visualization {entry!r} shows environment params {missing}, "
+                "which the environment does not set",
+            )
+        swap = {str(old): str(params[name]) for name, old in bindings.items()}
+        copy = _obj(_replace_literals(source, swap))
+        copy["id"] = f"{activity['id']}.{entry}"
+        copy["environment_bindings"] = {name: params[name] for name in bindings}
+        bound.append(copy)
+        names.append(copy["id"])
+    activity["remediation"] = {**remediation, "visualizations": names}
+    return bound
+
+
+def _replace_literals(value: PlainJson, swap: Mapping[str, str]) -> PlainJson:
+    """Every string in ``value`` with each ``swap`` key replaced at once, longest first."""
+    # ponytail: plain literal replacement; a bound literal must not occur as unrelated text.
+    pattern = re.compile("|".join(re.escape(old) for old in sorted(swap, key=len, reverse=True)))
+    if isinstance(value, str):
+        return pattern.sub(lambda m: swap[m.group()], value)
+    if isinstance(value, list):
+        return [_replace_literals(v, swap) for v in value]
+    if isinstance(value, dict):
+        return {k: _replace_literals(v, swap) for k, v in value.items()}
+    return value
+
+
 def _output(kind: str, path: str, document: Document) -> PlainJson:
     return {
         "kind": kind,
@@ -928,6 +1001,9 @@ def _pending(
     if accepted.environment is not None:
         files[paths.environment] = dump_document(accepted.environment)
         index[paths.environment] = {"kind": "environment"}
+    for visualization in accepted.visualizations:
+        files[_visualization_path(visualization)] = dump_document(visualization)
+        index[_visualization_path(visualization)] = {"kind": "visualization"}
     manifest = dict(parsed.manifest)
     merged = {**_obj(manifest["files"]), **index}
     manifest["files"] = {path: merged[path] for path in sorted(merged)}

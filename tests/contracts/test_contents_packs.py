@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -310,3 +311,35 @@ def test_llm_output_schemas_exist(pack: Path) -> None:
         if ref is None:
             continue
         assert (CONTRACTS_DIR / ref.removeprefix(ID_BASE)).is_file(), ref
+
+
+@pack_param
+def test_visualizations_target_the_activity_lab(pack: Path) -> None:
+    """Every host, port and URL a named visualization shows is the activity's lab's (AC-C2/C3)."""
+    envs = _docs(pack, "environment")
+    vizzes = _docs(pack, "visualization")
+    for activity in _docs(pack, "activity").values():
+        params = envs[activity["environment"]]["params"] if "environment" in activity else {}
+        for viz_id in activity.get("remediation", {}).get("visualizations", []):
+            viz = vizzes[viz_id]
+            where = f"{activity['id']} -> {viz_id}"
+            for name, value in viz.get("environment_bindings", {}).items():
+                assert params.get(name) == value, f"{where}: {name}"
+            if "zone" not in params:
+                continue
+            text = json.dumps(viz)
+            service, port = params["service_name"], params["service_port"]
+            hosts = set(
+                re.findall(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*\." + re.escape(params["zone"]), text)
+            )
+            assert hosts == {service}, f"{where}: hosts {hosts}"
+            ports = set(re.findall(r"(?:>|" + re.escape(service) + r"):(\d+)", text))
+            assert ports == {str(port)}, f"{where}: ports {ports}"
+            argvs = [
+                arg
+                for step in viz["diagram"]["steps"]
+                for obs in step.get("reality", {}).get("observe", [])
+                for arg in obs["argv"]
+            ]
+            urls = {a for a in argvs if "://" in a}
+            assert urls == {f"http://{service}:{port}{params['health_path']}"}, f"{where}: {urls}"

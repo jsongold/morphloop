@@ -411,3 +411,49 @@ def test_a_second_run_writes_a_new_id_instead() -> None:
 
     assert result.activity_id == f"gen-{TEMPLATE_ID}-002"
     assert set(again.writer.written) & set(first.writer.written) == {"manifest.json"}
+
+
+# --- visualizations bound to lab values --------------------------------------
+
+VIZ_PATH = "visualizations/dns-resolution-flow.json"
+BOUND_VIZ_ID = f"{ACTIVITY_ID}.dns-resolution-flow"
+BOUND_VIZ_PATH = f"visualizations/{BOUND_VIZ_ID}.json"
+
+
+def _bound_pack() -> Files:
+    """The contract pack with its visualization bound to the hand-authored lab's host."""
+    files = pack_files()
+    generated = [p for p in files if "gen-dns-search-domain-001" in p]
+    for path in generated:
+        del files[path]
+    manifest = load(files, "manifest.json")
+    for path in generated:
+        del manifest["files"][path]
+    viz = load(files, VIZ_PATH)
+    viz["environment_bindings"] = {"service_name": SERVICE_NAME}
+    files["manifest.json"] = json.dumps(manifest).encode()
+    files[VIZ_PATH] = json.dumps(viz).encode()
+    return files
+
+
+def test_a_bound_visualization_is_copied_with_the_generated_lab_values() -> None:
+    other = candidate()
+    other["fixtures"][0]["params"][1]["value"] = "ledger.internal"
+    harness = Harness([other], files=_bound_pack())
+
+    result = harness.run(activity_id=ACTIVITY_ID)
+
+    assert BOUND_VIZ_PATH in result.written
+    written = harness.written()
+    activity = load(written, ACTIVITY_PATH)
+    assert activity["remediation"]["visualizations"] == [BOUND_VIZ_ID]
+    copy = load(written, BOUND_VIZ_PATH)
+    assert copy["environment_bindings"] == {"service_name": "ledger.internal"}
+    text = json.dumps(copy)
+    assert SERVICE_NAME not in text
+    assert "ledger.internal" in text
+    record = load(written, RECORD_PATH)
+    assert {"kind": "visualization", "path": BOUND_VIZ_PATH}.items() <= next(
+        o for o in record["outputs"] if o["kind"] == "visualization"
+    ).items()
+    assert importer_factory(adapters())(pack_source(written)).import_pack(LOCATION).created

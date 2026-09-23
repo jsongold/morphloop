@@ -69,7 +69,8 @@
             "enum": [
               "activity",
               "environment",
-              "reference_solution"
+              "reference_solution",
+              "visualization"
             ]
           },
           "path": {

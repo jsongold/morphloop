@@ -27,6 +27,25 @@
         "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/skill_id"
       }
     },
+    "environment_bindings": {
+      "description": "Literal values this visualization shows that come from an environment's fixture params (param name -> value), so its commands target the real lab (AC-C2, AC-C3). Importer check: an activity may reference this visualization only if its environment has exactly these param values. The authoring generator instantiates a per-activity copy by replacing each bound literal with the generated environment's value.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      }
+    },
     "diagram": {
       "type": "object",
       "required": [

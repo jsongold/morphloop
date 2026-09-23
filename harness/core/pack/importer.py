@@ -425,6 +425,24 @@ class PackImporter:
             if "environment" in doc:
                 exists("environment", str(doc["environment"]), f.path, "environment")
             remediation(doc, f.path)
+            # A visualization's commands must target this activity's real lab (AC-C2/C3).
+            env_file = by_kind.get("environment", {}).get(str(doc.get("environment")))
+            env_params = _obj(_obj(env_file.content)["params"]) if env_file else {}
+            rem = doc.get("remediation")
+            viz_ids = _strs(rem.get("visualizations")) if isinstance(rem, dict) else []
+            for ident in viz_ids:
+                viz = by_kind.get("visualization", {}).get(ident)
+                bindings = _obj(viz.content).get("environment_bindings") if viz else None
+                if not isinstance(bindings, dict):
+                    continue
+                for name, value in bindings.items():
+                    if env_params.get(name) != value:
+                        problems.add(
+                            "binding_mismatch",
+                            f.path,
+                            f"remediation.visualizations: {ident!r} shows {name}={value!r}, "
+                            f"the activity's environment has {env_params.get(name)!r}",
+                        )
             origin = doc.get("origin")
             if isinstance(origin, dict) and origin.get("type") == "generated":
                 exists("activity_template", str(origin.get("template_id")), f.path, "origin")

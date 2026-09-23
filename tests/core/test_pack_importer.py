@@ -389,3 +389,14 @@ def test_jcs_sorts_keys_by_utf16_and_escapes_like_ecmascript() -> None:
     keys = json.loads(canonicalize(value).decode())
     assert list(keys) == ["\r", "1", "\u0080", "ö", "€", "\U0001f600", "דּ"]
     assert canonicalize('a"\\\n\x01é').decode() == '"a\\"\\\\\\n\\u0001é"'
+
+
+def test_a_visualization_bound_to_other_lab_values_is_rejected() -> None:
+    # The fixture's generated activity serves "api", not "api.internal" (AC-C2, AC-C3).
+    viz = "visualizations/dns-resolution-flow.json"
+    files = _edit(
+        _files(), viz, lambda d: d.update(environment_bindings={"service_name": "api.internal"})
+    )
+    problems = _refused(files)
+    assert ("binding_mismatch", "activities/gen-dns-search-domain-001.json") in problems
+    assert ("binding_mismatch", ACTIVITY) not in problems

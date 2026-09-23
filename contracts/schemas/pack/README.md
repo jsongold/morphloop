@@ -133,7 +133,11 @@ generic visualization language. A step's optional `reality` holds `mechanism`,
 `observe` (argv plus purpose, run in the attempt's lab terminal) and
 `artifacts` (a display-only locator of observable state). At least one step
 must carry `reality`. Step ids are what `visualization.step_selected` records.
-`version` is its `content_version`.
+`version` is its `content_version`. Optional `environment_bindings` names the
+environment params whose literal values the visualization shows (host, port,
+path); the authoring generator writes a per-activity copy with the generated
+environment's values (`visualizations/<activity-id>.<viz-id>.json`, recorded as
+a `visualization` output) and the activity names that copy.
 
 **Checks vs rubric.** The deterministic success checks, with their params,
 live on the activity. The rubric holds only what the LLM judges on top of the
@@ -149,6 +153,9 @@ These rules cross files or need a registry:
 - referenced skills, activities, environments, evaluators, visualizations,
   references and prompts exist;
 - visualization `from`/`to` name declared actors;
+- a visualization an activity names shows that activity's lab: each
+  `environment_bindings` entry equals the activity environment's param
+  (`binding_mismatch`);
 - adapter items are registered by an adapter in `domain_adapters` whose version
   satisfies the range;
 - the registry implementation is registered and its `options` are valid;

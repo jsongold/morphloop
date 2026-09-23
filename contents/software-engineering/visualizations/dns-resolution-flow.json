@@ -1,10 +1,15 @@
 {
   "id": "dns-resolution-flow",
-  "version": "1",
-  "title": "How api.corp.internal becomes an address",
+  "version": "2",
+  "title": "How ledger.corp.internal becomes an address",
   "skills": [
     "network.dns.resolution"
   ],
+  "environment_bindings": {
+    "service_name": "ledger.corp.internal",
+    "service_port": 9093,
+    "health_path": "/readyz"
+  },
   "diagram": {
     "type": "sequence",
     "actors": [
@@ -34,7 +39,7 @@
         "id": "lookup-call",
         "from": "app",
         "to": "libc",
-        "label": "getaddrinfo(\"api.corp.internal\")",
+        "label": "getaddrinfo(\"ledger.corp.internal\")",
         "explanation": "The application never speaks DNS. It hands the name to the C library and waits for a list of addresses.",
         "reality": {
           "mechanism": "`curl` calls `getaddrinfo()` in libc. This lab runs Alpine, whose libc is musl: the lookup reads files and sends packets directly, with no NSS modules and no `/etc/nsswitch.conf` involvement.",
@@ -45,16 +50,16 @@
                 "-sv",
                 "--max-time",
                 "5",
-                "http://api.corp.internal:8080/health"
+                "http://ledger.corp.internal:9093/readyz"
               ],
               "purpose": "See where the request stops: before or after the name is resolved.",
-              "look_for": "`Could not resolve host` means the lookup failed; `Trying <address>:8080` means it succeeded."
+              "look_for": "`Could not resolve host` means the lookup failed; `Trying <address>:9093` means it succeeded."
             },
             {
               "argv": [
                 "getent",
                 "hosts",
-                "api.corp.internal"
+                "ledger.corp.internal"
               ],
               "purpose": "Run the same libc lookup the application uses, without HTTP.",
               "look_for": "An address line on success; no output and exit code 2 on failure."
@@ -87,7 +92,7 @@
                 "trace=openat,sendto,connect",
                 "getent",
                 "hosts",
-                "api.corp.internal"
+                "ledger.corp.internal"
               ],
               "purpose": "Watch the lookup read its files and send its packets, as system calls.",
               "look_for": "`openat(... \"/etc/hosts\" ...)`, then `openat(... \"/etc/resolv.conf\" ...)`, then `sendto(...)` with `sin_port=htons(53)` and the destination address."
@@ -106,7 +111,7 @@
         "id": "dns-query",
         "from": "libc",
         "to": "nameserver",
-        "label": "DNS query: A? api.corp.internal",
+        "label": "DNS query: A? ledger.corp.internal",
         "explanation": "With no local match, the stub resolver reads its configuration and sends a UDP query to port 53 of each configured nameserver.",
         "reality": {
           "mechanism": "The `nameserver` lines of `/etc/resolv.conf` decide the destination. musl sends the query to all listed servers in parallel and takes the first reply; `options timeout:` and `attempts:` bound how long it waits. An address with no DNS server behind it yields no reply at all.",
@@ -122,7 +127,7 @@
             {
               "argv": [
                 "dig",
-                "api.corp.internal"
+                "ledger.corp.internal"
               ],
               "purpose": "Send the same query by hand, to the same configured servers.",
               "look_for": "Error lines such as `no servers could be reached`, or the `SERVER:` line in the footer naming the server that answered."
@@ -139,7 +144,7 @@
                 "53"
               ],
               "purpose": "Capture the query packets on the wire. Run a lookup in a second terminal while this waits.",
-              "look_for": "`A? api.corp.internal.` going out, the destination address, and whether a reply comes back."
+              "look_for": "`A? ledger.corp.internal.` going out, the destination address, and whether a reply comes back."
             }
           ],
           "artifacts": [
@@ -177,7 +182,7 @@
               "argv": [
                 "dig",
                 "+norecurse",
-                "api.corp.internal"
+                "ledger.corp.internal"
               ],
               "purpose": "Ask the configured servers whether they know the answer themselves.",
               "look_for": "`status:` in the header, the `aa` flag and the `ANSWER SECTION`."
@@ -222,10 +227,10 @@
                 "-sv",
                 "--max-time",
                 "5",
-                "http://api.corp.internal:8080/health"
+                "http://ledger.corp.internal:9093/readyz"
               ],
               "purpose": "Verify the whole path end to end after a fix.",
-              "look_for": "`Trying <address>:8080`, `Connected`, and HTTP 200."
+              "look_for": "`Trying <address>:9093`, `Connected`, and HTTP 200."
             }
           ]
         }
