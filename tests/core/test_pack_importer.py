@@ -426,7 +426,5 @@ def test_a_memo_region_must_name_a_layout_region() -> None:
 def test_a_memo_layout_requires_a_memo_summarizer() -> None:
     layout = "ux/layout.json"
     manifest = "manifest.json"
-    files = _edit(
-        _files(), manifest, lambda d: d["registry"].pop("memo_summarizer", None)
-    )
+    files = _edit(_files(), manifest, lambda d: d["registry"].pop("memo_summarizer", None))
     assert _refused(files) == [("memo_without_summarizer", layout)]

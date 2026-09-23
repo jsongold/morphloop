@@ -308,9 +308,7 @@ class LLMMemoSummarizer:
 
     def build_request(self, context: JsonObject) -> LLMRequest:
         user = render_context(context)
-        _check_budget(
-            "memo_summarizer", self._options.context_budget_tokens, self._prompt, user
-        )
+        _check_budget("memo_summarizer", self._options.context_budget_tokens, self._prompt, user)
         return LLMRequest(
             role="memo_summarizer",
             llm=self._options.selection.llm,

@@ -37,7 +37,9 @@ TUTOR_IMPLEMENTATION = "llm-tutor@0.1.0"
 MEMO_SUMMARIZER_IMPLEMENTATION = "llm-memo-summarizer@0.1.0"
 EVALUATOR_SCHEMA_ID = "https://morphloop.dev/contracts/schemas/llm/evaluator.judgment/1.json"
 TUTOR_SCHEMA_ID = "https://morphloop.dev/contracts/schemas/llm/tutor.reply/1.json"
-MEMO_SUMMARIZER_SCHEMA_ID = "https://morphloop.dev/contracts/schemas/llm/memo_summarizer.note/1.json"
+MEMO_SUMMARIZER_SCHEMA_ID = (
+    "https://morphloop.dev/contracts/schemas/llm/memo_summarizer.note/1.json"
+)
 
 _EVALUATOR_OPTIONS = frozenset({"include_reference_solution"})
 _TUTOR_OPTIONS = frozenset(

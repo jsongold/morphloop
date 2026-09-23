@@ -1497,8 +1497,7 @@ class LearningLoop:
                 "memo_id": memo_id,
                 "highlight_id": highlight_id,
                 "thread_id": thread_id,
-                "source_event_ids": [highlight.event_id]
-                + [event.event_id for event in thread],
+                "source_event_ids": [highlight.event_id] + [event.event_id for event in thread],
                 "title": note.title,
                 "body": note.body,
                 "provenance": note.provenance.to_dict(),
@@ -1642,9 +1641,7 @@ class LearningLoop:
             schemas=self._schemas,
         )
 
-    def _memo_summarizer(
-        self, pack: PackRef, options: MemoSummarizerOptions
-    ) -> LLMMemoSummarizer:
+    def _memo_summarizer(self, pack: PackRef, options: MemoSummarizerOptions) -> LLMMemoSummarizer:
         return LLMMemoSummarizer(
             options=options,
             prompt=self._prompt(pack, options),
