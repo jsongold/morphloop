@@ -10,6 +10,7 @@ dependencies = [
     "docker>=7.2.0",
     "fastapi>=0.141.1",
     "jsonschema>=4.26.0",
+    "openai>=3.19.0",
     "psycopg[binary]>=3",
     "pyyaml>=6.0.3",
     "sqlalchemy>=2",
