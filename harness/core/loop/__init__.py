@@ -1,0 +1,177 @@
+"""The v0.1 learning loop: one append path, one set of projections, one service.
+
+- ``appender`` -- the single event-append path (envelope, redaction, schema
+  validation, append + projection in one transaction).
+- ``projections`` -- pure appliers and :func:`rebuild_projections` (AC-F6).
+- ``service`` -- :class:`LearningLoop`, everything the HTTP/WS layer calls.
+- ``terminal`` -- the asynchronous terminal connection (AC-B1, AC-B2).
+- ``context`` / ``llm_roles`` / ``options`` -- tutor and evaluator context,
+  their LLM calls and the pack options they need (AC-E3, AC-J6).
+- ``views`` / ``errors`` -- the read models and the problem codes of the HTTP
+  contract.
+"""
+
+from harness.core.loop.appender import APPEND_SCHEMA_ID, EventAppender, EventDraft
+from harness.core.loop.context import (
+    MissionContext,
+    assert_no_reference_solution,
+    build_evaluator_context,
+    build_tutor_context,
+    event_summary,
+    tutor_reference_ids,
+)
+from harness.core.loop.errors import (
+    InvalidRequestError,
+    LabUnavailableError,
+    LLMFailedError,
+    LoopError,
+    NotFoundError,
+    ReferenceSolutionLeakError,
+    StateConflictError,
+    ValidationFailedError,
+    problem_body,
+)
+from harness.core.loop.ids import Clock, IdGenerator, sequence_ids, utc_now, uuid_ids
+from harness.core.loop.llm_roles import (
+    EvaluatorJudgment,
+    JudgedEvidence,
+    LLMEvaluator,
+    LLMTutor,
+    TutorReply,
+)
+from harness.core.loop.options import (
+    EvaluatorOptions,
+    PackOptionError,
+    TutorOptions,
+    evaluator_options,
+    registry_implementations,
+    tutor_options,
+)
+from harness.core.loop.projections import (
+    ATTEMPT_PROJECTION,
+    CHAT_PROJECTION,
+    HIGHLIGHT_PROJECTION,
+    IDEMPOTENCY_PROJECTION,
+    LAB_PROJECTION,
+    LEARNER_SESSION_PROJECTION,
+    LEARNER_SKILL_PROJECTION,
+    LOOP_PROJECTIONS,
+    SESSION_PROJECTION,
+    ProjectionError,
+    ProjectionWrite,
+    apply_event,
+    projection_writes,
+    rebuild_projections,
+)
+from harness.core.loop.redaction import (
+    EventRejectedError,
+    NullRedaction,
+    RedactionHook,
+    reject_nul,
+    strip_nul,
+)
+from harness.core.loop.service import LearningLoop, stored_event_from_dict
+from harness.core.loop.terminal import (
+    TerminalChunk,
+    TerminalConnection,
+    TerminalContext,
+    encode_chunk,
+)
+from harness.core.loop.views import (
+    CONTENT_KINDS,
+    ActivityView,
+    AttemptResult,
+    AttemptState,
+    ChatExchange,
+    ContentDocument,
+    ContentSummary,
+    LabState,
+    PackView,
+    SessionState,
+    SessionView,
+    SkillStateView,
+    TimelinePage,
+    UiState,
+    activity_view,
+    pack_provenance,
+    terminal_path,
+)
+
+__all__ = [
+    "APPEND_SCHEMA_ID",
+    "ATTEMPT_PROJECTION",
+    "CHAT_PROJECTION",
+    "CONTENT_KINDS",
+    "HIGHLIGHT_PROJECTION",
+    "IDEMPOTENCY_PROJECTION",
+    "LAB_PROJECTION",
+    "LEARNER_SESSION_PROJECTION",
+    "LEARNER_SKILL_PROJECTION",
+    "LLMEvaluator",
+    "LLMFailedError",
+    "LLMTutor",
+    "LOOP_PROJECTIONS",
+    "SESSION_PROJECTION",
+    "ActivityView",
+    "AttemptResult",
+    "AttemptState",
+    "ChatExchange",
+    "Clock",
+    "ContentDocument",
+    "ContentSummary",
+    "EvaluatorJudgment",
+    "EvaluatorOptions",
+    "EventAppender",
+    "EventDraft",
+    "EventRejectedError",
+    "IdGenerator",
+    "InvalidRequestError",
+    "JudgedEvidence",
+    "LabState",
+    "LabUnavailableError",
+    "LearningLoop",
+    "LoopError",
+    "MissionContext",
+    "NotFoundError",
+    "NullRedaction",
+    "PackOptionError",
+    "PackView",
+    "ProjectionError",
+    "ProjectionWrite",
+    "RedactionHook",
+    "ReferenceSolutionLeakError",
+    "SessionState",
+    "SessionView",
+    "SkillStateView",
+    "StateConflictError",
+    "TerminalChunk",
+    "TerminalConnection",
+    "TerminalContext",
+    "TimelinePage",
+    "TutorOptions",
+    "TutorReply",
+    "UiState",
+    "ValidationFailedError",
+    "activity_view",
+    "apply_event",
+    "assert_no_reference_solution",
+    "build_evaluator_context",
+    "build_tutor_context",
+    "encode_chunk",
+    "evaluator_options",
+    "event_summary",
+    "pack_provenance",
+    "problem_body",
+    "projection_writes",
+    "rebuild_projections",
+    "registry_implementations",
+    "reject_nul",
+    "sequence_ids",
+    "stored_event_from_dict",
+    "strip_nul",
+    "terminal_path",
+    "tutor_options",
+    "tutor_reference_ids",
+    "utc_now",
+    "uuid_ids",
+]
