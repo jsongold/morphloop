@@ -67,6 +67,7 @@ export default function TerminalPane({
       cursorBlink: true,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
       fontSize: 13,
+      theme: { background: "#1a3a1a", foreground: "#fff9a0", cursor: "#b8cd92", selectionBackground: "#557744" },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
