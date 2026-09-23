@@ -1452,7 +1452,11 @@ class LearningLoop:
         the thread is not a highlight thread, the learner already edited the
         memo, or the summarizer fails; the reply is never affected.
         """
-        options = self._memo_summarizer_options(pack)
+        try:
+            options = self._memo_summarizer_options(pack)
+        except (InvalidRequestError, NotFoundError):
+            logger.exception("memo summarizer is unavailable; memo: null")
+            return None
         if options is None:
             return None
         thread_id = _string(to_plain_object(request.payload), "thread_id")
@@ -1478,7 +1482,7 @@ class LearningLoop:
             )
         try:
             note = self._memo_summarizer(pack, options).summarize(context)
-        except LLMFailedError:
+        except (LLMFailedError, InvalidRequestError, NotFoundError):
             logger.exception("memo summarizer failed for thread %r; memo: null", thread_id)
             return None
         draft = EventDraft(
@@ -1505,6 +1509,9 @@ class LearningLoop:
             correlation_id=request.correlation_id,
         )
         with self._store.transaction() as tx:
+            current = tx.get_projection(MEMO_PROJECTION, memo_key(session_id, memo_id))
+            if current is not None and to_plain_object(current).get("edited_by_learner") is True:
+                return None
             self._appender.append(tx, draft)
         with self._store.transaction() as tx:
             document = tx.get_projection(MEMO_PROJECTION, memo_key(session_id, memo_id))
