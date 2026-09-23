@@ -30,7 +30,7 @@ name = harness.adapters.* libraries must not import each other
 type = independence
 modules =
     harness.adapters.postgres
-    harness.adapters.llm
+    harness.adapters.litellm
     harness.adapters.docker_lab
     harness.adapters.pty
     harness.adapters.fs_pack_source

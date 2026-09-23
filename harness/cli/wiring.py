@@ -4,8 +4,9 @@ Core owns the Ports and the registries; ``harness/adapters/*`` and
 ``domains/*`` implement them; nothing down there knows which implementation is
 in use. This module is where the choice is made for the CLI: the local
 filesystem pack source, the Postgres event store from ``DATABASE_URL``, the
-Anthropic LLM provider from ``ANTHROPIC_API_KEY``, the Docker lab runtime, and
-the DNS domain adapter (the v0.1 slice, ADR-0012).
+litellm LLM provider (the pack's model string picks the provider; litellm reads
+the matching API key from the environment), the Docker lab runtime, and the DNS
+domain adapter (the v0.1 slice, ADR-0012).
 
 Every failure to build one of them is a :class:`~harness.cli.errors.CommandError`,
 so a missing key or an unreachable Docker daemon reads as a message rather
@@ -14,14 +15,13 @@ than a traceback.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 
 import domains.dns
 from harness.adapters.docker_lab import DockerLabRuntime
 from harness.adapters.fs_pack_source import FilesystemPackSource
-from harness.adapters.llm import AnthropicLLMProvider
+from harness.adapters.litellm import LiteLLMProvider
 from harness.adapters.postgres.engine import create_engine_from_env
 from harness.adapters.postgres.event_store import PostgresEventStore
 from harness.cli.errors import CommandError
@@ -38,8 +38,6 @@ from harness.core.ports import (
 )
 from harness.core.registry import AlgorithmRegistry
 from harness.core.registry.builtin import v01_algorithm_registry
-
-ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
 
 type ImporterFactory = Callable[[PackSource], PackImporter]
 
@@ -84,12 +82,12 @@ def pack_source() -> PackSource:
 
 
 def llm_provider() -> LLMProvider:
-    api_key = os.environ.get(ANTHROPIC_API_KEY_ENV)
-    if not api_key:
-        raise CommandError(
-            f"{ANTHROPIC_API_KEY_ENV} is not set; the Generator needs a real provider call"
-        )
-    return AnthropicLLMProvider(api_key=api_key)
+    """The one LLM adapter; the pack's model string decides the provider.
+
+    Credentials stay in the environment (``OPENAI_API_KEY``,
+    ``ANTHROPIC_API_KEY``, ...), where litellm reads them itself.
+    """
+    return LiteLLMProvider()
 
 
 def lab_runtime() -> LabRuntime:
