@@ -57,6 +57,26 @@ API_PORT=18000 WEB_PORT=13000 docker compose up -d --build
 # then: curl -s localhost:18000/health, and open http://localhost:13000
 ```
 
+### Multiple worktrees (recommended for concurrent development)
+
+This repo is developed across several worktrees. Never run `docker compose`
+directly there: every worktree would reuse the same container names, network,
+db volume and host ports. Use the per-worktree wrapper, which derives a unique
+compose project name (`morphloop-<hash>`) and host ports (api 18000+,
+web 13000+) from the worktree path:
+
+```sh
+./scripts/dev-stack.sh up        # build + start + import the SE pack
+# api  http://localhost:18xxx   (project morphloop-2efd6458)
+# web  http://localhost:13xxx
+./scripts/dev-stack.sh logs api  # follow logs (api / web / db)
+./scripts/dev-stack.sh import    # (re)import the pack
+./scripts/dev-stack.sh test      # e2e tests in the api container
+./scripts/dev-stack.sh down -v   # stop and delete the db volume
+```
+
+Another worktree's stack is reached with `docker compose -p morphloop-<hash> ...`.
+
 Logs and shutdown:
 
 ```sh
