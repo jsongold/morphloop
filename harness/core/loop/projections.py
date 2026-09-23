@@ -308,6 +308,20 @@ def _lab_reset(event: StoredEvent) -> list[ProjectionWrite]:
     ]
 
 
+def _lab_stopped(event: StoredEvent) -> list[ProjectionWrite]:
+    lab_instance_id = _string(_payload(event), "lab_instance_id")
+
+    def on_lab(document: JsonObject | None) -> JsonObject:
+        current = _doc(document, f"lab {lab_instance_id}")
+        current["stopped_event_id"] = event.event_id
+        return current
+
+    return [
+        ProjectionWrite(projection=LAB_PROJECTION, key=lab_instance_id, apply=on_lab),
+        _session_write(event),
+    ]
+
+
 def _activity_submitted(event: StoredEvent) -> list[ProjectionWrite]:
     def on_attempt(document: Document, _: StoredEvent) -> None:
         document["status"] = "evaluating"
@@ -474,6 +488,7 @@ _HANDLERS: Mapping[str, Callable[[StoredEvent], list[ProjectionWrite]]] = {
     "activity.started": _activity_started,
     "lab.started": _lab_started,
     "lab.reset": _lab_reset,
+    "lab.stopped": _lab_stopped,
     "terminal.command": lambda e: [_session_write(e)],
     "terminal.output": lambda e: [_session_write(e)],
     "activity.submitted": _activity_submitted,

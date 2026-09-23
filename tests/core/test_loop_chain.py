@@ -119,7 +119,7 @@ def test_full_v01_chain_records_every_step() -> None:
     assert positions == sorted(positions)
     types = [event.event_type for event in page.events]
     assert types[:3] == ["session.started", "activity.started", "lab.started"]
-    assert types[-1] == "activity.completed"
+    assert types[-2:] == ["activity.completed", "lab.stopped"]
     assert page.has_more is False
 
     resumed = loop.session_state(session_id)
@@ -180,3 +180,39 @@ def test_lab_reset_replaces_the_instance() -> None:
     assert [event.payload["trigger"] for event in started] == ["initial", "reset"]
     assert started[1].payload["replaces_lab_instance_id"] == first
     assert started[1].payload["provenance"]["fixture_id"] == "fake.lab"
+
+
+def test_completed_attempt_stops_its_lab() -> None:
+    fixture = build_loop()
+    loop = fixture.loop
+    session = loop.start_session(learner_id=LEARNER_ID, pack=fixture.pack, idempotency_key="web:1")
+    attempt = loop.start_attempt(
+        session_id=session.session.session_id,
+        activity_definition_id=ACTIVITY_ID,
+        idempotency_key="web:2",
+    )
+    assert attempt.lab is not None
+    lab_id = attempt.lab.lab_instance_id
+    assert lab_id in fixture.labs.labs
+
+    loop.submit_attempt(attempt_id=attempt.attempt_id, idempotency_key="web:3")
+    completed = loop.evaluate_attempt(attempt.attempt_id)
+    assert completed.status == "completed"
+
+    # The lab was torn down and the teardown is recorded in the event log.
+    assert lab_id not in fixture.labs.labs
+    assert loop.lab_state(lab_id).status == "stopped"
+    events = fixture.store.read_session(session.session.session_id)
+    stopped = [event for event in events if event.event_type == "lab.stopped"]
+    assert len(stopped) == 1
+    assert stopped[0].payload == {"lab_instance_id": lab_id, "reason": "attempt_completed"}
+    assert stopped[0].causation_id == events[-2].event_id  # caused by activity.completed
+
+    # A new attempt for the session starts a fresh lab.
+    attempt2 = loop.start_attempt(
+        session_id=session.session.session_id,
+        activity_definition_id=ACTIVITY_ID,
+        idempotency_key="web:4",
+    )
+    assert attempt2.lab is not None and attempt2.lab.lab_instance_id != lab_id
+    assert attempt2.lab.status == "ready"

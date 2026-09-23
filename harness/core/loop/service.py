@@ -18,6 +18,7 @@ before the previous state is read and hold it until the update is appended
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -176,6 +177,9 @@ def _object(value: PlainJson | None, name: str) -> dict[str, PlainJson]:
     if not isinstance(value, dict):
         raise NotFoundError(f"projection field {name!r} is missing")
     return value
+
+
+logger = logging.getLogger(__name__)
 
 
 class LearningLoop:
@@ -503,8 +507,9 @@ class LearningLoop:
     def lab_state(self, lab_instance_id: str) -> LabState:
         document = self._lab_document(lab_instance_id)
         replaced_by = _optional_string(document, "replaced_by_lab_instance_id")
+        stopped = _optional_string(document, "stopped_event_id")
         handle = self._handles.get(lab_instance_id)
-        if replaced_by is not None:
+        if replaced_by is not None or stopped is not None:
             status = "stopped"
         elif handle is not None:
             status = handle.status
@@ -976,6 +981,39 @@ class LearningLoop:
             raise
         return self.lab_state(lab_instance_id)
 
+    def _stop_lab(self, *, attempt_id: str, lab_instance_id: str, causation_id: str) -> None:
+        """Record ``lab.stopped`` for the attempt and tear its lab runtime down.
+
+        The event is authoritative; the runtime destroy is best-effort so a
+        teardown failure never fails an evaluation that already completed (the
+        lifetime timer and ``reap_expired`` remain as backstops).
+        """
+        attempt = self._attempt_document(attempt_id)
+        draft = EventDraft(
+            event_type="lab.stopped",
+            event_version=1,
+            actor="system",
+            learner_id=_string(attempt, "learner_id"),
+            session_id=_string(attempt, "session_id"),
+            attempt_id=attempt_id,
+            activity_definition_id=_string(attempt, "activity_definition_id"),
+            payload={"lab_instance_id": lab_instance_id, "reason": "attempt_completed"},
+            occurred_at=self._now(),
+            idempotency_key=None,
+            causation_id=causation_id,
+            correlation_id=attempt_id,
+        )
+        with self._store.transaction() as tx:
+            self._appender.append(tx, draft)
+        try:
+            self._labs.destroy(lab_instance_id)
+        except LabRuntimeError:
+            logger.exception(
+                "failed to destroy lab %r after attempt %r", lab_instance_id, attempt_id
+            )
+        finally:
+            self._handles.pop(lab_instance_id, None)
+
     def _terminal_tool(self, definition: Definition) -> TerminalTool:
         tools = definition.document.get("tools")
         if not isinstance(tools, Sequence) or isinstance(tools, str) or not tools:
@@ -1112,7 +1150,7 @@ class LearningLoop:
                         causation_id=last_evidence_event[skill_id],
                     ),
                 )
-            self._appender.append(
+            completed_event = self._appender.append(
                 tx,
                 self._attempt_draft(
                     document,
@@ -1125,6 +1163,12 @@ class LearningLoop:
                     occurred_at,
                     causation_id=evaluation_event.event_id,
                 ),
+            ).event
+        if lab_instance_id is not None:
+            self._stop_lab(
+                attempt_id=attempt_id,
+                lab_instance_id=lab_instance_id,
+                causation_id=completed_event.event_id,
             )
         return self.attempt_state(attempt_id)
 

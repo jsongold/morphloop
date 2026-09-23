@@ -11,6 +11,7 @@
         "activity.started",
         "lab.started",
         "lab.reset",
+        "lab.stopped",
         "terminal.command",
         "terminal.output",
         "activity.submitted",
@@ -217,6 +218,51 @@
               "properties": {
                 "payload": {
                   "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/lab.reset/1.json"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "lab.stopped"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_version": {
+            "enum": [
+              1
+            ]
+          },
+          "actor": {
+            "const": "system"
+          },
+          "attempt_id": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/attempt_id"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "event_version": {
+                  "const": 1
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/lab.stopped/1.json"
                 }
               }
             }
