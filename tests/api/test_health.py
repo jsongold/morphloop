@@ -2,7 +2,8 @@
 
 These tests never depend on a real, reachable Postgres instance: either the
 DB check dependency is overridden directly, or DATABASE_URL is pointed at a
-closed local port so the connection fails deterministically and fast.
+closed local port so the connection fails deterministically and fast. The app
+is built with an explicit backend so startup does not wire the real adapters.
 """
 
 from __future__ import annotations
@@ -11,9 +12,10 @@ import socket
 from collections.abc import Iterator
 
 import pytest
+from api_harness import build_app
 from fastapi.testclient import TestClient
 
-from harness.api.app import check_db, create_app
+from harness.api.app import check_db
 
 
 def _closed_port_url() -> str:
@@ -27,7 +29,7 @@ def _closed_port_url() -> str:
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    app = create_app()
+    app, _ = build_app()
     with TestClient(app) as test_client:
         yield test_client
         app.dependency_overrides.clear()

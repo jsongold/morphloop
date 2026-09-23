@@ -23,8 +23,14 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://morphloop:morphloop@db:5432/morphloop
-      WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
+      # The names without a value are passed through from the host only when
+      # they are set there: the LLM keys litellm reads itself, and DOCKER_HOST
+      # for the lab runtime (the api container has no Docker socket of its own).
+      - DATABASE_URL=postgresql+psycopg://morphloop:morphloop@db:5432/morphloop
+      - WEB_ORIGIN=http://localhost:${WEB_PORT:-3000}
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - DOCKER_HOST
     ports:
       - "${API_PORT:-8000}:8000"
     healthcheck:
