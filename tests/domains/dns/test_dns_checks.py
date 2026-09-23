@@ -261,7 +261,8 @@ def test_invalid_params_rejected(check: Check, params: JsonObject) -> None:
 
 
 def test_contents_pack_check_params_are_valid() -> None:
-    # Mirrors contents/software-engineering/activities/gen-dns-wrong-nameserver-001.json.
+    # Mirrors the contents/software-engineering activity
+    # gen-diagnose-dns-resolver-misconfiguration-001.json.
     ResolverAnswersCheck().validate_params(
         {
             "name": "api.corp.internal",

@@ -31,7 +31,7 @@ ADAPTER = domains.dns.adapter()
 IMAGE_REF = f"{IMAGE.repository}@{IMAGE.digest}"
 
 # Mirrors the checks and reference solution of
-# contents/software-engineering/activities/gen-dns-wrong-nameserver-001*.json.
+# contents/software-engineering/activities/gen-diagnose-dns-resolver-misconfiguration-001*.json.
 CHECKS: list[tuple[str, dict[str, Any]]] = [
     (
         "resolver_answers",

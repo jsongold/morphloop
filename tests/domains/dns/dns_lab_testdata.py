@@ -12,7 +12,7 @@ IMAGE = ImageRef(
 )
 
 # Explicit form of the lab in
-# contents/software-engineering/environments/gen-dns-wrong-nameserver-001.json.
+# contents/software-engineering/environments/gen-diagnose-dns-resolver-misconfiguration-001.json.
 PARAMS: dict[str, Any] = {
     "network": "none",
     "zone_server": {
@@ -40,8 +40,9 @@ PARAMS: dict[str, Any] = {
     },
 }
 
-# Fault form, as contents/software-engineering/environments/gen-dns-wrong-nameserver-001.json
-# declares it; translates to PARAMS except for the health body.
+# Fault form, as the contents/software-engineering environment
+# gen-diagnose-dns-resolver-misconfiguration-001.json declares it; translates to
+# PARAMS except for the health body.
 FAULT_PARAMS: dict[str, Any] = {
     "zone": "corp.internal",
     "service_name": "api.corp.internal",
