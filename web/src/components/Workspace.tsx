@@ -39,6 +39,12 @@ const TerminalPane = dynamic(() => import("./TerminalPane"), {
 
 const SIDE_PANE = "side";
 
+// Bottom (chat) pane resize (drag handle on its top edge). Height is remembered
+// per viewer in localStorage; falls back to the CSS default (240px) on read failure.
+const BOTTOM_H_KEY = "morphloop.bottomPaneHeight";
+const BOTTOM_H_MIN = 140;
+const BOTTOM_H_MAX = 640;
+
 function errText(e: unknown): string {
   if (e instanceof ApiError) return e.message;
   if (e instanceof Error) return e.message;
@@ -69,6 +75,17 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
   const [chatError, setChatError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Workspace only ever mounts client-side (see page.tsx), so reading localStorage
+  // in the initializer is safe — no SSR/hydration mismatch.
+  const [bottomHeight, setBottomHeight] = useState(() => {
+    try {
+      const stored = Number(window.localStorage.getItem(BOTTOM_H_KEY));
+      if (Number.isFinite(stored) && stored >= BOTTOM_H_MIN && stored <= BOTTOM_H_MAX) return stored;
+    } catch {
+      // storage unavailable: keep the CSS default
+    }
+    return 240;
+  });
 
   const terminalRef = useRef<TerminalHandle | null>(null);
   const lastPos = useRef(0);
@@ -199,6 +216,30 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
     };
     document.addEventListener("selectionchange", onChange);
     return () => document.removeEventListener("selectionchange", onChange);
+  }, []);
+
+  // ---------- bottom pane resize ----------
+
+  const startBottomResize = useCallback((ev: React.MouseEvent) => {
+    ev.preventDefault();
+    const onMove = (e: MouseEvent) => {
+      const h = Math.min(BOTTOM_H_MAX, Math.max(BOTTOM_H_MIN, window.innerHeight - e.clientY));
+      setBottomHeight(h);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setBottomHeight((h) => {
+        try {
+          window.localStorage.setItem(BOTTOM_H_KEY, String(h));
+        } catch {
+          // storage unavailable: size lives until reload
+        }
+        return h;
+      });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   }, []);
 
   // ---------- client events ----------
@@ -558,7 +599,10 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
   };
 
   return (
-    <div className={`app${layout.leftComponent ? " with-left" : ""}${layout.sideComponent ? " with-side" : ""}${layout.bottomComponent ? " with-bottom" : ""}`}>
+    <div
+      className={`app${layout.leftComponent ? " with-left" : ""}${layout.sideComponent ? " with-side" : ""}${layout.bottomComponent ? " with-bottom" : ""}`}
+      style={layout.bottomComponent ? ({ "--bottom-h": `${bottomHeight}px` } as React.CSSProperties) : undefined}
+    >
       <header className="app-header">
         <strong>{state.session.pack.pack_id}</strong>
         <span className="muted">
@@ -639,7 +683,18 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
       </main>
 
       {layout.sideComponent && <aside className="side-pane">{renderSide()}</aside>}
-      {layout.bottomComponent && <footer className="bottom-pane">{renderBottom()}</footer>}
+      {layout.bottomComponent && (
+        <footer className="bottom-pane">
+          <div
+            className="bottom-resize-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize chat panel"
+            onMouseDown={startBottomResize}
+          />
+          {renderBottom()}
+        </footer>
+      )}
 
       {selection && (
         <div className="selection-toolbar" ref={toolbarRef} role="toolbar" aria-label="Selection actions">

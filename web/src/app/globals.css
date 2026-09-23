@@ -123,7 +123,7 @@ button[aria-selected="true"] { background: var(--accent); color: var(--backgroun
   grid-template-areas: "header" "main";
 }
 .app.with-side { grid-template-columns: minmax(0, 1fr) 340px; grid-template-areas: "header header" "main side"; }
-.app.with-bottom { grid-template-rows: auto minmax(0, 1fr) 240px; grid-template-areas: "header" "main" "bottom"; }
+.app.with-bottom { grid-template-rows: auto minmax(0, 1fr) var(--bottom-h, 240px); grid-template-areas: "header" "main" "bottom"; }
 .app.with-side.with-bottom { grid-template-areas: "header header" "main side" "bottom bottom"; }
 .app.with-left { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "header header" "left main"; }
 .app.with-left.with-side { grid-template-columns: auto minmax(0, 1fr) 340px; grid-template-areas: "header header header" "left main side"; }
@@ -140,7 +140,11 @@ button[aria-selected="true"] { background: var(--accent); color: var(--backgroun
 .toc ul { list-style: none; padding-left: 10px; }
 .toc button[aria-current="true"] { font-weight: 600; text-decoration: underline; }
 .side-pane { grid-area: side; border-left: 1px solid var(--border); padding: 8px 12px; overflow: auto; background: var(--panel); }
-.bottom-pane { grid-area: bottom; border-top: 1px solid var(--border); min-height: 0; }
+.bottom-pane { grid-area: bottom; border-top: 1px solid var(--border); min-height: 0; position: relative; }
+.bottom-resize-handle {
+  position: absolute; top: -5px; left: 0; right: 0; height: 9px; cursor: row-resize; touch-action: none;
+}
+.bottom-resize-handle:hover, .bottom-resize-handle.active { background: var(--accent); opacity: 0.35; }
 
 .mission-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .mission-text { margin: 4px 0; }
