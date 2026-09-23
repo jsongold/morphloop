@@ -21,7 +21,8 @@ Requirements: Docker (with Compose v2). For local development also `uv` and `pnp
 
 The software-engineering pack uses OpenAI models, so the API needs `OPENAI_API_KEY`
 (chat, evaluation and learner-model updates fail without it). Keep it in an
-untracked `.env.local` (`.env.*` is gitignored) and export it before starting:
+untracked `.env.local` (`.env.*` is gitignored); Compose passes it to the API on
+every `up`:
 
 ```sh
 # .env.local
@@ -29,7 +30,6 @@ OPENAI_API_KEY=sk-...
 ```
 
 ```sh
-set -a; . ./.env.local; set +a
 docker compose up -d --build
 ```
 
@@ -78,9 +78,10 @@ The timeline shows every recorded event of the session.
 
 ### End-to-end check against the real stack
 
-With the stack running, the pack imported and the key exported:
+With the stack running and the pack imported (the test reads the key from the shell):
 
 ```sh
+set -a; . ./.env.local; set +a
 uv run pytest tests/e2e -q
 ```
 
