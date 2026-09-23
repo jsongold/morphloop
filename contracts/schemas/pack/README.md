@@ -126,7 +126,11 @@ extract it from. Requiring an object still lets the Importer hash and project
 the file and lets the API serve it. The standard UI owns its interpretation
 and must tolerate unknown keys. A custom UI may ignore it. Slice 4 (AC-H1)
 replaces this file with a real schema. This is the only pack schema without
-`additionalProperties: false`.
+`additionalProperties: false`. The one structured key is the optional
+top-level `toc` (a book-like table of contents: `chapters[].title` and
+`chapters[].items[]` of `{kind, id}`, kind in activity / reference /
+visualization); the Importer rejects an item whose id is not a Definition of
+that kind in the pack. It is navigation only and never locks an item.
 
 **Visualization.** Only `diagram.type: "sequence"` is supported. It is not a
 generic visualization language. A step's optional `reality` holds `mechanism`,

@@ -124,10 +124,20 @@ button[aria-selected="true"] { background: var(--accent); color: #fff; border-co
 .app.with-side { grid-template-columns: minmax(0, 1fr) 340px; grid-template-areas: "header header" "main side"; }
 .app.with-bottom { grid-template-rows: auto minmax(0, 1fr) 240px; grid-template-areas: "header" "main" "bottom"; }
 .app.with-side.with-bottom { grid-template-areas: "header header" "main side" "bottom bottom"; }
+.app.with-left { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "header header" "left main"; }
+.app.with-left.with-side { grid-template-columns: auto minmax(0, 1fr) 340px; grid-template-areas: "header header header" "left main side"; }
+.app.with-left.with-bottom { grid-template-areas: "header header" "left main" "bottom bottom"; }
+.app.with-left.with-side.with-bottom { grid-template-areas: "header header header" "left main side" "bottom bottom bottom"; }
 
 .app-header { grid-area: header; display: flex; gap: 12px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--border); }
 .app-header .modes { display: flex; gap: 4px; margin-left: auto; }
 .main-pane { grid-area: main; display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; overflow: auto; min-height: 0; }
+.left-pane { grid-area: left; border-right: 1px solid var(--border); padding: 8px 12px; overflow: auto; background: var(--panel); max-width: 260px; min-height: 0; }
+.toc summary { cursor: pointer; font-weight: 600; }
+.toc ol { list-style: none; padding: 0; margin-top: 6px; }
+.toc > ol > li { margin-bottom: 8px; }
+.toc ul { list-style: none; padding-left: 10px; }
+.toc button[aria-current="true"] { font-weight: 600; text-decoration: underline; }
 .side-pane { grid-area: side; border-left: 1px solid var(--border); padding: 8px 12px; overflow: auto; background: var(--panel); }
 .bottom-pane { grid-area: bottom; border-top: 1px solid var(--border); min-height: 0; }
 

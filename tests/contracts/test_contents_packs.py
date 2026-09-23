@@ -223,6 +223,11 @@ def test_referenced_definitions_exist(pack: Path) -> None:
         for doc in _docs(pack, kind).values():
             for skill in doc.get("skills", []):
                 assert skill in skills, f"{doc['id']}: unknown skill {skill}"
+    for rel, kind in _indexed(pack):
+        if kind == "layout":
+            for chapter in _load(pack / rel).get("toc", {}).get("chapters", []):
+                for item in chapter["items"]:
+                    assert item["id"] in _docs(pack, item["kind"]), f"{rel}: unknown toc {item}"
 
 
 @pack_param
