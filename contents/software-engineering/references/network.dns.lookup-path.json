@@ -1,0 +1,43 @@
+{
+  "id": "network.dns.lookup-path",
+  "version": "1",
+  "title": "How an application looks up a name",
+  "summary": "Applications do not speak DNS. They call `getaddrinfo()`, which checks `/etc/hosts` first and only then asks DNS through the stub resolver. Tools like `dig` skip the first step, so they can disagree with what an application sees.",
+  "aliases": [
+    "getaddrinfo",
+    "getent",
+    "/etc/hosts",
+    "hosts file",
+    "nsswitch",
+    "name lookup"
+  ],
+  "skills": [
+    "network.dns.resolution"
+  ],
+  "sections": [
+    {
+      "kind": "what",
+      "body": "The chain `application -> getaddrinfo() -> /etc/hosts -> stub resolver -> nameserver`. The first source that returns an address wins."
+    },
+    {
+      "kind": "why",
+      "body": "`/etc/hosts` predates DNS and still allows local overrides (e.g. `localhost`). DNS is consulted for everything else."
+    },
+    {
+      "kind": "mechanism",
+      "body": "glibc follows the `hosts:` line of `/etc/nsswitch.conf` (usually `files dns`). musl (Alpine, this lab) has no NSS: it always reads `/etc/hosts`, then `/etc/resolv.conf`, then sends the DNS query. `strace` makes this visible as `openat(\"/etc/hosts\")`, `openat(\"/etc/resolv.conf\")` and a `sendto(...port 53...)`."
+    },
+    {
+      "kind": "example",
+      "body": "`getent hosts api.shop.example` uses the same path as `curl`. `dig api.shop.example` asks DNS only. If `getent` succeeds but `dig` fails, the answer is coming from `/etc/hosts`."
+    },
+    {
+      "kind": "observe",
+      "body": "- `getent hosts <name>`: the application's view.\n- `dig <name>`: the DNS view.\n- `cat /etc/hosts`: local overrides.\n- `strace -f -e trace=openat,sendto,connect getent hosts <name>`: the files read and the packets sent."
+    },
+    {
+      "kind": "failure_modes",
+      "body": "- A stale `/etc/hosts` entry hides a DNS change.\n- Pinning an address in `/etc/hosts` \"fixes\" one name on one host and hides a broken resolver.\n- Testing with `dig` and concluding the application must work (or must fail)."
+    }
+  ]
+}

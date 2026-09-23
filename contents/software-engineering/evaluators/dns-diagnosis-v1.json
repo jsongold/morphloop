@@ -1,0 +1,47 @@
+{
+  "id": "dns-diagnosis-v1",
+  "title": "DNS resolution diagnosis rubric",
+  "semantic": {
+    "dimensions": [
+      {
+        "id": "observe",
+        "description": "Collected evidence from the real system before changing it: resolver configuration (`/etc/resolv.conf`, `/etc/hosts`), live queries (`dig`, `getent hosts`), listening sockets (`ss`), packets (`tcpdump`) or system calls (`strace`). Positive when commands target the resolution path and their output is read, not just run. Negative when the learner edits files before looking, or runs the same failing command repeatedly without new information."
+      },
+      {
+        "id": "diagnose",
+        "description": "Localized the failing hop with an explicit or clearly implied hypothesis and tested it: service reachable by address vs by name, which server the query goes to, whether anything answers on that address, what the correct server answers. Positive when the sequence narrows the problem step by step. Negative for trial-and-error edits, or for a correct fix reached without any command that could have revealed the cause (accidental success)."
+      },
+      {
+        "id": "repair",
+        "description": "Fixed the cause with the smallest change: the resolver configuration now points at the working DNS server, and the fix is verified with a lookup and the health endpoint. Negative for workarounds (pinning the address in `/etc/hosts`, calling the service by IP), collateral changes (killing or restarting unrelated processes, editing the zone server), or an unverified change."
+      },
+      {
+        "id": "explain",
+        "description": "The submission or chat states what was wrong in terms of the resolution path (e.g. the stub resolver asked a server that does not exist) and why the fix works. Negative when the explanation names the wrong layer (\"the service was down\", \"DNS record was missing\") or is absent. Judge only text the learner actually wrote."
+      }
+    ],
+    "guidance": "A passing check is an observation, not proof of skill. Judge the action sequence against the checks.\n\n- **Systematic diagnosis**: separates service health from name resolution, identifies the server actually queried (the `dig` error or `SERVER:` line, `/etc/resolv.conf`, `strace`, `tcpdump`), finds the server that really answers (`ss -lunp`, `dig @addr`), then makes one targeted change and verifies it. Strong positive evidence on `diagnose`, `observe` and `repair`.\n- **Accidental or copied success**: the fix appears without any preceding command that revealed the wrong nameserver or the working one. Positive `repair` at most at low strength; negative `diagnose`.\n- **Hint dependence**: when the fix follows directly after a hint that named the file or the port-53 socket, lower the strength of positive `diagnose` evidence and say so in the rationale. Hints requested are listed in the event log.\n- **Workarounds**: pinning `api.corp.internal` in `/etc/hosts` or using the IP makes `curl` work but leaves DNS broken; the `dns.resolver_answers` check fails. Report negative `repair` and the `hosts-file-is-dns` misconception.\n- **Unnecessary changes**: restarting or killing the DNS server, editing its zone, changing unrelated files. Negative `repair` even if checks pass.\n- **Tooling friction is not a skill gap**: an editor failing with `Resource busy` on the bind-mounted `/etc/resolv.conf` is a lab property; do not count it against the learner.\n\nOverall `success` requires every deterministic check to pass and no workaround. Cite the terminal command and output events that support each evidence item."
+  },
+  "misconceptions": [
+    {
+      "id": "hosts-file-is-dns",
+      "description": "Treats an `/etc/hosts` entry as fixing DNS. It only overrides one name on one host; the resolver stays broken for every other name and every other host."
+    },
+    {
+      "id": "dig-is-the-app-path",
+      "description": "Assumes `dig` shows exactly what applications see. `dig` talks DNS directly to a server and ignores `/etc/hosts`; applications go through libc `getaddrinfo` (compare with `getent hosts`)."
+    },
+    {
+      "id": "resolution-failure-means-service-down",
+      "description": "Concludes the service is down when the name does not resolve, without testing the service by address."
+    },
+    {
+      "id": "record-missing-vs-server-unreachable",
+      "description": "Does not distinguish \"no server could be reached\" (timeout or unreachable) from `NXDOMAIN` (the server answered: the name does not exist) and `SERVFAIL` (the server failed to get an answer)."
+    },
+    {
+      "id": "restart-fixes-resolution",
+      "description": "Restarts services or the lab expecting name resolution to recover, without identifying which server is queried."
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "gen-diagnose-dns-resolver-misconfiguration-001.solution",
+  "activity_id": "gen-diagnose-dns-resolver-misconfiguration-001",
+  "apply": [
+    {
+      "argv": [
+        "python3",
+        "-c",
+        "open('/etc/resolv.conf','w').write('nameserver 127.0.0.53\\noptions timeout:1 attempts:1\\n')"
+      ],
+      "timeout_seconds": 30
+    }
+  ],
+  "explanation": "The only fault is client-side resolver configuration: `/etc/resolv.conf` points at `203.0.113.77`, where no DNS server is running. The lab DNS server is healthy on `127.0.0.53:53` and serves `ledger.corp.internal A 127.0.0.42`; the HTTP service itself is healthy on `127.0.0.42:9093/readyz`. Evidence is that the service can be reached directly once discovered, while `getent`/`dig` through the system resolver fail. Overwriting `/etc/resolv.conf` in place to use the correct nameserver restores DNS-backed resolution, and then the health URL works by name."
+}

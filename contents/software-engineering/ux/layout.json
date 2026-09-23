@@ -1,0 +1,97 @@
+{
+  "layout": {
+    "main": {
+      "modes": [
+        "mission",
+        "practice",
+        "visualize",
+        "review"
+      ],
+      "default_mode": "practice",
+      "components": {
+        "mission": [
+          "mission_brief"
+        ],
+        "practice": [
+          "terminal"
+        ],
+        "visualize": [
+          "visualization",
+          "terminal"
+        ],
+        "review": [
+          "timeline",
+          "evaluation_summary"
+        ]
+      }
+    },
+    "side": {
+      "component": "concept_pane",
+      "sections": [
+        "what",
+        "why",
+        "mechanism",
+        "example",
+        "observe",
+        "failure_modes"
+      ],
+      "open_on": [
+        "highlight",
+        "visualization_step_selected"
+      ]
+    },
+    "bottom": {
+      "component": "ai_chat",
+      "persistent": true,
+      "quote_selection": true
+    }
+  },
+  "transitions": [
+    {
+      "on": "activity_started",
+      "to_mode": "practice",
+      "show_mission_banner": true
+    },
+    {
+      "on": "visualization_observe_selected",
+      "to_mode": "visualize",
+      "terminal_action": "prefill_command"
+    },
+    {
+      "on": "activity_submitted",
+      "to_mode": "review"
+    }
+  ],
+  "visualization": {
+    "step_actions": [
+      "meaning",
+      "mechanism",
+      "show_real",
+      "inspect"
+    ]
+  },
+  "copy": {
+    "en": {
+      "mode.mission": "Mission",
+      "mode.practice": "Practice",
+      "mode.visualize": "Visualize",
+      "mode.review": "Review",
+      "visualization.action.meaning": "What does this mean?",
+      "visualization.action.mechanism": "How is it implemented?",
+      "visualization.action.show_real": "Show me in the real system",
+      "visualization.action.inspect": "Let me inspect it",
+      "terminal.prefill_notice": "Command placed in the terminal. Press Enter to run it in your lab.",
+      "chat.placeholder": "Ask about what you see. Selected text is quoted automatically.",
+      "chat.mode.hint": "Hint",
+      "chat.mode.explain": "Explain",
+      "chat.mode.review": "Review",
+      "action.submit": "Submit fix",
+      "action.reset_lab": "Reset lab",
+      "action.reset_lab_confirm": "Reset the lab to its starting state? Your changes inside the lab are discarded; your history is kept.",
+      "highlight.ask_ai": "Ask AI",
+      "highlight.explain": "Explain selection",
+      "highlight.save": "Save highlight",
+      "highlight.mechanism": "Show real mechanism"
+    }
+  }
+}

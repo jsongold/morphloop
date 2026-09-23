@@ -1,0 +1,70 @@
+{
+  "id": "gen-diagnose-dns-resolver-misconfiguration-001",
+  "title": "ledger.corp.internal is healthy, but this host can't reach it by name",
+  "activity_type": "diagnose",
+  "skills": {
+    "primary": [
+      "network.dns.resolution"
+    ]
+  },
+  "difficulty": 0.5,
+  "origin": {
+    "type": "generated",
+    "template_id": "diagnose-dns-resolver-misconfiguration",
+    "timing": "authoring"
+  },
+  "instructions": {
+    "mission": "The `ledger.corp.internal` service is reported healthy, but requests from this host fail when you use its name.\n\nYour job:\n1. Determine whether the failure is in the web service, DNS, or this host's name-resolution path.\n2. Fix this host so `ledger.corp.internal` resolves through DNS again and the service's HTTP health endpoint can be reached by name.\n\nDo not work around the problem by pinning an address locally; restore normal DNS-based resolution."
+  },
+  "hints": [
+    "Split the problem into layers: confirm the HTTP service is listening, then test whether the name resolves on this host, then test whether DNS queries through the configured resolver get an answer.",
+    "Use tools like `ss -ltnp`, `getent ahosts ledger.corp.internal`, and `dig ledger.corp.internal` to compare direct service reachability with name resolution.",
+    "The zone data is fine; the problem is in this host's stub resolver configuration. Inspect the nameserver entries in `/etc/resolv.conf`."
+  ],
+  "environment": "gen-diagnose-dns-resolver-misconfiguration-001.env",
+  "tools": [
+    "dns.terminal"
+  ],
+  "checks": [
+    {
+      "check": "dns.resolver_answers",
+      "params": {
+        "name": "ledger.corp.internal",
+        "record_type": "A",
+        "expected_value": "127.0.0.42",
+        "timeout_seconds": 2
+      }
+    },
+    {
+      "check": "dns.name_resolves",
+      "params": {
+        "name": "ledger.corp.internal",
+        "expected_address": "127.0.0.42",
+        "timeout_seconds": 2
+      }
+    },
+    {
+      "check": "dns.http_status",
+      "params": {
+        "url": "http://ledger.corp.internal:9093/readyz",
+        "expected_status": 200,
+        "timeout_seconds": 2
+      }
+    }
+  ],
+  "evaluator": "dns-diagnosis-v1",
+  "reference_solution": {
+    "path": "activities/gen-diagnose-dns-resolver-misconfiguration-001.solution.json",
+    "content_hash": "sha256:8f5d94c727629663af40d208c8addfe4b674796fe5e7eb0dd295628aab1af9d5"
+  },
+  "remediation": {
+    "references": [
+      "network.dns.resolver",
+      "network.dns.lookup-path",
+      "network.dns.answers"
+    ],
+    "visualizations": [
+      "dns-resolution-flow"
+    ]
+  }
+}
