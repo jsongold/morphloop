@@ -414,3 +414,17 @@ def test_a_toc_item_must_name_an_existing_definition() -> None:
     assert _refused(_edit(_files(), layout, lambda d: d.update(toc=toc))) == [
         ("unresolved_reference", layout)
     ]
+
+
+def test_a_memo_region_must_name_a_layout_region() -> None:
+    layout = "ux/layout.json"
+    _edit(_files(), layout, lambda d: d.update(memo={"region": "side"}))  # the fixture is valid
+    refused = _edit(_files(), layout, lambda d: d.update(memo={"region": "nowhere"}))
+    assert _refused(refused) == [("unresolved_reference", layout)]
+
+
+def test_a_memo_layout_requires_a_memo_summarizer() -> None:
+    layout = "ux/layout.json"
+    manifest = "manifest.json"
+    files = _edit(_files(), manifest, lambda d: d["registry"].pop("memo_summarizer", None))
+    assert _refused(files) == [("memo_without_summarizer", layout)]

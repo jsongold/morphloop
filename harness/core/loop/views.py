@@ -267,13 +267,46 @@ class TimelinePage:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ChatExchange:
-    """``ChatExchange``: the learner message and the tutor reply, as stored."""
+    """``ChatExchange``: the learner message, the tutor reply, and any memo written after it."""
 
     request: StoredEvent
     reply: StoredEvent
+    memo: MemoView | None
 
     def to_dict(self) -> dict[str, PlainJson]:
-        return {"request": self.request.to_dict(), "reply": self.reply.to_dict()}
+        return {
+            "request": self.request.to_dict(),
+            "reply": self.reply.to_dict(),
+            "memo": None if self.memo is None else self.memo.to_dict(),
+        }
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MemoView:
+    """``MemoView``: the current text of one highlight-thread memo."""
+
+    memo_id: str
+    highlight_id: str
+    thread_id: str
+    title: str
+    body: str
+    source_event_ids: Sequence[str]
+    edited_by_learner: bool
+    updated_at: str
+    last_event_id: str
+
+    def to_dict(self) -> dict[str, PlainJson]:
+        return {
+            "memo_id": self.memo_id,
+            "highlight_id": self.highlight_id,
+            "thread_id": self.thread_id,
+            "title": self.title,
+            "body": self.body,
+            "source_event_ids": list(self.source_event_ids),
+            "edited_by_learner": self.edited_by_learner,
+            "updated_at": self.updated_at,
+            "last_event_id": self.last_event_id,
+        }
 
 
 # --- builders over pack documents -------------------------------------------

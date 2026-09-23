@@ -46,6 +46,7 @@ from harness.core.loop.context import (
     MissionContext,
     assert_no_reference_solution,
     build_evaluator_context,
+    build_memo_context,
     build_tutor_context,
     tutor_reference_ids,
 )
@@ -60,12 +61,14 @@ from harness.core.loop.errors import (
     problem_body,
 )
 from harness.core.loop.ids import Clock, IdGenerator, utc_now, uuid_ids
-from harness.core.loop.llm_roles import LLMEvaluator, LLMTutor
+from harness.core.loop.llm_roles import LLMEvaluator, LLMMemoSummarizer, LLMTutor
 from harness.core.loop.options import (
     EvaluatorOptions,
+    MemoSummarizerOptions,
     PackOptionError,
     TutorOptions,
     evaluator_options,
+    memo_summarizer_options,
     registry_implementations,
     tutor_options,
 )
@@ -77,9 +80,11 @@ from harness.core.loop.projections import (
     LAB_PROJECTION,
     LEARNER_SESSION_PROJECTION,
     LEARNER_SKILL_PROJECTION,
+    MEMO_PROJECTION,
     SESSION_PROJECTION,
     highlight_key,
     learner_skill_key,
+    memo_key,
     rebuild_projections,
 )
 from harness.core.loop.redaction import NullRedaction, RedactionHook
@@ -93,6 +98,7 @@ from harness.core.loop.views import (
     ContentDocument,
     ContentSummary,
     LabState,
+    MemoView,
     PackView,
     SessionState,
     SessionView,
@@ -133,7 +139,12 @@ from harness.core.ports import (
 from harness.core.registry.algorithms import AlgorithmRegistry
 
 CLIENT_EVENT_TYPES: frozenset[str] = frozenset(
-    {"content.opened", "content.highlighted", "visualization.step_selected"}
+    {
+        "content.opened",
+        "content.highlighted",
+        "visualization.step_selected",
+        "memo.edited",
+    }
 )
 TIMELINE_DEFAULT_LIMIT = 100
 TIMELINE_MAX_LIMIT = 500
@@ -380,15 +391,35 @@ class LearningLoop:
         documents.sort(key=lambda row: _integer(row, "position"))
         return [self._stored_event(_object(row.get("event"), "event")) for row in documents]
 
-    def session_chat(self, session_id: str) -> list[StoredEvent]:
-        """Stored chat events of the session, in position order (AC-F4)."""
+    def session_chat(self, session_id: str, thread_id: str | None = None) -> list[StoredEvent]:
+        """Stored chat events of the session, in position order (AC-F4).
+
+        ``thread_id`` filters to one popup thread; an unknown or empty thread
+        returns no events.
+        """
         self._session_document(session_id)
         with self._store.transaction() as tx:
             rows = tx.list_projection(CHAT_PROJECTION, key_prefix=session_id + "/")
-        return [
+        events = [
             self._stored_event(_object(to_plain_object(row).get("event"), "event"))
             for _, row in rows
         ]
+        if thread_id is None:
+            return events
+        return [
+            event
+            for event in events
+            if _string(to_plain_object(event.payload), "thread_id") == thread_id
+        ]
+
+    def session_memos(self, session_id: str) -> list[MemoView]:
+        """Current learning memos of the session, by first ``memo.recorded`` position."""
+        self._session_document(session_id)
+        with self._store.transaction() as tx:
+            rows = tx.list_projection(MEMO_PROJECTION, key_prefix=session_id + "/")
+        documents = [to_plain_object(row) for _, row in rows]
+        documents.sort(key=lambda row: _integer(row, "first_recorded_position"))
+        return [_memo_view(document) for document in documents]
 
     # --- client events -----------------------------------------------------
 
@@ -418,6 +449,8 @@ class LearningLoop:
             definition_id = _string(attempt, "activity_definition_id")
         if event_type == "content.highlighted":
             self._check_highlight_unused(session_id, payload)
+        if event_type == "memo.edited":
+            self._check_memo_exists(session_id, payload)
         draft = EventDraft(
             event_type=event_type,
             event_version=event_version,
@@ -681,7 +714,11 @@ class LearningLoop:
                 request = self._appender.append(tx, request_draft).event
         existing = self._reply_to(session_id, request.event_id)
         if existing is not None:
-            return ChatExchange(request=request, reply=existing)
+            return ChatExchange(
+                request=request,
+                reply=existing,
+                memo=self._memo_for_thread(session_id, pack, request),
+            )
         request_payload = to_plain_object(request.payload)
         reply = self._generate_reply(
             session=session,
@@ -699,7 +736,8 @@ class LearningLoop:
                 "references": [to_plain_object(reference) for reference in references],
             },
         )
-        return ChatExchange(request=request, reply=reply)
+        memo = self._memo_after_reply(session_id, pack, mission, request, reply)
+        return ChatExchange(request=request, reply=reply, memo=memo)
 
     # --- terminal ----------------------------------------------------------
 
@@ -872,6 +910,15 @@ class LearningLoop:
             )
         if existing is not None:
             raise StateConflictError(f"highlight {highlight_id!r} already exists")
+
+    def _check_memo_exists(self, session_id: str, payload: JsonObject) -> None:
+        memo_id = payload.get("memo_id")
+        if not isinstance(memo_id, str):
+            raise ValidationFailedError("memo.edited needs a memo_id")
+        with self._store.transaction() as tx:
+            existing = tx.get_projection(MEMO_PROJECTION, memo_key(session_id, memo_id))
+        if existing is None:
+            raise InvalidRequestError(f"memo {memo_id!r} does not exist; nothing to edit")
 
     def _attempt_result(self, document: Mapping[str, PlainJson]) -> AttemptResult | None:
         outcome = _optional_string(document, "outcome")
@@ -1367,6 +1414,118 @@ class LearningLoop:
                 return event
         return None
 
+    # --- internals: memo summarization ------------------------------------
+
+    def _memo_ids_of(self, thread_id: str) -> tuple[str, str, str] | None:
+        """``(highlight_id, memo_id, tail)`` of a highlight thread, or ``None``."""
+        if not thread_id.startswith("thr_"):
+            return None
+        tail = thread_id[4:]
+        return f"hl_{tail}", f"memo_{tail}", tail
+
+    def _memo_for_thread(
+        self, session_id: str, pack: PackRef, request: StoredEvent
+    ) -> MemoView | None:
+        """The memo already recorded for ``request``'s thread, if any (replay path)."""
+        thread_id = _string(to_plain_object(request.payload), "thread_id")
+        derived = self._memo_ids_of(thread_id)
+        if derived is None or self._memo_summarizer_options(pack) is None:
+            return None
+        _, memo_id, _ = derived
+        with self._store.transaction() as tx:
+            document = tx.get_projection(MEMO_PROJECTION, memo_key(session_id, memo_id))
+        if document is None:
+            return None
+        return _memo_view(to_plain_object(document))
+
+    def _memo_after_reply(
+        self,
+        session_id: str,
+        pack: PackRef,
+        mission: MissionContext | None,
+        request: StoredEvent,
+        reply: StoredEvent,
+    ) -> MemoView | None:
+        """Summarize ``request``'s highlight thread and record the memo (AC-J6).
+
+        Returns ``None`` (recording nothing) when the pack has no summarizer,
+        the thread is not a highlight thread, the learner already edited the
+        memo, or the summarizer fails; the reply is never affected.
+        """
+        try:
+            options = self._memo_summarizer_options(pack)
+        except (InvalidRequestError, NotFoundError):
+            logger.exception("memo summarizer is unavailable; memo: null")
+            return None
+        if options is None:
+            return None
+        thread_id = _string(to_plain_object(request.payload), "thread_id")
+        derived = self._memo_ids_of(thread_id)
+        if derived is None:
+            return None
+        highlight_id, memo_id, _ = derived
+        highlight = self._highlight_document(session_id, highlight_id)
+        if highlight is None:
+            return None
+        with self._store.transaction() as tx:
+            existing = tx.get_projection(MEMO_PROJECTION, memo_key(session_id, memo_id))
+        if existing is not None and to_plain_object(existing).get("edited_by_learner") is True:
+            return None
+        thread = self.session_chat(session_id, thread_id=thread_id)
+        if not thread or thread[-1].event_id != reply.event_id:
+            return None
+        highlight_payload = to_plain_object(highlight.payload)
+        context = build_memo_context(highlight=highlight_payload, thread=thread)
+        if mission is not None:
+            assert_no_reference_solution(
+                context, self._reference_solution(pack, mission.activity_definition_id)
+            )
+        try:
+            note = self._memo_summarizer(pack, options).summarize(context)
+        except (LLMFailedError, InvalidRequestError, NotFoundError):
+            logger.exception("memo summarizer failed for thread %r; memo: null", thread_id)
+            return None
+        draft = EventDraft(
+            event_type="memo.recorded",
+            event_version=1,
+            actor="system",
+            learner_id=request.learner_id,
+            session_id=session_id,
+            attempt_id=request.attempt_id,
+            activity_definition_id=request.activity_definition_id,
+            payload={
+                "memo_id": memo_id,
+                "highlight_id": highlight_id,
+                "thread_id": thread_id,
+                "source_event_ids": [highlight.event_id] + [event.event_id for event in thread],
+                "title": note.title,
+                "body": note.body,
+                "provenance": note.provenance.to_dict(),
+            },
+            occurred_at=self._now(),
+            idempotency_key=None,
+            causation_id=reply.event_id,
+            correlation_id=request.correlation_id,
+        )
+        with self._store.transaction() as tx:
+            current = tx.get_projection(MEMO_PROJECTION, memo_key(session_id, memo_id))
+            if current is not None and to_plain_object(current).get("edited_by_learner") is True:
+                return None
+            self._appender.append(tx, draft)
+        with self._store.transaction() as tx:
+            document = tx.get_projection(MEMO_PROJECTION, memo_key(session_id, memo_id))
+        assert document is not None
+        return _memo_view(to_plain_object(document))
+
+    def _highlight_document(self, session_id: str, highlight_id: str) -> StoredEvent | None:
+        try:
+            document = self._projection(
+                HIGHLIGHT_PROJECTION, highlight_key(session_id, highlight_id), "highlight"
+            )
+        except NotFoundError:
+            return None
+        return self._stored_event(_object(document.get("event"), "event"))
+
     def _generate_reply(
         self,
         *,
@@ -1446,7 +1605,18 @@ class LearningLoop:
         except PackOptionError as exc:
             raise InvalidRequestError(str(exc)) from exc
 
-    def _prompt(self, pack: PackRef, options: EvaluatorOptions | TutorOptions) -> str:
+    def _memo_summarizer_options(self, pack: PackRef) -> MemoSummarizerOptions | None:
+        loaded = self._catalog.get_pack(pack)
+        try:
+            return memo_summarizer_options(loaded.registry)
+        except PackOptionError as exc:
+            raise InvalidRequestError(str(exc)) from exc
+
+    def _prompt(
+        self,
+        pack: PackRef,
+        options: EvaluatorOptions | TutorOptions | MemoSummarizerOptions,
+    ) -> str:
         llm = options.selection.llm
         try:
             return self._catalog.get_prompt(pack, llm.prompt_id, llm.prompt_version).text
@@ -1471,6 +1641,14 @@ class LearningLoop:
             schemas=self._schemas,
         )
 
+    def _memo_summarizer(self, pack: PackRef, options: MemoSummarizerOptions) -> LLMMemoSummarizer:
+        return LLMMemoSummarizer(
+            options=options,
+            prompt=self._prompt(pack, options),
+            llm=self._llm,
+            schemas=self._schemas,
+        )
+
 
 def _signal(value: str) -> Signal:
     if value == "positive":
@@ -1478,6 +1656,21 @@ def _signal(value: str) -> Signal:
     if value == "negative":
         return "negative"
     raise LLMFailedError(f"evidence signal {value!r} is not positive or negative")
+
+
+def _memo_view(document: Mapping[str, PlainJson]) -> MemoView:
+    """A :class:`MemoView` from a ``loop_memo`` projection document."""
+    return MemoView(
+        memo_id=_string(document, "memo_id"),
+        highlight_id=_string(document, "highlight_id"),
+        thread_id=_string(document, "thread_id"),
+        title=_string(document, "title"),
+        body=_string(document, "body"),
+        source_event_ids=_string_list(document, "source_event_ids"),
+        edited_by_learner=to_plain_object(document).get("edited_by_learner") is True,
+        updated_at=_string(document, "updated_at"),
+        last_event_id=_string(document, "last_event_id"),
+    )
 
 
 def stored_event_from_dict(document: Mapping[str, PlainJson]) -> StoredEvent:

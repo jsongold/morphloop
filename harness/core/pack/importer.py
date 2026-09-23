@@ -497,6 +497,24 @@ class PackImporter:
                     item = _obj(item)
                     where = f"toc.chapters[{i}].items[{j}]"
                     exists(str(item["kind"]), str(item["id"]), f.path, where)
+            memo = doc.get("memo")
+            if isinstance(memo, dict):
+                region = memo.get("region")
+                layout = doc.get("layout")
+                regions = layout if isinstance(layout, dict) else {}
+                if not isinstance(region, str) or region not in regions:
+                    problems.add(
+                        "unresolved_reference",
+                        f.path,
+                        f"memo.region {region!r} is not a key of layout {sorted(regions)}",
+                    )
+                registry = _obj(manifest["registry"])
+                if "memo_summarizer" not in registry:
+                    problems.add(
+                        "memo_without_summarizer",
+                        f.path,
+                        "layout declares memo but registry has no memo_summarizer",
+                    )
 
         generation = manifest.get("content_generation")
         default_timing = _obj(generation)["default_timing"] if generation is not None else None

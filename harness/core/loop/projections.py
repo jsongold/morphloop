@@ -27,6 +27,9 @@ Projections written here (all prefixed ``loop_``; the pack projections belong to
     event, so a highlight survives a reload (AC-D2).
 ``loop_chat``
     key ``<session_id>/<position>``; the stored chat events (AC-F4).
+``loop_memo``
+    key ``<session_id>/<memo_id>``; the current memo of one highlight thread
+    (``memo.recorded`` upserts, ``memo.edited`` marks it learner-owned).
 ``loop_idempotency``
     key ``<idempotency_key>``; which event a key produced, so a resend can
     return the original ids instead of appending a second event (AC-F5). The
@@ -57,6 +60,7 @@ LAB_PROJECTION = "loop_lab"
 LEARNER_SKILL_PROJECTION = "loop_learner_skill"
 HIGHLIGHT_PROJECTION = "loop_highlight"
 CHAT_PROJECTION = "loop_chat"
+MEMO_PROJECTION = "loop_memo"
 IDEMPOTENCY_PROJECTION = "loop_idempotency"
 
 LOOP_PROJECTIONS: tuple[str, ...] = (
@@ -67,6 +71,7 @@ LOOP_PROJECTIONS: tuple[str, ...] = (
     LEARNER_SKILL_PROJECTION,
     HIGHLIGHT_PROJECTION,
     CHAT_PROJECTION,
+    MEMO_PROJECTION,
     IDEMPOTENCY_PROJECTION,
 )
 
@@ -101,6 +106,10 @@ def learner_skill_key(learner_id: str, pack_id: str, skill_id: str) -> str:
 
 def highlight_key(session_id: str, highlight_id: str) -> str:
     return f"{session_id}/{highlight_id}"
+
+
+def memo_key(session_id: str, memo_id: str) -> str:
+    return f"{session_id}/{memo_id}"
 
 
 # --- small accessors --------------------------------------------------------
@@ -166,6 +175,7 @@ def _new_session(event: StoredEvent) -> Document:
         "attempt_ids": [],
         "active_attempt_id": None,
         "thread_ids": [],
+        "memo_ids": [],
         "ui_state": {"open_content": None, "visualization_steps": {}},
     }
 
@@ -483,6 +493,56 @@ def _chat(event: StoredEvent) -> list[ProjectionWrite]:
     ]
 
 
+def _memo_recorded(event: StoredEvent) -> list[ProjectionWrite]:
+    payload = _payload(event)
+    memo_id = _string(payload, "memo_id")
+
+    def on_memo(document: JsonObject | None) -> JsonObject:
+        current = _doc(document, f"memo {memo_id}") if document is not None else {}
+        current["memo_id"] = memo_id
+        current["highlight_id"] = _string(payload, "highlight_id")
+        current["thread_id"] = _string(payload, "thread_id")
+        current["title"] = _string(payload, "title")
+        current["body"] = _string(payload, "body")
+        current["source_event_ids"] = _strings(payload, "source_event_ids")
+        current["edited_by_learner"] = current.get("edited_by_learner", False)
+        current["updated_at"] = format_timestamp(event.occurred_at)
+        current["last_event_id"] = event.event_id
+        current["first_recorded_position"] = current.get("first_recorded_position", event.position)
+        return current
+
+    def on_session(document: Document, _: StoredEvent) -> None:
+        _append_id(document, "memo_ids", memo_id)
+
+    return [
+        ProjectionWrite(
+            projection=MEMO_PROJECTION, key=memo_key(event.session_id, memo_id), apply=on_memo
+        ),
+        _session_write(event, on_session),
+    ]
+
+
+def _memo_edited(event: StoredEvent) -> list[ProjectionWrite]:
+    payload = _payload(event)
+    memo_id = _string(payload, "memo_id")
+
+    def on_memo(document: JsonObject | None) -> JsonObject:
+        current = _doc(document, f"memo {memo_id}")
+        current["title"] = _string(payload, "title")
+        current["body"] = _string(payload, "body")
+        current["edited_by_learner"] = True
+        current["updated_at"] = format_timestamp(event.occurred_at)
+        current["last_event_id"] = event.event_id
+        return current
+
+    return [
+        ProjectionWrite(
+            projection=MEMO_PROJECTION, key=memo_key(event.session_id, memo_id), apply=on_memo
+        ),
+        _session_write(event),
+    ]
+
+
 _HANDLERS: Mapping[str, Callable[[StoredEvent], list[ProjectionWrite]]] = {
     "session.started": lambda e: [_session_write(e), _learner_session_write(e)],
     "activity.started": _activity_started,
@@ -502,6 +562,8 @@ _HANDLERS: Mapping[str, Callable[[StoredEvent], list[ProjectionWrite]]] = {
     "visualization.step_selected": _visualization_step_selected,
     "assistant.message_requested": _chat,
     "assistant.message_generated": _chat,
+    "memo.recorded": _memo_recorded,
+    "memo.edited": _memo_edited,
 }
 
 

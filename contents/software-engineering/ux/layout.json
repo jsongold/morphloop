@@ -73,6 +73,9 @@
       "quote_selection": true
     }
   },
+  "memo": {
+    "region": "side"
+  },
   "transitions": [
     {
       "on": "activity_started",

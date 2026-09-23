@@ -271,8 +271,16 @@ async def send_chat_message(backend: Wired, session_id: str, body: ChatMessageRe
 
 
 @router.get("/sessions/{session_id}/chat")
-def get_session_chat(backend: Wired, session_id: str) -> dict[str, PlainJson]:
-    return {"events": [event.to_dict() for event in backend.loop.session_chat(session_id)]}
+def get_session_chat(
+    backend: Wired, session_id: str, thread_id: str | None = None
+) -> dict[str, PlainJson]:
+    events = backend.loop.session_chat(session_id, thread_id=thread_id)
+    return {"events": [event.to_dict() for event in events]}
+
+
+@router.get("/sessions/{session_id}/memos")
+def get_session_memos(backend: Wired, session_id: str) -> dict[str, PlainJson]:
+    return {"memos": [memo.to_dict() for memo in backend.loop.session_memos(session_id)]}
 
 
 @router.get("/sessions/{session_id}/highlights")

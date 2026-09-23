@@ -224,3 +224,75 @@ def test_timeline_pages_forward_without_skipping(
 
     assert_component(second, "TimelinePage")
     assert second["events"][0]["position"] == first["last_position"] + 1
+
+
+def test_highlight_thread_chat_records_a_memo_over_http(
+    wired: tuple[TestClient, LoopFixture],
+) -> None:
+    client, fixture = wired
+    session_id = _start_session(client, fixture)["session"]["session_id"]
+    attempt = client.post(
+        f"/sessions/{session_id}/attempts",
+        json={"idempotency_key": "web:2", "activity_definition_id": ACTIVITY_ID},
+    ).json()
+    attempt_id = attempt["attempt_id"]
+
+    highlighted = client.post(
+        f"/sessions/{session_id}/events",
+        json={
+            "event_type": "content.highlighted",
+            "event_version": 1,
+            "occurred_at": NOW,
+            "idempotency_key": "web:3",
+            "attempt_id": attempt_id,
+            "payload": HIGHLIGHT_PAYLOAD,
+        },
+    )
+    assert highlighted.status_code == 201, highlighted.text
+
+    chat = client.post(
+        f"/sessions/{session_id}/chat/messages",
+        json={
+            "idempotency_key": "web:4",
+            "occurred_at": NOW,
+            "thread_id": "thr_first",
+            "attempt_id": attempt_id,
+            "text": "What is this part for?",
+            "references": [{"type": "highlight", "id": "hl_first"}],
+        },
+    )
+    assert chat.status_code == 201, chat.text
+    body = chat.json()
+    assert_component(body, "ChatExchange")
+    assert body["memo"] is not None
+    assert body["memo"]["memo_id"] == "memo_first"
+    assert body["memo"]["thread_id"] == "thr_first"
+    assert body["memo"]["highlight_id"] == "hl_first"
+    assert_component(body["memo"], "MemoView")
+
+    memos = client.get(f"/sessions/{session_id}/memos").json()
+    assert_component(memos, "MemoList")
+    assert [m["memo_id"] for m in memos["memos"]] == ["memo_first"]
+
+    only_thread = client.get(
+        f"/sessions/{session_id}/chat", params={"thread_id": "thr_first"}
+    ).json()
+    assert_component(only_thread, "ChatEventList")
+    assert len(only_thread["events"]) == 2
+    assert all(e["payload"]["thread_id"] == "thr_first" for e in only_thread["events"])
+
+    learner_edit = client.post(
+        f"/sessions/{session_id}/events",
+        json={
+            "event_type": "memo.edited",
+            "event_version": 1,
+            "occurred_at": NOW,
+            "idempotency_key": "web:5",
+            "attempt_id": attempt_id,
+            "payload": {"memo_id": "memo_first", "title": "My note", "body": "Mine now."},
+        },
+    )
+    assert learner_edit.status_code == 201, learner_edit.text
+    [memo] = client.get(f"/sessions/{session_id}/memos").json()["memos"]
+    assert memo["edited_by_learner"] is True
+    assert (memo["title"], memo["body"]) == ("My note", "Mine now.")
