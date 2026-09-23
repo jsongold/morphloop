@@ -2,10 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChatEvent, ChatReference, HighlightEvent } from "@/lib/types";
+import { HighlightableText } from "./HighlightableText";
 
 interface Props {
   events: ChatEvent[];
   highlightsById: Map<string, HighlightEvent>;
+  /** All saved highlights, for rendering <mark>s inside message text. */
+  highlights: HighlightEvent[];
   /** Highlights quoted in the composer (from "Ask AI"). */
   quoted: HighlightEvent[];
   onRemoveQuote: (highlightId: string) => void;
@@ -14,7 +17,7 @@ interface Props {
 }
 
 /** Persistent tutor chat. Referenced highlights are rendered as visible quotes (AC-D3, AC-D4). */
-export function ChatPanel({ events, highlightsById, quoted, onRemoveQuote, onSend, error }: Props) {
+export function ChatPanel({ events, highlightsById, highlights, quoted, onRemoveQuote, onSend, error }: Props) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
@@ -50,7 +53,13 @@ export function ChatPanel({ events, highlightsById, quoted, onRemoveQuote, onSen
               {e.event_type === "assistant.message_generated" ? `tutor · ${e.payload.mode}` : "you"}
             </div>
             <References refs={e.payload.references} highlightsById={highlightsById} />
-            <div style={{ whiteSpace: "pre-wrap" }}>{e.payload.text}</div>
+            <HighlightableText
+              text={e.payload.text}
+              contentId={e.payload.message_id}
+              contentVersion=""
+              sourceKind="chat_message"
+              highlights={highlights}
+            />
           </div>
         ))}
         {sending && <p className="muted">Tutor is replying…</p>}
@@ -96,7 +105,7 @@ export function ChatPanel({ events, highlightsById, quoted, onRemoveQuote, onSen
   );
 }
 
-function References({
+export function References({
   refs,
   highlightsById,
 }: {

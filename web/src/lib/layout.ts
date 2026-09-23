@@ -11,7 +11,8 @@
 //       left:   { component: string },
 //       main:   { modes: string[], default_mode: string, components: string[] },
 //       side:   { component: string },
-//       bottom: { component: string, persistent: boolean } } }
+//       bottom: { component: string, persistent: boolean } },
+//     memo:   { region: string } }
 //
 // No harness defaults (ADR-0002): a region the pack does not declare is not
 // rendered, with one exception — the practice environment of a lab-backed
@@ -38,6 +39,8 @@ export interface InterpretedLayout {
   sideComponent: string | null;
   bottomComponent: string | null;
   bottomPersistent: boolean;
+  /** Region key (a key under `layout`, e.g. "side") where the memo pane renders, or null. */
+  memoRegion: string | null;
   declared: boolean;
 }
 
@@ -61,6 +64,7 @@ export function interpretLayout(doc: Record<string, unknown> | null): Interprete
   const main = obj(root?.main);
   const side = obj(root?.side);
   const bottom = obj(root?.bottom);
+  const memo = obj(doc?.memo);
   const modes = strings(main?.modes);
   const defaultMode = str(main?.default_mode);
   // The Importer validated the toc against contracts/schemas/pack/layout.json.
@@ -74,6 +78,7 @@ export function interpretLayout(doc: Record<string, unknown> | null): Interprete
     sideComponent: str(side?.component),
     bottomComponent: str(bottom?.component),
     bottomPersistent: bottom?.persistent === true,
+    memoRegion: str(memo?.region),
     declared: root !== null && root !== undefined,
   };
 }

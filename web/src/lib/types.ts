@@ -16,6 +16,7 @@ export type HighlightId = string; // hl_*
 export type ThreadId = string; // thr_*
 export type MessageId = string; // msg_*
 export type TerminalId = string; // term_*
+export type MemoId = string; // memo_*
 export type DefinitionId = string;
 export type SkillId = string;
 export type ContentHash = string; // sha256:<hex>
@@ -94,13 +95,34 @@ export type ChatReference =
   | { type: "highlight"; id: HighlightId }
   | { type: "event"; id: EventId };
 
+/**
+ * What text a highlight points at (contracts/schemas/events/payloads/
+ * content.highlighted/2.json). Pack content and chat messages have UTF-16
+ * offsets into the source text; terminal highlights are an inclusive
+ * `sequence` range with no offsets.
+ */
+export type HighlightSource =
+  | { kind: "pack"; content_id: DefinitionId; content_version: VersionLabel }
+  | { kind: "chat_message"; message_id: MessageId }
+  | { kind: "terminal"; terminal_id: TerminalId; first_sequence: number; last_sequence: number };
+
+/** content_id of a pack source, or null for chat/terminal sources. */
+export function packSourceContentId(s: HighlightSource): DefinitionId | null {
+  return s.kind === "pack" ? s.content_id : null;
+}
+
+/** content_version of a pack source, or null for chat/terminal sources. */
+export function packSourceContentVersion(s: HighlightSource): VersionLabel | null {
+  return s.kind === "pack" ? s.content_version : null;
+}
+
 export interface ContentHighlightedPayload {
   highlight_id: HighlightId;
-  content_id: DefinitionId;
-  content_version: VersionLabel;
+  source: HighlightSource;
   selected_text: string;
-  start_offset: number;
-  end_offset: number;
+  /** UTF-16 offsets; null only for terminal sources. */
+  start_offset: number | null;
+  end_offset: number | null;
   semantic_anchor: string | null;
   context_before: string;
   context_after: string;
@@ -194,6 +216,26 @@ export type HighlightEvent = StoredEvent<"content.highlighted", ContentHighlight
 export type MessageRequestedEvent = StoredEvent<"assistant.message_requested", MessageRequestedPayload>;
 export type MessageGeneratedEvent = StoredEvent<"assistant.message_generated", MessageGeneratedPayload>;
 export type ChatEvent = MessageRequestedEvent | MessageGeneratedEvent;
+
+/** Learner replacement of a memo's text (memo.edited/1.json). */
+export interface MemoEditedPayload {
+  memo_id: MemoId;
+  title: string;
+  body: string;
+}
+
+/** Current text of one learning memo (MemoView, openapi v0.1). */
+export interface MemoView {
+  memo_id: MemoId;
+  highlight_id: HighlightId;
+  thread_id: ThreadId;
+  title: string;
+  body: string;
+  source_event_ids: EventId[];
+  edited_by_learner: boolean;
+  updated_at: Timestamp;
+  last_event_id: EventId;
+}
 
 // ---------- HTTP-only shapes (components.schemas) ----------
 
@@ -305,7 +347,8 @@ export interface AttemptState {
 export type ClientEventRequest =
   | ClientEventBase<"content.highlighted", ContentHighlightedPayload>
   | ClientEventBase<"content.opened", ContentOpenedPayload>
-  | ClientEventBase<"visualization.step_selected", VisualizationStepSelectedPayload>;
+  | ClientEventBase<"visualization.step_selected", VisualizationStepSelectedPayload>
+  | ClientEventBase<"memo.edited", MemoEditedPayload>;
 
 interface ClientEventBase<T extends string, P> {
   event_type: T;
@@ -329,6 +372,8 @@ export interface ChatMessageRequest {
 export interface ChatExchange {
   request: MessageRequestedEvent;
   reply: MessageGeneratedEvent;
+  /** Memo written after this reply, for highlight threads only (or null). */
+  memo?: MemoView | null;
 }
 
 export interface TimelinePage {
