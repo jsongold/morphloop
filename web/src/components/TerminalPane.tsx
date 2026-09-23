@@ -77,21 +77,24 @@ export default function TerminalPane({
 
     // Replay what this lab already printed (stored terminal.output events),
     // then dedupe live chunks by `sequence` (ws/payloads/terminal.output.json).
-    let lastSeq = -1;
+    // A sequence counts within one terminal: every connection opens a new
+    // terminal whose sequence restarts at 0, named by lab.status.terminal_id.
+    const lastSeq = new Map<string, number>();
+    let terminalId = "";
     const replay = cb.current.storedOutput
       .filter((o) => o.lab_instance_id === labId)
       .sort((a, b) => a.sequence - b.sequence);
     for (const chunk of replay) {
       term.write(decodeOutput(chunk));
-      lastSeq = Math.max(lastSeq, chunk.sequence);
+      lastSeq.set(chunk.terminal_id, Math.max(lastSeq.get(chunk.terminal_id) ?? -1, chunk.sequence));
     }
 
     const socket = new LabSocket(terminalPath, {
       onStateChange: (s) => setSocketState(s),
       onMessage: (m) => {
         if (m.type === "terminal.output") {
-          if (m.payload.sequence <= lastSeq) return;
-          lastSeq = m.payload.sequence;
+          if (m.payload.sequence <= (lastSeq.get(terminalId) ?? -1)) return;
+          lastSeq.set(terminalId, m.payload.sequence);
           term.write(decodeOutput(m.payload));
         } else if (m.type === "terminal.exit") {
           socket.stopReconnect();
@@ -99,6 +102,7 @@ export default function TerminalPane({
             m.payload.signal ?? (m.payload.exit_code === null ? "exited" : `exit ${m.payload.exit_code}`),
           );
         } else if (m.type === "lab.status") {
+          if (m.payload.terminal_id) terminalId = m.payload.terminal_id;
           if (m.payload.status === "resetting" || m.payload.status === "error") socket.stopReconnect();
           cb.current.onLabStatus(m.payload);
         }
