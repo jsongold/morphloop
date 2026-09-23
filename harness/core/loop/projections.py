@@ -14,10 +14,12 @@ Projections written here (all prefixed ``loop_``; the pack projections belong to
 ``loop_learner_session``
     key ``<learner_id>/<position>``; index for "list a learner's sessions".
 ``loop_attempt``
-    key ``<attempt_id>``; attempt status, its labs and the event ids of its
-    evaluation chain.
+    key ``<attempt_id>``; attempt status, its labs, the event ids of its
+    evaluation chain and the problem of the last failed evaluation
+    (``evaluation.failed``), cleared by the next submission.
 ``loop_lab``
-    key ``<lab_instance_id>``; lab lifecycle and provenance.
+    key ``<lab_instance_id>``; lab lifecycle, provenance and the opaque
+    ``runtime_ref`` a terminal attaches to (``lab.started`` v2; ``None`` for v1).
 ``loop_learner_skill``
     key ``<learner_id>/<pack_id>/<skill_id>``; the learner-skill state.
 ``loop_highlight``
@@ -237,6 +239,7 @@ def _activity_started(event: StoredEvent) -> list[ProjectionWrite]:
             "skill_update_event_ids": [],
             "completion_event_id": None,
             "outcome": None,
+            "last_submission_error": None,
         }
 
     def on_session(document: Document, _: StoredEvent) -> None:
@@ -268,6 +271,7 @@ def _lab_started(event: StoredEvent) -> list[ProjectionWrite]:
             "started_event_id": event.event_id,
             "reset_event_id": None,
             "started_at": format_timestamp(event.occurred_at),
+            "runtime_ref": payload.get("runtime_ref"),  # v1 upcast: absent -> None
         }
 
     def on_attempt(document: Document, _: StoredEvent) -> None:
@@ -307,7 +311,18 @@ def _lab_reset(event: StoredEvent) -> list[ProjectionWrite]:
 def _activity_submitted(event: StoredEvent) -> list[ProjectionWrite]:
     def on_attempt(document: Document, _: StoredEvent) -> None:
         document["status"] = "evaluating"
+        document["last_submission_error"] = None
         _append_id(document, "submission_event_ids", event.event_id)
+
+    return [_attempt_write(event, on_attempt), _session_write(event)]
+
+
+def _evaluation_failed(event: StoredEvent) -> list[ProjectionWrite]:
+    problem = _object(_payload(event).get("problem"), "problem")
+
+    def on_attempt(document: Document, _: StoredEvent) -> None:
+        document["status"] = "active"
+        document["last_submission_error"] = problem
 
     return [_attempt_write(event, on_attempt), _session_write(event)]
 
@@ -463,6 +478,7 @@ _HANDLERS: Mapping[str, Callable[[StoredEvent], list[ProjectionWrite]]] = {
     "terminal.output": lambda e: [_session_write(e)],
     "activity.submitted": _activity_submitted,
     "evaluation.completed": _evaluation_completed,
+    "evaluation.failed": _evaluation_failed,
     "evidence.created": _evidence_created,
     "learner_skill.updated": _learner_skill_updated,
     "activity.completed": _activity_completed,

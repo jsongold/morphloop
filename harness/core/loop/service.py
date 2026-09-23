@@ -19,7 +19,7 @@ before the previous state is read and hold it until the update is appended
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from harness.core.contract_schemas import ContractSchemas
@@ -140,11 +140,10 @@ TIMELINE_MAX_LIMIT = 500
 
 @dataclass(slots=True, kw_only=True)
 class _LabHandle:
-    """In-process runtime handle of a lab; not derivable from events (see README notes)."""
+    """In-process terminal state of a lab; ``runtime_ref`` lives in ``loop_lab``."""
 
     lab_instance_id: str
     attempt_id: str
-    runtime_ref: str
     status: str
     terminal_id: str | None = None
 
@@ -215,7 +214,6 @@ class LearningLoop:
             redaction=redaction if redaction is not None else NullRedaction(),
         )
         self._handles: dict[str, _LabHandle] = {}
-        self._submission_errors: dict[str, JsonObject] = {}
 
     # --- packs -------------------------------------------------------------
 
@@ -489,9 +487,7 @@ class LearningLoop:
         pack = self._pack_of_session(session_id)
         definition = self._definition(pack, "activity", _string(document, "activity_definition_id"))
         status = _string(document, "status")
-        error = self._submission_errors.get(attempt_id)
-        if status == "evaluating" and error is not None:
-            status = "active"
+        error = document.get("last_submission_error")
         lab_instance_id = _optional_string(document, "lab_instance_id")
         return AttemptState(
             attempt_id=attempt_id,
@@ -500,7 +496,7 @@ class LearningLoop:
             status=status,
             started_at=_string(document, "started_at"),
             lab=None if lab_instance_id is None else self.lab_state(lab_instance_id),
-            last_submission_error=error,
+            last_submission_error=error if isinstance(error, dict) else None,
             result=self._attempt_result(document),
         )
 
@@ -608,9 +604,7 @@ class LearningLoop:
             correlation_id=attempt_id,
         )
         with self._store.transaction() as tx:
-            result = self._appender.append(tx, draft)
-        if result.created:
-            self._submission_errors.pop(attempt_id, None)
+            self._appender.append(tx, draft)
         return self.attempt_state(attempt_id)
 
     def evaluate_attempt(self, attempt_id: str) -> AttemptState:
@@ -620,12 +614,14 @@ class LearningLoop:
         update per skill with evidence. ``evaluation.completed`` →
         ``evidence.created`` → ``learner_skill.updated`` → ``activity.completed``
         are appended in one transaction, so a failure anywhere leaves no partial
-        state (AC-E4): the attempt returns to ``active`` with the error attached.
+        state (AC-E4). The failure itself is appended as ``evaluation.failed``,
+        which returns the attempt to ``active`` with the error attached, so a
+        restarted process still sees it and accepts a resubmission.
         """
         try:
             return self._evaluate(attempt_id)
         except LoopError as error:
-            self._submission_errors[attempt_id] = problem_body(error)
+            self._record_evaluation_failure(attempt_id, error)
             raise
 
     # --- chat --------------------------------------------------------------
@@ -707,11 +703,9 @@ class LearningLoop:
     ) -> TerminalConnection:
         """Open a PTY in a running lab and record its traffic (AC-B1, AC-B2)."""
         document = self._lab_document(lab_instance_id)
-        handle = self._handles.get(lab_instance_id)
-        if handle is None:
-            raise LabUnavailableError(
-                f"lab {lab_instance_id!r} has no runtime handle in this process"
-            )
+        runtime_ref = _optional_string(document, "runtime_ref")
+        if runtime_ref is None or _optional_string(document, "replaced_by_lab_instance_id"):
+            raise LabUnavailableError(f"lab {lab_instance_id!r} has no runtime handle to attach to")
         attempt_id = _string(document, "attempt_id")
         attempt = self._attempt_document(attempt_id)
         session_id = _string(attempt, "session_id")
@@ -724,7 +718,7 @@ class LearningLoop:
             session = await self._terminals.open(
                 TerminalOpenRequest(
                     lab_instance_id=lab_instance_id,
-                    runtime_ref=handle.runtime_ref,
+                    runtime_ref=runtime_ref,
                     terminal_id=terminal_id,
                     argv=launch.argv,
                     size=size,
@@ -734,8 +728,12 @@ class LearningLoop:
             )
         except Exception as exc:  # adapter failures are lab failures to the learner
             raise LabUnavailableError(f"could not open a terminal: {exc}") from exc
-        handle.terminal_id = terminal_id
-        handle.status = "ready"
+        self._handles[lab_instance_id] = _LabHandle(
+            lab_instance_id=lab_instance_id,
+            attempt_id=attempt_id,
+            status="ready",
+            terminal_id=terminal_id,
+        )
         return TerminalConnection(
             session=session,
             context=TerminalContext(
@@ -938,14 +936,13 @@ class LearningLoop:
         self._handles[lab_instance_id] = _LabHandle(
             lab_instance_id=lab_instance_id,
             attempt_id=attempt_id,
-            runtime_ref=info.runtime_ref,
             status="ready",
         )
         if replaces is not None:
             self._handles.pop(replaces, None)
         draft = EventDraft(
             event_type="lab.started",
-            event_version=1,
+            event_version=2,
             actor="system",
             learner_id=_string(attempt, "learner_id"),
             session_id=session_id,
@@ -959,6 +956,7 @@ class LearningLoop:
                 },
                 "trigger": trigger,
                 "replaces_lab_instance_id": replaces,
+                "runtime_ref": info.runtime_ref,
                 "provenance": {
                     "image_digest": info.image_digest,
                     "fixture_id": fixture_id,
@@ -1128,8 +1126,29 @@ class LearningLoop:
                     causation_id=evaluation_event.event_id,
                 ),
             )
-        self._submission_errors.pop(attempt_id, None)
         return self.attempt_state(attempt_id)
+
+    def _record_evaluation_failure(self, attempt_id: str, error: LoopError) -> None:
+        """Append ``evaluation.failed`` for the pending submission, if there is one."""
+        try:
+            document = self._attempt_document(attempt_id)
+        except NotFoundError:
+            return
+        submissions = _string_list(document, "submission_event_ids")
+        if _string(document, "status") != "evaluating" or not submissions:
+            return  # e.g. "was not submitted": nothing pending to fail
+        draft = self._attempt_draft(
+            document,
+            "evaluation.failed",
+            "system",
+            {"submission_event_id": submissions[-1], "problem": problem_body(error)},
+            self._now(),
+            causation_id=submissions[-1],
+        )
+        # One failure per submission, even if two evaluations of it race.
+        draft = replace(draft, idempotency_key=f"evaluation.failed:{submissions[-1]}")
+        with self._store.transaction() as tx:
+            self._appender.append(tx, draft)
 
     def _attempt_draft(
         self,
@@ -1258,8 +1277,6 @@ class LearningLoop:
         pack = self._pack_ref(session)
         definition = self._definition(pack, "activity", _string(attempt, "activity_definition_id"))
         status = _string(attempt, "status")
-        if self._submission_errors.get(chosen) is not None and status == "evaluating":
-            status = "active"
         return MissionContext(
             attempt_id=chosen,
             activity_definition_id=definition.key,

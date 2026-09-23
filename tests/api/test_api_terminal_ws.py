@@ -176,12 +176,11 @@ def test_reset_announces_itself_and_closes_the_terminal(
     assert body["terminal_path"] == f"/labs/{body['lab_instance_id']}/terminal"
 
 
-def test_terminal_cannot_be_reopened_after_a_restart(
+def test_terminal_reopens_after_a_restart(
     wired: tuple[TestClient, LoopFixture, str, str],
 ) -> None:
-    """Known gap: ``LabInfo.runtime_ref`` is in no event and no projection, so a
-    process that did not start the lab cannot attach a PTY to it. The connection
-    is accepted and reports ``lab-unavailable`` rather than pretending."""
+    """``runtime_ref`` is on ``lab.started`` v2 and in ``loop_lab``, so a process
+    that did not start the lab can still attach a PTY to it."""
     _, fixture, _, lab_id = wired
     restarted = LearningLoop(
         store=fixture.store,
@@ -196,9 +195,7 @@ def test_terminal_cannot_be_reopened_after_a_restart(
     app = create_app(Backend(loop=restarted, store=fixture.store))
 
     with TestClient(app) as client, client.websocket_connect(f"/labs/{lab_id}/terminal") as ws:
-        _receive_until(ws, "lab.status")
-        error = _receive_until(ws, "error")
-        failed = _receive_until(ws, "lab.status")
+        ready = _ready(ws)
 
-    assert error["payload"]["code"] == "lab-unavailable"
-    assert failed["payload"]["status"] == "error"
+    assert ready["payload"]["status"] == "ready"
+    assert fixture.terminals.sessions[-1].request.runtime_ref == f"fake-{lab_id}"

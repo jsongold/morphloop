@@ -171,9 +171,8 @@ def test_a_failing_tutor_is_reported_as_llm_failed(
 def test_a_failed_evaluation_leaves_the_attempt_active_with_a_problem(
     wired: tuple[TestClient, LoopFixture],
 ) -> None:
-    """AC-E4, and a known gap: nothing records the failure as an event, so
-    ``last_submission_error`` lives only in the process that ran the evaluation
-    and the timeline shows no trace of the failed submission."""
+    """AC-E4: the failure is recorded as ``evaluation.failed``, so
+    ``last_submission_error`` survives a restart and shows on the timeline."""
     client, fixture = wired
     session_id = client.post("/sessions", json=_session_body(fixture)).json()["session"][
         "session_id"
@@ -196,6 +195,7 @@ def test_a_failed_evaluation_leaves_the_attempt_active_with_a_problem(
     types = [event["event_type"] for event in timeline["events"]]
     assert "evaluation.completed" not in types
     assert "learner_skill.updated" not in types
+    assert types[-1] == "evaluation.failed"
 
 
 # --- idempotent replays -----------------------------------------------------

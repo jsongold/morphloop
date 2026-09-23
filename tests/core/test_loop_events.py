@@ -191,13 +191,18 @@ def test_an_invalid_learner_model_output_changes_no_state() -> None:
     with pytest.raises(LLMFailedError):
         fixture.loop.evaluate_attempt(attempt_id)
 
-    assert len(fixture.store.read_session(session_id)) == before
+    # Only the failure itself is recorded; no evaluation chain, no learner state.
+    events = fixture.store.read_session(session_id)
+    assert [event.event_type for event in events[before:]] == ["evaluation.failed"]
     assert fixture.loop.learner_skills(LEARNER_ID) == []
     state = fixture.loop.attempt_state(attempt_id)
     assert state.status == "active"
     assert state.last_submission_error is not None
     assert state.last_submission_error["code"] == "llm-failed"
     assert state.result is None
+    live = projections(fixture.store)
+    fixture.loop.rebuild()
+    assert projections(fixture.store) == live
 
 
 def test_an_invalid_evaluator_output_changes_no_state() -> None:
@@ -209,5 +214,6 @@ def test_an_invalid_evaluator_output_changes_no_state() -> None:
 
     with pytest.raises(LLMFailedError):
         fixture.loop.evaluate_attempt(attempt_id)
-    assert len(fixture.store.read_session(session_id)) == before
+    events = fixture.store.read_session(session_id)
+    assert [event.event_type for event in events[before:]] == ["evaluation.failed"]
     assert [request.role for request in llm.requests] == ["evaluator"]

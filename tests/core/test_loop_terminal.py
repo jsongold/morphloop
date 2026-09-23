@@ -100,10 +100,19 @@ async def test_binary_output_is_stored_as_base64() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_lab_without_a_runtime_handle_cannot_open_a_terminal() -> None:
+async def test_a_terminal_reattaches_from_the_rebuilt_projection() -> None:
     fixture = build_loop()
     _, _, lab_instance_id = started(fixture)
-    fixture.loop.rebuild()  # the projections survive a restart, the handle does not
+    fixture.loop.rebuild()  # the projections survive a restart, the handles do not
     fixture.loop._handles.clear()
+    await fixture.loop.open_terminal(lab_instance_id=lab_instance_id, size=SIZE)
+    assert fixture.terminals.sessions[-1].request.runtime_ref == f"fake-{lab_instance_id}"
+
+
+@pytest.mark.asyncio
+async def test_a_replaced_lab_cannot_open_a_terminal() -> None:
+    fixture = build_loop()
+    _, _, lab_instance_id = started(fixture)
+    fixture.loop.reset_lab(lab_instance_id=lab_instance_id, idempotency_key="web:reset")
     with pytest.raises(LabUnavailableError):
         await fixture.loop.open_terminal(lab_instance_id=lab_instance_id, size=SIZE)
