@@ -155,7 +155,7 @@ def test_complete_structured_maps_request_onto_the_litellm_call() -> None:
     # ... the schema goes untouched into response_format ...
     assert call["response_format"] == {
         "type": "json_schema",
-        "json_schema": {"name": "evaluator", "schema": SCHEMA, "strict": True},
+        "json_schema": {"name": "evaluator", "schema": SCHEMA},
     }
     # ... and every generation parameter the pack declares is forwarded.
     assert call["max_tokens"] == 1024
@@ -205,6 +205,52 @@ def test_provenance_falls_back_to_the_requested_model() -> None:
     provenance = provider.complete_structured(_request()).provenance
 
     assert provenance.model == "openai/gpt-5"
+
+
+def test_contract_schema_goes_through_without_strict_and_unrewritten() -> None:
+    """OpenAI strict mode rejects the frozen contract schemas; non-strict does not.
+
+    The three shapes below are the ones the live API refuses under
+    ``strict: True`` -- a ``const`` with no sibling ``type``
+    (``tutor.reply.references``), ``uniqueItems`` (``evaluator.judgment``,
+    ``learner_model.update``) and an object that omits an optional property
+    from ``required`` (``common/skill-state.json``). The adapter must neither
+    send ``strict`` nor rewrite them away: the schema is the contract, and the
+    harness-side validator stays the authority.
+    """
+    schema = {
+        "type": "object",
+        "required": ["kind", "ids"],
+        "properties": {
+            "kind": {"const": "highlight"},
+            "ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
+            "note": {"type": "string"},
+        },
+        "additionalProperties": False,
+    }
+    completion = _FakeCompletion([_response('{"kind": "highlight", "ids": ["a"]}')])
+    provider = LiteLLMProvider(completion=completion)
+
+    provider.complete_structured(_request(role="tutor", output_schema=schema))
+
+    json_schema = completion.calls[0]["response_format"]["json_schema"]
+    assert "strict" not in json_schema
+    assert json_schema["schema"] == schema
+
+
+def test_output_violating_a_strict_only_keyword_still_fails_validation() -> None:
+    """Dropping ``strict`` does not weaken enforcement: core's schema still rules."""
+    schema = {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {"kind": {"const": "highlight"}},
+        "additionalProperties": False,
+    }
+    completion = _FakeCompletion([_response('{"kind": "event"}')])
+    provider = LiteLLMProvider(completion=completion)
+
+    with pytest.raises(LLMOutputError, match="failed schema validation"):
+        provider.complete_structured(_request(role="tutor", output_schema=schema))
 
 
 # --- Schema-invalid / missing output -> LLMOutputError --------------------

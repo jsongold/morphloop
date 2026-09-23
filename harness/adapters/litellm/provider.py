@@ -9,8 +9,8 @@ untouched. Credentials stay in the environment, where litellm reads them
 Structured-output mechanism
 ---------------------------
 ``litellm.completion(response_format={"type": "json_schema", "json_schema":
-{"name": ..., "schema": ..., "strict": True}})`` -- the OpenAI-shaped
-``response_format``, which litellm translates per provider (for Anthropic,
+{"name": ..., "schema": ...}})`` -- the OpenAI-shaped ``response_format``,
+which litellm translates per provider (for Anthropic,
 ``litellm/llms/anthropic/chat/transformation.py`` reads
 ``response_format["json_schema"]["schema"]`` and maps it onto the native
 structured-output format, falling back to a forced tool call). The reply comes
@@ -20,6 +20,21 @@ Per ``contracts/schemas/llm/README.md`` ("Structured-output compatibility"),
 the contract schemas already close every object and list every property, and
 ``LLMRequest.output_schema`` arrives with external ``$ref``s inlined by core,
 so ``request.output_schema`` is sent unchanged -- no schema rewriting here.
+
+``strict`` is deliberately not sent. OpenAI's strict mode accepts only a
+subset of JSON Schema and rejects the whole request otherwise: it needs a
+``type`` beside every ``const`` (``tutor.reply`` references), forbids
+``uniqueItems`` (``evaluator.judgment`` supporting_event_ids,
+``learner_model.update`` misconceptions) and requires every property in
+``required`` (the ``common/skill-state.json`` exception the contract README
+already calls out). Rewriting the schema to fit would make the adapter send
+something weaker than the contract while the contract itself is frozen. The
+README is explicit that a provider may ignore ``pattern``, ``const``,
+``uniqueItems`` and friends and that only the harness-side validator is
+authoritative for them -- which is exactly what a non-strict ``json_schema``
+gives: the schema still steers the model, and ``_validate_output`` below plus
+core's contract validation reject anything that does not conform (AC-E4).
+
 
 Generation parameters come from the pack and are forwarded to
 ``litellm.completion`` as keyword arguments (ADR-0002: the harness holds no
@@ -102,7 +117,6 @@ class LiteLLMProvider:
                     "json_schema": {
                         "name": request.role,
                         "schema": to_plain_object(request.output_schema),
-                        "strict": True,
                     },
                 },
                 **dict(llm.generation_parameters),

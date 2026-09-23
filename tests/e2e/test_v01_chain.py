@@ -421,7 +421,7 @@ def test_v01_chain_on_the_real_stack(api: httpx.Client) -> None:
     for update in result["skill_updates"]:
         cited = set(update["payload"]["evidence_ids"])
         assert cited and cited <= evidence_ids, (cited, evidence_ids)
-        assert update["payload"]["state"]["mastery"] is not None
+        assert update["payload"]["next"]["mastery_probability"] is not None
 
     skills = _get(api, f"/learners/{learner_id}/skills", pack_id=PACK_ID)
     assert_component(skills, "SkillStateList")
