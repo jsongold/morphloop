@@ -94,10 +94,12 @@ export default function TerminalPane({
           lastSeq = m.payload.sequence;
           term.write(decodeOutput(m.payload));
         } else if (m.type === "terminal.exit") {
+          socket.stopReconnect();
           setExited(
             m.payload.signal ?? (m.payload.exit_code === null ? "exited" : `exit ${m.payload.exit_code}`),
           );
         } else if (m.type === "lab.status") {
+          if (m.payload.status === "resetting" || m.payload.status === "error") socket.stopReconnect();
           cb.current.onLabStatus(m.payload);
         }
         cb.current.onServerMessage(m);
@@ -143,6 +145,16 @@ export default function TerminalPane({
         <span>socket {socketState}</span>
         {exited && <span>shell {exited}</span>}
       </div>
+      {socketState === "reconnecting" && (
+        <div className="terminal-banner" role="status">
+          Connection to the lab was lost. Reconnecting…
+        </div>
+      )}
+      {socketState === "closed" && !exited && (
+        <div className="terminal-banner error" role="alert">
+          Disconnected from the lab. Reload the page to reconnect.
+        </div>
+      )}
       <div
         className="terminal-host"
         ref={hostRef}

@@ -66,7 +66,7 @@ export type ServerMessage =
   | ErrorMessage
   | PongMessage;
 
-export type SocketState = "connecting" | "open" | "closed";
+export type SocketState = "connecting" | "open" | "reconnecting" | "closed";
 
 export interface LabSocketHandlers {
   onMessage?: (msg: ServerMessage) => void;
@@ -101,9 +101,15 @@ export function decodeOutput(p: { data: string; encoding: "utf-8" | "base64" }):
   return bytes;
 }
 
+/** Reconnect delays after an unexpected close; the socket gives up after the last one. */
+const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 8000, 8000, 8000];
+
 export class LabSocket {
   private ws: WebSocket | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retries = 0;
+  private reconnect = true;
 
   constructor(
     readonly terminalPath: string,
@@ -115,6 +121,7 @@ export class LabSocket {
     const ws = new WebSocket(terminalSocketUrl(this.terminalPath));
     this.ws = ws;
     ws.onopen = () => {
+      this.retries = 0;
       this.handlers.onStateChange?.("open");
       this.pingTimer = setInterval(() => this.send(envelope("ping", {})), 25_000);
     };
@@ -136,8 +143,22 @@ export class LabSocket {
     };
     ws.onclose = (ev) => {
       this.clearPing();
-      this.handlers.onStateChange?.("closed", ev.code);
+      this.ws = null;
+      // An api restart drops the socket; the lab survives it, so reattach.
+      const delay = this.reconnect ? RECONNECT_DELAYS_MS[this.retries] : undefined;
+      if (delay === undefined) {
+        this.handlers.onStateChange?.("closed", ev.code);
+        return;
+      }
+      this.retries += 1;
+      this.handlers.onStateChange?.("reconnecting", ev.code);
+      this.retryTimer = setTimeout(() => this.connect(), delay);
     };
+  }
+
+  /** Stops reconnecting, for a lab that is gone (reset, error, shell exited). */
+  stopReconnect(): void {
+    this.reconnect = false;
   }
 
   sendInput(data: string): void {
@@ -149,6 +170,8 @@ export class LabSocket {
   }
 
   close(): void {
+    this.reconnect = false;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
     this.clearPing();
     const ws = this.ws;
     this.ws = null;

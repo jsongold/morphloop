@@ -159,6 +159,8 @@ button[aria-selected="true"] { background: var(--accent); color: var(--backgroun
 
 .terminal { display: flex; flex-direction: column; flex: 1; min-height: 240px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
 .terminal-status { display: flex; gap: 12px; font-size: 12px; color: var(--muted); padding: 2px 8px; border-bottom: 1px solid var(--border); }
+.terminal-banner { padding: 4px 8px; font-size: 12px; background: var(--mark); color: var(--foreground); border-bottom: 1px solid var(--border); }
+.terminal-banner.error { background: var(--error); color: #fff; }
 .terminal-host { flex: 1; min-height: 0; background: #1a3a1a; padding: 4px; }
 
 .viz-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
