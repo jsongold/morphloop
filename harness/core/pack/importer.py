@@ -489,6 +489,15 @@ class PackImporter:
                             f"diagram.steps[{i}].{end}: {step.get(end)!r} is not a declared actor",
                         )
 
+        for f, doc in docs("layout"):
+            toc = doc.get("toc")
+            chapters = _obj(toc)["chapters"] if isinstance(toc, dict) else []
+            for i, chapter in enumerate(each_list(chapters)):
+                for j, item in enumerate(each_list(_obj(chapter)["items"])):
+                    item = _obj(item)
+                    where = f"toc.chapters[{i}].items[{j}]"
+                    exists(str(item["kind"]), str(item["id"]), f.path, where)
+
         generation = manifest.get("content_generation")
         default_timing = _obj(generation)["default_timing"] if generation is not None else None
         if default_timing is not None and default_timing != _V01_TIMING:

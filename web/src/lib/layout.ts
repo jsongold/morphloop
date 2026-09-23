@@ -6,7 +6,9 @@
 // (AC-H1), not here.
 //
 // Understood shape (all keys optional; unknown keys ignored):
-//   { layout: {
+//   { toc: { chapters: { title: string, items: { kind, id }[] }[] },
+//     layout: {
+//       left:   { component: string },
 //       main:   { modes: string[], default_mode: string, components: string[] },
 //       side:   { component: string },
 //       bottom: { component: string, persistent: boolean } } }
@@ -16,7 +18,20 @@
 // activity is always mounted, because "practice first" is a product principle
 // (docs/PRODUCT.md), not a tunable.
 
+export interface TocItem {
+  kind: "activity" | "reference" | "visualization";
+  id: string;
+}
+
+export interface TocChapter {
+  title: string;
+  items: TocItem[];
+}
+
 export interface InterpretedLayout {
+  leftComponent: string | null;
+  /** Navigation only: never locks items or forces an order. */
+  toc: TocChapter[];
   modes: string[];
   defaultMode: string | null;
   mainComponents: string[];
@@ -42,12 +57,17 @@ function str(v: unknown): string | null {
 
 export function interpretLayout(doc: Record<string, unknown> | null): InterpretedLayout {
   const root = obj(doc?.layout) ?? doc;
+  const left = obj(root?.left);
   const main = obj(root?.main);
   const side = obj(root?.side);
   const bottom = obj(root?.bottom);
   const modes = strings(main?.modes);
   const defaultMode = str(main?.default_mode);
+  // The Importer validated the toc against contracts/schemas/pack/layout.json.
+  const toc = (obj(doc?.toc)?.chapters ?? []) as TocChapter[];
   return {
+    leftComponent: str(left?.component),
+    toc,
     modes,
     defaultMode: defaultMode && modes.includes(defaultMode) ? defaultMode : (modes[0] ?? null),
     mainComponents: strings(main?.components),

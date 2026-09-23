@@ -400,3 +400,17 @@ def test_a_visualization_bound_to_other_lab_values_is_rejected() -> None:
     problems = _refused(files)
     assert ("binding_mismatch", "activities/gen-dns-search-domain-001.json") in problems
     assert ("binding_mismatch", ACTIVITY) not in problems
+
+
+def test_a_toc_item_must_name_an_existing_definition() -> None:
+    items: list[dict[str, str]] = [
+        {"kind": "reference", "id": "network.dns.resolver"},
+        {"kind": "activity", "id": "diagnose-dns-resolver-failure-v1"},
+    ]
+    toc = {"chapters": [{"title": "Basics", "items": items}]}
+    layout = "ux/layout.json"
+    _importer(_edit(_files(), layout, lambda d: d.update(toc=toc))).check(LOCATION)
+    items.append({"kind": "visualization", "id": "no-such-viz"})
+    assert _refused(_edit(_files(), layout, lambda d: d.update(toc=toc))) == [
+        ("unresolved_reference", layout)
+    ]

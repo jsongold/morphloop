@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { newHighlightId, newIdempotencyKey, nowTimestamp } from "@/lib/ids";
-import { interpretLayout, modeView, type InterpretedLayout } from "@/lib/layout";
+import { interpretLayout, modeView, type InterpretedLayout, type TocItem } from "@/lib/layout";
 import { readSelection, type SelectionTarget } from "@/lib/selection";
 import type {
   ActivityView,
@@ -28,6 +28,7 @@ import { ConceptPane } from "./ConceptPane";
 import { MissionPanel } from "./MissionPanel";
 import type { TerminalHandle } from "./TerminalPane";
 import { TimelineView } from "./TimelineView";
+import { TocPane } from "./TocPane";
 import { VisualizationView } from "./VisualizationView";
 
 // xterm touches `window` at import time: client-only.
@@ -482,6 +483,47 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
     );
   };
 
+  const visualizeMode = layout.modes.find((m) => modeView(m) === "visualize") ?? null;
+  const activeActivityId =
+    attempt && attempt.status !== "completed" ? attempt.activity.activity_definition_id : null;
+  const summaryOf = (item: TocItem) =>
+    loaded.catalog.find((c) => c.kind === item.kind && c.definition_id === item.id);
+
+  const tocTitle = (item: TocItem) =>
+    (item.kind === "activity"
+      ? loaded.activities.find((a) => a.activity_definition_id === item.id)?.title
+      : summaryOf(item)?.title) ?? item.id;
+
+  const tocCurrent = (item: TocItem) =>
+    item.kind === "activity"
+      ? activeActivityId === item.id
+      : item.kind === "visualization"
+        ? view === "visualize" && vizDoc?.definition_id === item.id
+        : openDoc?.kind === item.kind && openDoc.definition_id === item.id;
+
+  const tocSelect = (item: TocItem) => {
+    if (item.kind === "activity") {
+      const a = loaded.activities.find((x) => x.activity_definition_id === item.id);
+      if (activeActivityId === item.id) setMode(layout.defaultMode);
+      else if (a) void startActivity(a);
+      return;
+    }
+    const summary = summaryOf(item);
+    if (!summary) return;
+    if (item.kind === "reference") {
+      void openContent(summary);
+      return;
+    }
+    void run(async () => {
+      if (vizDoc?.definition_id !== item.id) {
+        setVizDoc(
+          await api.getSessionContent<VisualizationDocument>(sessionId, "visualization", item.id),
+        );
+      }
+      setMode(visualizeMode);
+    });
+  };
+
   const renderSide = () => {
     if (layout.sideComponent === "concept_pane") {
       return (
@@ -516,7 +558,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
   };
 
   return (
-    <div className={`app${layout.sideComponent ? " with-side" : ""}${layout.bottomComponent ? " with-bottom" : ""}`}>
+    <div className={`app${layout.leftComponent ? " with-left" : ""}${layout.sideComponent ? " with-side" : ""}${layout.bottomComponent ? " with-bottom" : ""}`}>
       <header className="app-header">
         <strong>{state.session.pack.pack_id}</strong>
         <span className="muted">
@@ -535,6 +577,16 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
           Leave session
         </button>
       </header>
+
+      {layout.leftComponent && (
+        <nav className="left-pane" aria-label="Table of contents">
+          {layout.leftComponent === "toc" ? (
+            <TocPane chapters={layout.toc} titleOf={tocTitle} isCurrent={tocCurrent} onSelect={tocSelect} />
+          ) : (
+            <p className="muted">Component “{layout.leftComponent}” is not provided by the standard UI.</p>
+          )}
+        </nav>
+      )}
 
       <main className="main-pane">
         <MissionPanel

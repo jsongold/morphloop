@@ -1,5 +1,32 @@
 {
+  "toc": {
+    "chapters": [
+      {
+        "title": "How a name becomes an address",
+        "items": [
+          { "kind": "reference", "id": "network.dns.lookup-path" },
+          { "kind": "visualization", "id": "dns-resolution-flow" },
+          { "kind": "reference", "id": "network.dns.resolver" }
+        ]
+      },
+      {
+        "title": "Reading what DNS tells you",
+        "items": [
+          { "kind": "reference", "id": "network.dns.answers" }
+        ]
+      },
+      {
+        "title": "Hands-on: diagnose a broken resolver",
+        "items": [
+          { "kind": "activity", "id": "gen-diagnose-dns-resolver-misconfiguration-001" }
+        ]
+      }
+    ]
+  },
   "layout": {
+    "left": {
+      "component": "toc"
+    },
     "main": {
       "modes": [
         "mission",
