@@ -5,8 +5,10 @@ directory, so the image's rc files cannot change what is detected. All
 shell-integration state is passed in the environment (bash imports it as
 shell variables): ``PROMPT_COMMAND`` (:data:`SHELL_INTEGRATION`), ``PS1``,
 ``HISTCONTROL=`` (every line is recorded, including ones starting with a
-space), ``HISTFILE=`` (no history is loaded from or saved to disk, so a new
-terminal starts empty) and ``TERM``.
+space), ``HISTFILE`` (a file inside the lab, appended after every command, so
+a terminal reopened after a reconnect or reload can recall earlier commands
+with the arrow keys; a lab reset starts a new container and so an empty
+history) and ``TERM``.
 
 Command detection (shell integration, like VS Code / iTerm2 / FinalTerm
 ``OSC 133``). Reconstructing a command from the learner's keystrokes is not
@@ -64,6 +66,7 @@ __morphloop_ps0() {
   builtin printf '\033]6973;cmd;%s;%s;%s\007' "$__morphloop_n" \
     "$(__morphloop_hex "$PWD")" "$(__morphloop_hex "$__morphloop_c")"
 }
+builtin history -a
 __morphloop_n=0
 __morphloop_hist
 builtin printf '\033]6973;prompt;%s\007' "$__morphloop_n"
@@ -76,7 +79,7 @@ LAUNCH = TerminalLaunch(
             "PROMPT_COMMAND": SHELL_INTEGRATION,
             "PS1": r"\u@\h:\w\$ ",
             "HISTCONTROL": "",
-            "HISTFILE": "",
+            "HISTFILE": "/tmp/.morphloop_bash_history",
             "TERM": "xterm-256color",
         }
     ),
