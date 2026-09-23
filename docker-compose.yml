@@ -25,12 +25,18 @@ services:
     environment:
       # The names without a value are passed through from the host only when
       # they are set there: the LLM keys litellm reads itself, and DOCKER_HOST
-      # for the lab runtime (the api container has no Docker socket of its own).
+      # when the Docker endpoint is not the mounted socket below.
       - DATABASE_URL=postgresql+psycopg://morphloop:morphloop@db:5432/morphloop
       - WEB_ORIGIN=http://localhost:${WEB_PORT:-3000}
       - ANTHROPIC_API_KEY
       - OPENAI_API_KEY
       - DOCKER_HOST
+    # The lab runtime starts learner containers as siblings, so the api needs
+    # the host's Docker endpoint. This grants the api container host-root
+    # equivalent power; it is a local-development stack. Learner containers
+    # never receive the socket (docs/ARCHITECTURE.md, security boundaries).
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "${API_PORT:-8000}:8000"
     healthcheck:
