@@ -100,6 +100,10 @@ class DockerTerminalSession:
         self._marker = marker
         self._attached = attached  # keeps the HTTP response (and so the socket) alive
         self._sock = _raw_socket(attached)
+        # The socket inherits the Docker client's request timeout (60s by
+        # default), so an idle shell looked like EOF. Block until output or
+        # close; _release_socket shuts it down to end the read.
+        self._sock.settimeout(None)
         self._loop = loop
         self._queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._eof = asyncio.Event()

@@ -140,6 +140,20 @@ async def test_echo_resize_exit_and_close(session: TerminalSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_idle_terminal_outlives_the_client_request_timeout(lab_container: Any) -> None:
+    """An idle shell stays open past the Docker client's request timeout."""
+    bridge: TerminalBridge = DockerTerminalBridge(docker.from_env(timeout=1))
+    opened = await bridge.open(_request(lab_container.id))
+    try:
+        stream = opened.output()
+        await asyncio.sleep(2.5)
+        await opened.write(b"echo still-$((40+2))\n")
+        await _read_until(stream, b"still-42", bytearray())
+    finally:
+        await opened.close()
+
+
+@pytest.mark.asyncio
 async def test_nonzero_exit_code(session: TerminalSession) -> None:
     await session.write(b"exit 3\n")
     assert await asyncio.wait_for(session.wait(), _TIMEOUT) == 3
