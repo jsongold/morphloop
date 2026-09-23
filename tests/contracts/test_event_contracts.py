@@ -122,3 +122,16 @@ def test_causation_chain_is_traceable_in_examples() -> None:
     assert evidence["payload"]["evidence_id"] in update["payload"]["evidence_ids"]
     assert evidence["causation_id"] == evaluation["event_id"]
     assert evidence["payload"]["evaluation_id"] == evaluation["payload"]["evaluation_id"]
+
+
+def test_highlight_thread_and_memo_ids_derive_from_the_highlight() -> None:
+    # One popup thread and one memo per highlight: 'thr_' / 'memo_' + the highlight_id tail.
+    by_type = {(e["event_type"], e["event_version"]): e for e in map(_load, VALID)}
+    highlight = by_type[("content.highlighted", 2)]
+    recorded = by_type[("memo.recorded", 1)]["payload"]
+    edited = by_type[("memo.edited", 1)]["payload"]
+    tail = highlight["payload"]["highlight_id"].removeprefix("hl_")
+    assert recorded["highlight_id"] == highlight["payload"]["highlight_id"]
+    assert recorded["thread_id"] == f"thr_{tail}"
+    assert recorded["memo_id"] == edited["memo_id"] == f"memo_{tail}"
+    assert recorded["source_event_ids"][0] == highlight["event_id"]

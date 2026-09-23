@@ -32,7 +32,8 @@ domain-specific paths or fields.
 | `WS /labs/{lab_instance_id}/terminal` | terminal and push channel, in `x-websockets` |
 | `POST /sessions/{session_id}/events` | append a client-originated learner event |
 | `POST /sessions/{session_id}/chat/messages` | send a chat message; the tutor reply comes back in the response |
-| `GET /sessions/{session_id}/chat` | chat events |
+| `GET /sessions/{session_id}/chat` | chat events; `?thread_id=` loads one thread (popup chat) |
+| `GET /sessions/{session_id}/memos` | memo projection (`memo.recorded` + `memo.edited`), one per highlight thread |
 | `GET /sessions/{session_id}/highlights` | highlight events |
 | `GET /sessions/{session_id}/timeline` | stored events by `position`, keyset-paginated |
 
@@ -131,6 +132,18 @@ closes and the client connects to the new instance's `terminal_path`.
 - Keys are unique across the store (`ids.json`). Clients should namespace them,
   for example `web:<ULID>`.
 - `POST /learners` appends no event and takes no key.
+
+### Highlight threads and memos
+
+A highlight `hl_<tail>` owns the popup thread `thr_<tail>` and the memo
+`memo_<tail>`. The ids are derived, so no binding event exists and the popup
+can load an empty thread before the first message. The popup reuses
+`POST .../chat/messages` (with that `thread_id`) and `GET .../chat?thread_id=`.
+After each tutor reply in a highlight thread the server runs the pack's memo
+summarizer and appends `memo.recorded`, unless the learner already edited that
+memo. The memo comes back in `ChatExchange.memo`. A learner edit is a pure fact
+and goes through the generic events endpoint as `memo.edited`. Memos have an
+edit event, so `GET .../memos` returns a view (`MemoView`), not events.
 
 ### Timeline pagination
 

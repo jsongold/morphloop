@@ -1,0 +1,12 @@
+{
+  "description": "Ids and links are added by the harness, not chosen by the model.",
+  "schema": "schemas/llm/memo_summarizer.note/1.json",
+  "expected_error_paths": [
+    "$"
+  ],
+  "instance": {
+    "title": "The SERVER line in dig output",
+    "body": "`;; SERVER:` is the resolver that answered.",
+    "highlight_id": "hl_01J9ZQ4HL0002"
+  }
+}

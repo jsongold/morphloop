@@ -23,7 +23,9 @@
         "content.highlighted",
         "visualization.step_selected",
         "assistant.message_requested",
-        "assistant.message_generated"
+        "assistant.message_generated",
+        "memo.recorded",
+        "memo.edited"
       ]
     }
   },
@@ -648,7 +650,8 @@
         "properties": {
           "event_version": {
             "enum": [
-              1
+              1,
+              2
             ]
           },
           "actor": {
@@ -671,6 +674,22 @@
               "properties": {
                 "payload": {
                   "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/content.highlighted/1.json"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_version": {
+                  "const": 2
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/content.highlighted/2.json"
                 }
               }
             }
@@ -803,6 +822,93 @@
               "properties": {
                 "payload": {
                   "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/assistant.message_generated/1.json"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "memo.recorded"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_version": {
+            "enum": [
+              1
+            ]
+          },
+          "actor": {
+            "const": "system"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "event_version": {
+                  "const": 1
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/memo.recorded/1.json"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "memo.edited"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_version": {
+            "enum": [
+              1
+            ]
+          },
+          "actor": {
+            "const": "learner"
+          },
+          "idempotency_key": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/idempotency_key"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "event_version": {
+                  "const": 1
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/memo.edited/1.json"
                 }
               }
             }

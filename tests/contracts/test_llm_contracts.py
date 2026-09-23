@@ -32,6 +32,7 @@ INVALID = sorted((FIXTURES / "invalid").glob("*.json"))
 LEARNER_MODEL = "schemas/llm/learner_model.update/1.json"
 EVALUATOR = "schemas/llm/evaluator.judgment/1.json"
 TUTOR = "schemas/llm/tutor.reply/1.json"
+MEMO = "schemas/llm/memo_summarizer.note/1.json"
 
 
 def _payload(event_type: str) -> str:
@@ -159,6 +160,7 @@ def test_invalid_output_is_rejected(path: Path) -> None:
     [
         (LEARNER_MODEL, _payload("learner_skill.updated")),
         (TUTOR, _payload("assistant.message_generated")),
+        (MEMO, _payload("memo.recorded")),
     ],
 )
 def test_output_fields_are_payload_fields(llm_schema: str, event_payload: str) -> None:
@@ -212,3 +214,15 @@ def test_tutor_output_embeds_into_assistant_message_generated(output: dict[str, 
         k: event[k] for k in ("message_id", "thread_id", "in_reply_to", "mode", "provenance")
     }
     validate({**harness_fields, **output}, _payload("assistant.message_generated"))
+
+
+@pytest.mark.parametrize("output", _examples(MEMO))
+def test_memo_output_embeds_into_memo_recorded(output: dict[str, Any]) -> None:
+    event = _event("memo.recorded")
+    harness_fields = {
+        k: event["payload"][k]
+        for k in ("memo_id", "highlight_id", "thread_id", "source_event_ids", "provenance")
+    }
+    payload = {**harness_fields, **output}
+    validate(payload, _payload("memo.recorded"))
+    validate({**event, "payload": payload}, "schemas/events/envelope/stored.json")

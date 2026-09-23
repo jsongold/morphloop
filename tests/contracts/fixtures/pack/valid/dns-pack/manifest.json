@@ -73,6 +73,22 @@
       "context_budget_tokens": 8000,
       "options": {},
       "output_schema": "https://morphloop.dev/contracts/schemas/llm/generator.activity_candidate/1.json"
+    },
+    "memo_summarizer": {
+      "implementation": "llm-memo-summarizer@0.1.0",
+      "llm": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "prompt_id": "memo-summary",
+        "prompt_version": "1",
+        "generation_parameters": {
+          "temperature": 0,
+          "max_tokens": 1024
+        }
+      },
+      "context_budget_tokens": 4000,
+      "options": {},
+      "output_schema": "https://morphloop.dev/contracts/schemas/llm/memo_summarizer.note/1.json"
     }
   },
   "content_generation": {
@@ -117,6 +133,11 @@
     "prompts/learner-model-update.md": {
       "kind": "prompt",
       "prompt_id": "learner-model-update",
+      "prompt_version": "1"
+    },
+    "prompts/memo-summary.md": {
+      "kind": "prompt",
+      "prompt_id": "memo-summary",
       "prompt_version": "1"
     },
     "prompts/tutor-reply.md": {

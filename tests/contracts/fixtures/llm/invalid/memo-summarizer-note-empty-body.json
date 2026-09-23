@@ -1,0 +1,11 @@
+{
+  "description": "A generated note is never empty.",
+  "schema": "schemas/llm/memo_summarizer.note/1.json",
+  "expected_error_paths": [
+    "$.body"
+  ],
+  "instance": {
+    "title": "The SERVER line in dig output",
+    "body": ""
+  }
+}

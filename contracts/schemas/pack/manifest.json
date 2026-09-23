@@ -42,7 +42,7 @@
       }
     },
     "registry": {
-      "description": "Registry role -> selected implementation and all its parameters (ADR-0004). v0.1 requires 'learner_model'; policy and assessment are v0.2+. Every v0.1 implementation is an LLM implementation (ADR-0013), so every role uses the LLM selection shape.",
+      "description": "Registry role -> selected implementation and all its parameters (ADR-0004). v0.1 requires 'learner_model'; policy and assessment are v0.2+. Every v0.1 implementation is an LLM implementation (ADR-0013), so every role uses the LLM selection shape. 'memo_summarizer' is optional: when present, the harness writes a learning memo for every highlight thread (memo.recorded); when absent, no memos are recorded.",
       "type": "object",
       "required": [
         "learner_model"
@@ -65,6 +65,9 @@
         },
         "tutor": {
           "$ref": "#/$defs/llm_selection"
+        },
+        "memo_summarizer": {
+          "$ref": "#/$defs/judgment_selection"
         }
       },
       "additionalProperties": false

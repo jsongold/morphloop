@@ -1,4 +1,7 @@
 {
+  "memo": {
+    "region": "side"
+  },
   "layout": {
     "main": {
       "modes": [

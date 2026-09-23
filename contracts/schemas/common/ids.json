@@ -54,6 +54,11 @@
       "type": "string",
       "pattern": "^msg_[0-9A-Za-z]{1,64}$"
     },
+    "memo_id": {
+      "description": "Learning memo id. One memo per highlight thread (docs/briefs/highlight-memo-contract.md).",
+      "type": "string",
+      "pattern": "^memo_[0-9A-Za-z]{1,64}$"
+    },
     "terminal_id": {
       "description": "Terminal (PTY session) id.",
       "type": "string",

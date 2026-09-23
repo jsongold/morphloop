@@ -1,0 +1,28 @@
+{
+  "description": "memo.edited is a learner event and needs an idempotency_key.",
+  "schema": "schemas/events/envelope/stored.json",
+  "expected_error_paths": [
+    "$.idempotency_key"
+  ],
+  "instance": {
+    "event_id": "evt_01J9ZQ4EVT0024",
+    "position": 24,
+    "event_type": "memo.edited",
+    "event_version": 1,
+    "occurred_at": "2026-09-22T10:22:00Z",
+    "recorded_at": "2026-09-22T10:22:00.123Z",
+    "idempotency_key": null,
+    "causation_id": null,
+    "correlation_id": "thr_01J9ZQ4HL0002",
+    "learner_id": "usr_01J9ZQ4USR0001",
+    "session_id": "ses_01J9ZQ4SES0001",
+    "attempt_id": null,
+    "activity_definition_id": null,
+    "actor": "learner",
+    "payload": {
+      "memo_id": "memo_01J9ZQ4HL0002",
+      "title": "dig: who answered?",
+      "body": "`;; SERVER:` = the resolver that answered. Check it against `/etc/resolv.conf` first."
+    }
+  }
+}

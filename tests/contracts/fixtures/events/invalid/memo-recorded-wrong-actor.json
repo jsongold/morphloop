@@ -1,0 +1,45 @@
+{
+  "description": "memo.recorded is written by the system (the summarizer runs harness-side), never attributed to the tutor.",
+  "schema": "schemas/events/envelope/stored.json",
+  "expected_error_paths": [
+    "$.actor"
+  ],
+  "instance": {
+    "event_id": "evt_01J9ZQ4EVT0023",
+    "position": 23,
+    "event_type": "memo.recorded",
+    "event_version": 1,
+    "occurred_at": "2026-09-22T10:21:05Z",
+    "recorded_at": "2026-09-22T10:21:05.123Z",
+    "idempotency_key": "server:memo.recorded:evt_01J9ZQ4EVT0022",
+    "causation_id": "evt_01J9ZQ4EVT0022",
+    "correlation_id": "thr_01J9ZQ4HL0002",
+    "learner_id": "usr_01J9ZQ4USR0001",
+    "session_id": "ses_01J9ZQ4SES0001",
+    "attempt_id": null,
+    "activity_definition_id": null,
+    "actor": "tutor",
+    "payload": {
+      "memo_id": "memo_01J9ZQ4HL0002",
+      "highlight_id": "hl_01J9ZQ4HL0002",
+      "thread_id": "thr_01J9ZQ4HL0002",
+      "source_event_ids": [
+        "evt_01J9ZQ4EVT0020",
+        "evt_01J9ZQ4EVT0021",
+        "evt_01J9ZQ4EVT0022"
+      ],
+      "title": "The SERVER line in dig output",
+      "body": "`dig` prints `;; SERVER:` at the bottom: the resolver that actually answered. Compare it with `/etc/resolv.conf` to see whether the query went where you expected.",
+      "provenance": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "prompt_id": "memo-summary",
+        "prompt_version": "1",
+        "generation_parameters": {
+          "temperature": 0,
+          "max_tokens": 1024
+        }
+      }
+    }
+  }
+}

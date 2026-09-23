@@ -181,3 +181,10 @@ def test_invalid_pack_document_is_rejected(path: Path) -> None:
     }
     for expected in case["expected_error_paths"]:
         assert expected in reported, f"{expected} not in {sorted(reported)}"
+
+
+def test_layout_memo_region_exists_and_has_a_summarizer() -> None:
+    # Importer rules for the layout `memo` key (contracts/schemas/pack/layout.json).
+    layout = _load(PACK_DIR / "ux" / "layout.json")
+    assert layout["memo"]["region"] in layout["layout"]
+    assert "memo_summarizer" in _manifest()["registry"]

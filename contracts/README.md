@@ -41,7 +41,8 @@ Shared definitions referenced by other schemas:
   `<prefix>_<1-64 alphanumerics>` with an opaque tail: `evt_` event, `usr_`
   learner, `ses_` session, `att_` attempt, `lab_` lab instance, `evl_`
   evaluation, `ev_` evidence, `hl_` highlight, `thr_` thread, `msg_` message,
-  `term_` terminal. Definition ids, skill ids, pack ids and adapter item ids
+  `memo_` memo, `term_` terminal. A highlight `hl_<tail>` owns the popup
+  thread `thr_<tail>` and the memo `memo_<tail>`. Definition ids, skill ids, pack ids and adapter item ids
   are lowercase dotted/dashed names.
 - `content-hash.json` — `sha256:<64 lowercase hex>` (pack content, Definition
   identity, OCI image digests).

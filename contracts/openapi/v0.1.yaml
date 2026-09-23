@@ -45,6 +45,7 @@ tags:
   - name: labs
   - name: events
   - name: chat
+  - name: memos
 
 paths:
   /health:
@@ -437,12 +438,15 @@ paths:
     post:
       tags: [events]
       operationId: appendClientEvent
-      summary: Append one client-originated learner event (highlight, content opened, visualization step).
+      summary: Append one client-originated learner event (highlight, content opened, visualization step, memo edit).
       description: |
         For learner UI actions that are pure facts with no server-side
         effect beyond projections: `content.highlighted` (AC-D1, AC-D2),
         `content.opened` (side pane) and `visualization.step_selected`
-        (AC-C2). The body is validated through the events dispatch, so the
+        (AC-C2), and `memo.edited` (the learner rewrites a memo; the memo
+        must exist, else `404 not-found`). New highlights use
+        `content.highlighted` v2, whose `source` addresses pack content, a
+        chat message or terminal output. The body is validated through the events dispatch, so the
         payload is exactly the event payload schema. The server adds
         `event_id`, `learner_id`, `session_id`, `actor: learner`,
         `activity_definition_id` (from `attempt_id`), `causation_id` and
@@ -491,6 +495,18 @@ paths:
         stays recorded and the response is `502`; resending the same
         `idempotency_key` appends no second request event and retries the
         reply.
+
+        Highlight threads (popup chat): a highlight `hl_<tail>` owns the
+        thread `thr_<tail>`. The client sends that `thread_id` even for the
+        first message (no server round trip to create the thread). When
+        `thread_id` is a highlight thread of this session, the server always
+        puts that highlight in the tutor context, whether or not
+        `references` lists it. After the reply is appended, if the pack
+        declares `registry.memo_summarizer` and the memo `memo_<tail>` has
+        not been edited by the learner, the server calls the summarizer and
+        appends `memo.recorded` (causation: the reply event), and returns
+        the memo as `memo`. A summarizer failure never fails the request:
+        the reply is returned with `memo: null` and the next reply retries.
       requestBody:
         required: true
         content:
@@ -520,7 +536,15 @@ paths:
       description: |
         `assistant.message_requested` and `assistant.message_generated`
         stored events. v0.1 has no edit or delete events, so the chat
-        projection is exactly these events.
+        projection is exactly these events. The popup chat loads one thread
+        with `thread_id` (an unknown or empty thread returns no events).
+      parameters:
+        - name: thread_id
+          in: query
+          required: false
+          description: Only events of this thread. Omitted means every thread.
+          schema:
+            $ref: https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/thread_id
       responses:
         '200':
           description: Chat events.
@@ -539,8 +563,9 @@ paths:
       operationId: getSessionHighlights
       summary: All highlights of the session in position order (AC-D2).
       description: |
-        `content.highlighted` stored events. v0.1 has no edit or delete
-        events, so the highlight projection is exactly these events.
+        `content.highlighted` stored events (v1 and v2; v1 reads as
+        source `pack`). v0.1 has no edit or delete events, so the highlight
+        projection is exactly these events.
       responses:
         '200':
           description: Highlight events.
@@ -548,6 +573,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HighlightEventList'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /sessions/{session_id}/memos:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [memos]
+      operationId: getSessionMemos
+      summary: Learning memos of the session, one per highlight thread, current text.
+      description: |
+        Projection of `memo.recorded` and `memo.edited`: the latest of the
+        two per `memo_id` gives `title` and `body`. Ordered by the position
+        of each memo's first `memo.recorded`. Edits go through
+        `POST /sessions/{session_id}/events` with `memo.edited`.
+      responses:
+        '200':
+          description: Memos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoList'
         default:
           $ref: '#/components/responses/Problem'
 
@@ -1165,7 +1212,7 @@ components:
       required: [event_type, event_version, occurred_at, idempotency_key, attempt_id, payload]
       properties:
         event_type:
-          enum: [content.highlighted, content.opened, visualization.step_selected]
+          enum: [content.highlighted, content.opened, visualization.step_selected, memo.edited]
         event_version:
           type: integer
           minimum: 1
@@ -1262,4 +1309,56 @@ components:
           $ref: '#/components/schemas/MessageRequestedEvent'
         reply:
           $ref: '#/components/schemas/MessageGeneratedEvent'
+        memo:
+          description: |
+            The memo written after this reply, for highlight threads only.
+            Null (or absent) when the thread is not a highlight thread, the
+            pack has no memo summarizer, the learner already edited the memo,
+            or the summarizer failed.
+          anyOf:
+            - $ref: '#/components/schemas/MemoView'
+            - type: 'null'
+      additionalProperties: false
+
+    # ---------- memos ----------
+    MemoView:
+      title: Memo (current state)
+      description: |
+        One learning memo. `title`/`body` come from the latest
+        `memo.recorded` or `memo.edited`. Links back: `highlight_id` (the
+        highlight, `GET .../highlights`) and `thread_id` (the popup thread,
+        `GET .../chat?thread_id=`). `source_event_ids` are those of the latest
+        `memo.recorded`.
+      type: object
+      required: [memo_id, highlight_id, thread_id, title, body, source_event_ids, edited_by_learner, updated_at, last_event_id]
+      properties:
+        memo_id:
+          $ref: https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/memo_id
+        highlight_id:
+          $ref: https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/highlight_id
+        thread_id:
+          $ref: https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/thread_id
+        title:
+          $ref: https://morphloop.dev/contracts/schemas/events/payloads/memo.recorded/1.json#/properties/title
+        body:
+          $ref: https://morphloop.dev/contracts/schemas/events/payloads/memo.edited/1.json#/properties/body
+        source_event_ids:
+          $ref: https://morphloop.dev/contracts/schemas/events/payloads/memo.recorded/1.json#/properties/source_event_ids
+        edited_by_learner:
+          description: True once any `memo.edited` exists; the summarizer no longer rewrites the memo.
+          type: boolean
+        updated_at:
+          description: '`occurred_at` of the latest memo event.'
+          $ref: https://morphloop.dev/contracts/schemas/common/timestamp.json
+        last_event_id:
+          $ref: https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/event_id
+      additionalProperties: false
+    MemoList:
+      type: object
+      required: [memos]
+      properties:
+        memos:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoView'
       additionalProperties: false

@@ -340,3 +340,95 @@ def test_problem_shape() -> None:
     }
     assert _is_valid(problem, "Problem")
     assert not _is_valid({**problem, "code": "teapot"}, "Problem")
+
+
+# ---------------------------------------------------------------- highlight threads and memos
+
+
+def _event_v(event_type: str, version: int) -> dict[str, Any]:
+    data: dict[str, Any] = json.loads(
+        (EVENT_FIXTURES / f"{event_type}.v{version}.json").read_text(encoding="utf-8")
+    )
+    return data
+
+
+HIGHLIGHT_V2 = _event_v("content.highlighted", 2)
+MEMO_RECORDED = _event_v("memo.recorded", 1)
+MEMO_EDITED = _event_v("memo.edited", 1)
+
+MEMO_VIEW: dict[str, Any] = {
+    "memo_id": MEMO_RECORDED["payload"]["memo_id"],
+    "highlight_id": MEMO_RECORDED["payload"]["highlight_id"],
+    "thread_id": MEMO_RECORDED["payload"]["thread_id"],
+    "title": MEMO_EDITED["payload"]["title"],
+    "body": MEMO_EDITED["payload"]["body"],
+    "source_event_ids": MEMO_RECORDED["payload"]["source_event_ids"],
+    "edited_by_learner": True,
+    "updated_at": MEMO_EDITED["occurred_at"],
+    "last_event_id": MEMO_EDITED["event_id"],
+}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"kind": "pack", "content_id": "concept.network.dns", "content_version": "0.1.0"},
+        {"kind": "chat_message", "message_id": "msg_01J9ZQ4MSG0002"},
+    ],
+    ids=["pack", "chat_message"],
+)
+def test_client_event_request_highlight_v2_with_offsets(source: dict[str, Any]) -> None:
+    payload = {**HIGHLIGHT_V2["payload"], "source": source}
+    request = {**HIGHLIGHT_REQUEST, "event_version": 2, "attempt_id": None, "payload": payload}
+    assert _is_valid(request, "ClientEventRequest")
+
+
+def test_client_event_request_highlight_v2_terminal() -> None:
+    source = {
+        "kind": "terminal",
+        "terminal_id": "term_01J9ZQ4TERM0001",
+        "first_sequence": 7,
+        "last_sequence": 8,
+    }
+    payload = {**HIGHLIGHT_V2["payload"], "source": source}
+    request = {**HIGHLIGHT_REQUEST, "event_version": 2, "payload": payload}
+    assert not _is_valid(request, "ClientEventRequest")
+    payload.update(start_offset=None, end_offset=None)
+    assert _is_valid(request, "ClientEventRequest")
+
+
+def test_client_event_request_memo_edited() -> None:
+    request = {
+        "event_type": "memo.edited",
+        "event_version": 1,
+        "occurred_at": MEMO_EDITED["occurred_at"],
+        "idempotency_key": MEMO_EDITED["idempotency_key"],
+        "attempt_id": None,
+        "payload": MEMO_EDITED["payload"],
+    }
+    assert _is_valid(request, "ClientEventRequest")
+    assert not _is_valid({**request, "payload": {"memo_id": "memo_1"}}, "ClientEventRequest")
+
+
+def test_memo_list_and_view() -> None:
+    assert _is_valid({"memos": [MEMO_VIEW]}, "MemoList")
+    assert _is_valid({"memos": []}, "MemoList")
+    assert not _is_valid({**MEMO_VIEW, "provenance": {}}, "MemoView")
+    assert not _is_valid({k: v for k, v in MEMO_VIEW.items() if k != "thread_id"}, "MemoView")
+
+
+def test_chat_exchange_carries_optional_memo() -> None:
+    exchange = {
+        "request": _event("assistant.message_requested"),
+        "reply": _event("assistant.message_generated"),
+    }
+    assert _is_valid(exchange, "ChatExchange")
+    assert _is_valid({**exchange, "memo": None}, "ChatExchange")
+    assert _is_valid({**exchange, "memo": MEMO_VIEW}, "ChatExchange")
+    assert not _is_valid({**exchange, "memo": MEMO_RECORDED}, "ChatExchange")
+
+
+def test_popup_endpoints_exist() -> None:
+    chat_params = SPEC["paths"]["/sessions/{session_id}/chat"]["get"]["parameters"]
+    assert [p["name"] for p in chat_params] == ["thread_id"]
+    assert "get" in SPEC["paths"]["/sessions/{session_id}/memos"]

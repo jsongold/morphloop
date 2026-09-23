@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/memo.edited/1.json",
+  "title": "memo.edited payload v1",
+  "description": "The learner replaced the text of a memo (full replacement, last write wins). The memo must already exist (a memo.recorded with this memo_id). After the first memo.edited the memo belongs to the learner and the summarizer no longer rewrites it.",
+  "type": "object",
+  "required": [
+    "memo_id",
+    "title",
+    "body"
+  ],
+  "properties": {
+    "memo_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/memo_id"
+    },
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/memo.recorded/1.json#/properties/title"
+    },
+    "body": {
+      "description": "Markdown. May be empty (the learner cleared the note).",
+      "type": "string",
+      "maxLength": 4000
+    }
+  },
+  "additionalProperties": false
+}

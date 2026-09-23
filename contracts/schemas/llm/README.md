@@ -16,6 +16,7 @@ validation changes no state (AC-E4).
 | `learner_model.update/1.json` | LLM learner model, one (learner, skill) update | `learner_skill.updated` v1 |
 | `evaluator.judgment/1.json` | LLM evaluator, judgment over one Evaluation | `evaluation.completed` v1 (`success`, `rationale`) + one `evidence.created` v1 per evidence item |
 | `tutor.reply/1.json` | Tutor, one chat reply | `assistant.message_generated` v1 |
+| `memo_summarizer.note/1.json` | Memo summarizer, one learning note per highlight thread | `memo.recorded` v1 (`title`, `body`) |
 | `generator.activity_candidate/1.json` | Generator, one candidate activity from a Template (`authoring`, ADR-0014) | not an event; materialized into a pack Definition plus a provenance sidecar (ADR-0016) |
 
 Versioning follows event payloads: a released file is never edited. A change

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/llm/memo_summarizer.note/1.json",
+  "title": "Memo summarizer note output v1",
+  "description": "Structured output of the memo summarizer for one highlight thread: a short learning note summarizing the highlighted text and the conversation about it. Recorded as a memo.recorded v1 payload: 'title' and 'body' are copied verbatim; the harness adds memo_id, highlight_id, thread_id, source_event_ids and provenance. Input: the highlight (selected_text + context + source) and every chat message of the thread so far. The reference solution is never in the summarizer context during an unfinished attempt (same rule as the tutor, AC-J6).",
+  "type": "object",
+  "required": [
+    "title",
+    "body"
+  ],
+  "properties": {
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/memo.recorded/1.json#/properties/title"
+    },
+    "body": {
+      "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/memo.recorded/1.json#/properties/body"
+    }
+  },
+  "additionalProperties": false
+}

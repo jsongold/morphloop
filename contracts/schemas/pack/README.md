@@ -54,7 +54,7 @@ versions, provenance). They are not redefined here.
   `{implementation: name@version, llm, output_schema, context_budget_tokens, options}`.
   `llm` is exactly `common/provenance.json#/$defs/llm`, so events copy it
   verbatim. Roles are a closed set: `learner_model` is required.
-  `evaluator`/`generator`/`policy`/`assessment` must declare an `output_schema`
+  `evaluator`/`generator`/`policy`/`assessment`/`memo_summarizer` must declare an `output_schema`
   (an `$id` under `schemas/llm/`). `tutor` may omit it. Every v0.1
   implementation is an LLM implementation. A deterministic implementation
   added later gets its own selection shape as an alternative. `options` holds
@@ -131,6 +131,10 @@ top-level `toc` (a book-like table of contents: `chapters[].title` and
 `chapters[].items[]` of `{kind, id}`, kind in activity / reference /
 visualization); the Importer rejects an item whose id is not a Definition of
 that kind in the pack. It is navigation only and never locks an item.
+The second structured key is the optional top-level `memo: {region}`, which
+places the SDK memo pane in a region named under `layout` (e.g. `side`,
+alongside `concept_pane`). The Importer rejects a region that is not a key of
+`layout`, and `memo` without `registry.memo_summarizer`.
 
 **Visualization.** Only `diagram.type: "sequence"` is supported. It is not a
 generic visualization language. A step's optional `reality` holds `mechanism`,
