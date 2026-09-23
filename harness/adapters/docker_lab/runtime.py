@@ -470,6 +470,10 @@ class DockerLabRuntime:
     def _find_container(self, lab_instance_id: str) -> Container | None:
         try:
             found = self._managed_containers({LABEL_LAB_ID: lab_instance_id})
+        except docker.errors.NotFound:
+            # The container was removed between the list and docker-py's
+            # per-container inspect; that is the same as the lab being absent.
+            return None
         except docker.errors.DockerException as exc:
             raise LabRuntimeError(f"cannot look up lab {lab_instance_id!r}: {exc}") from exc
         return found[0] if found else None
