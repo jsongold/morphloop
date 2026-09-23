@@ -2,8 +2,8 @@
 
 Each test runs against a throwaway container (``sleep infinity``, no mounts, no
 network) started directly with the Docker SDK and always removed afterwards.
-Only an image already present locally is used; nothing is pulled. The module is
-skipped when Docker or a usable image is unavailable.
+An image already present locally is preferred; otherwise busybox is pulled. The
+module is skipped when Docker is unavailable or the pull fails.
 """
 
 from __future__ import annotations
@@ -51,7 +51,11 @@ def lab_image(docker_client: Any) -> str:
         except docker.errors.ImageNotFound:
             continue
         return ref
-    pytest.skip(f"none of {_CANDIDATE_IMAGES} is available locally")
+    try:
+        docker_client.images.pull("busybox", tag="latest")
+    except Exception as exc:  # noqa: BLE001 - no image means "cannot run here"
+        pytest.skip(f"none of {_CANDIDATE_IMAGES} is available: {exc}")
+    return "busybox:latest"
 
 
 @pytest.fixture
