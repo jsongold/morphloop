@@ -19,11 +19,22 @@ Requirements: Docker (with Compose v2). For local development also `uv` and `pnp
 
 ### Run the whole stack
 
+The software-engineering pack uses OpenAI models, so the API needs `OPENAI_API_KEY`
+(chat, evaluation and learner-model updates fail without it). Keep it in an
+untracked `.env.local` (`.env.*` is gitignored) and export it before starting:
+
 ```sh
+# .env.local
+OPENAI_API_KEY=sk-...
+```
+
+```sh
+set -a; . ./.env.local; set +a
 docker compose up -d --build
 ```
 
 This starts PostgreSQL, the API (it applies migrations on start) and the standard web UI.
+The API starts learner lab containers on the host Docker, so Docker must be running.
 
 Check it:
 
@@ -32,7 +43,12 @@ curl -s localhost:8000/health
 # {"status":"ok","db":"ok"}
 ```
 
-Open http://localhost:3000 in a browser. The page shows `morphloop` and the API health (`ok` / `down` / `unreachable`).
+Import the pack (once per database; re-run after changing `contents/`):
+
+```sh
+docker compose exec -T api python -m harness.cli import contents/software-engineering
+# status  imported
+```
 
 If port 8000 or 3000 is already in use, override the host ports:
 
@@ -47,6 +63,25 @@ Logs and shutdown:
 docker compose logs -f api      # or web / db
 docker compose down             # stop
 docker compose down -v          # stop and delete the database volume
+docker rm -f $(docker ps -aq --filter label=io.morphloop.lab.managed=docker_lab)  # remove leftover labs
+```
+
+### Try the DNS mission
+
+1. Open http://localhost:3000 and choose **Start a session** (or **Resume** an earlier one).
+2. Choose the DNS activity. A lab container starts and its shell appears in the terminal pane.
+3. Diagnose and fix the problem in the terminal. The reset button restores the lab to its starting state.
+4. Ask the tutor in the chat panel. Highlight text in the mission or visualization to quote it in the question.
+5. Choose **Submit**. The evaluation result and the updated learner state appear, and **Choose next activity** starts the next round.
+
+The timeline shows every recorded event of the session.
+
+### End-to-end check against the real stack
+
+With the stack running, the pack imported and the key exported:
+
+```sh
+uv run pytest tests/e2e -q
 ```
 
 ### Try the DB-down behaviour
