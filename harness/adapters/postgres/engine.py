@@ -7,10 +7,10 @@ imports nothing from other adapters. It reads its connection string from the
 
 from __future__ import annotations
 
-import os
-
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+from harness.core.settings import Settings
 
 DATABASE_URL_ENV_VAR = "DATABASE_URL"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://morphloop:morphloop@localhost:5432/morphloop"
@@ -21,7 +21,7 @@ _CONNECT_TIMEOUT_SECONDS = 2
 
 def get_database_url() -> str:
     """Return the configured database URL, falling back to the local default."""
-    return os.environ.get(DATABASE_URL_ENV_VAR, DEFAULT_DATABASE_URL)
+    return Settings().database_url
 
 
 def create_engine_from_env() -> Engine:
