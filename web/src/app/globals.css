@@ -201,3 +201,43 @@ button[aria-selected="true"] { background: var(--accent); color: var(--backgroun
   border: 1px solid var(--border); border-radius: 6px; background: var(--background);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); z-index: 10; max-width: 90vw;
 }
+
+/* Popup chat anchored right of a selection (highlight threads). */
+.popup-chat {
+  position: fixed; width: 320px; max-height: 60vh; z-index: 40;
+  display: flex; flex-direction: column; gap: 4px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+.popup-chat-head { display: flex; align-items: center; gap: 6px; }
+.popup-chat-head blockquote { flex: 1; margin: 0; max-height: 48px; overflow: auto; }
+.popup-chat .chat-log { min-height: 60px; }
+.popup-chat .chat-form textarea { flex: 1; }
+.popup-chat-close { border: none; background: none; font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; }
+
+/* Memo pane (learning notes), placed alongside a region's own component. */
+.memo-region { border-top: 1px solid var(--border); margin-top: 10px; }
+.memo-pane { display: flex; flex-direction: column; gap: 6px; }
+.memo-pane h4 { text-transform: uppercase; }
+.memo-card {
+  border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px;
+  background: var(--background); display: flex; flex-direction: column; gap: 4px;
+}
+.memo-card h5 { margin: 0; }
+.memo-card .memo-body { white-space: pre-wrap; margin: 2px 0; }
+.memo-card input,
+.memo-card textarea {
+  font: inherit; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--background); color: inherit; resize: vertical;
+}
+.memo-card.editing { border-color: var(--accent); }
+.bottom-pane.has-memo { display: flex; flex-direction: column; min-height: 0; }
+.bottom-pane.has-memo .memo-pane { flex: 0 0 auto; max-height: 40%; overflow: auto; padding: 6px 12px; }
+.bottom-pane.has-memo .chat { flex: 1; min-height: 0; }
+
+/* Flash a linked highlight when its popup/thread opens. */
+@keyframes morph-flash {
+  0% { background: var(--mark); }
+  100% { background: transparent; }
+}
+.flash { animation: morph-flash 1.2s ease-out; border-radius: 2px; }

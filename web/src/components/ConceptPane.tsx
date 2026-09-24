@@ -13,7 +13,8 @@ interface Props {
   catalog: ContentSummary[];
   highlights: HighlightEvent[];
   onOpen: (summary: ContentSummary) => void;
-  onAskAboutHighlight: (h: HighlightEvent) => void;
+  /** Opens the popup chat for the highlight; anchor near the clicked button. */
+  onAskAboutHighlight: (h: HighlightEvent, anchor: { x: number; y: number }) => void;
 }
 
 /** Side pane: the opened pack content, the content catalog and saved highlights (AC-D1). */
@@ -46,7 +47,13 @@ export function ConceptPane({ open, catalog, highlights, onOpen, onAskAboutHighl
           {highlights.map((h) => (
             <li key={h.payload.highlight_id}>
               <q>{h.payload.selected_text}</q>{" "}
-              <button className="link" onClick={() => onAskAboutHighlight(h)}>
+              <button
+                className="link"
+                onClick={(ev) => {
+                  const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+                  onAskAboutHighlight(h, { x: rect.right + 8, y: rect.top });
+                }}
+              >
                 Ask AI
               </button>
             </li>

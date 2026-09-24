@@ -18,6 +18,7 @@ import type {
   Health,
   LabState,
   Learner,
+  MemoView,
   Pack,
   Problem,
   Session,
@@ -176,11 +177,14 @@ export const appendClientEvent = (sessionId: string, body: ClientEventRequest) =
 export const sendChatMessage = (sessionId: string, body: ChatMessageRequest) =>
   post<ChatExchange>(`/sessions/${seg(sessionId)}/chat/messages`, body);
 
-export const getSessionChat = (sessionId: string) =>
-  get<{ events: ChatEvent[] }>(`/sessions/${seg(sessionId)}/chat`);
+export const getSessionChat = (sessionId: string, threadId?: string) =>
+  get<{ events: ChatEvent[] }>(`/sessions/${seg(sessionId)}/chat`, { thread_id: threadId });
 
 export const getSessionHighlights = (sessionId: string) =>
   get<{ events: HighlightEvent[] }>(`/sessions/${seg(sessionId)}/highlights`);
+
+export const getSessionMemos = (sessionId: string) =>
+  get<{ memos: MemoView[] }>(`/sessions/${seg(sessionId)}/memos`);
 
 export const getSessionTimeline = (
   sessionId: string,

@@ -7,14 +7,18 @@ import { ApiError } from "@/lib/api";
 import { newHighlightId, newIdempotencyKey, nowTimestamp } from "@/lib/ids";
 import { interpretLayout, modeView, type InterpretedLayout, type TocItem } from "@/lib/layout";
 import { readSelection, type SelectionTarget } from "@/lib/selection";
+import { normalizeHighlightPayload } from "@/lib/types";
 import type {
   ActivityView,
   AttemptState,
   ChatEvent,
+  ChatExchange,
+  ChatReference,
   ClientEventRequest,
   ContentDocument,
   ContentSummary,
   HighlightEvent,
+  MemoView,
   ReferenceDocument,
   SessionState,
   StoredEvent,
@@ -25,8 +29,10 @@ import type {
 import type { LabStatusMessage, ServerMessage } from "@/lib/ws";
 import { ChatPanel } from "./ChatPanel";
 import { ConceptPane } from "./ConceptPane";
+import { MemoPane } from "./MemoPane";
 import { MissionPanel } from "./MissionPanel";
-import type { TerminalHandle } from "./TerminalPane";
+import { PopupChat, POPUP_WIDTH } from "./PopupChat";
+import type { TerminalHandle, TerminalSelection } from "./TerminalPane";
 import { TimelineView } from "./TimelineView";
 import { TocPane } from "./TocPane";
 import { VisualizationView } from "./VisualizationView";
@@ -38,6 +44,17 @@ const TerminalPane = dynamic(() => import("./TerminalPane"), {
 });
 
 const SIDE_PANE = "side";
+
+/** A selection plus the screen point its popup/toolbar anchors to. */
+interface SelectionState {
+  target: SelectionTarget;
+  anchor: { x: number; y: number };
+}
+
+interface PopupState {
+  highlight: HighlightEvent;
+  anchor: { x: number; y: number };
+}
 
 // Bottom (chat) pane resize (drag handle on its top edge). Height is remembered
 // per viewer in localStorage; falls back to the CSS default (240px) on read failure.
@@ -70,7 +87,9 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
   const [vizDoc, setVizDoc] = useState<ContentDocument<VisualizationDocument> | null>(null);
   const [steps, setSteps] = useState<Record<string, string>>({});
   const [quoted, setQuoted] = useState<HighlightEvent[]>([]);
-  const [selection, setSelection] = useState<SelectionTarget | null>(null);
+  const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [memos, setMemos] = useState<MemoView[]>([]);
+  const [popup, setPopup] = useState<PopupState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -94,6 +113,12 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
   const refDocs = useRef(new Map<string, ContentDocument>());
   const pendingChat = useRef<{ body: string; key: string } | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  const highlightsById = useMemo(
+    () => new Map(highlights.map((h) => [h.payload.highlight_id, h])),
+    [highlights],
+  );
 
   // ---------- load / resume (AC-F4) ----------
 
@@ -101,13 +126,14 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
     let cancelled = false;
     (async () => {
       try {
-        const [state, layoutRes, acts, content, hls, chatRes, tl] = await Promise.all([
+        const [state, layoutRes, acts, content, hls, chatRes, memoRes, tl] = await Promise.all([
           api.getSession(sessionId),
           api.getSessionLayout(sessionId),
           api.listSessionActivities(sessionId),
           api.listSessionContent(sessionId),
           api.getSessionHighlights(sessionId),
           api.getSessionChat(sessionId),
+          api.getSessionMemos(sessionId),
           api.getTimelineSince(sessionId, 0),
         ]);
         if (cancelled) return;
@@ -115,8 +141,9 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
         const catalog = content.items;
         lastPos.current = tl.last_position;
         setTimeline(tl.events);
-        setHighlights(hls.events);
+        setHighlights(hls.events.map((h) => ({ ...h, payload: normalizeHighlightPayload(h.payload) })));
         setChat(chatRes.events);
+        setMemos(memoRes.memos);
         setAttempt(state.active_attempt);
         setMode(layout.defaultMode);
         const restoredSteps: Record<string, string> = {};
@@ -212,7 +239,18 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
   useEffect(() => {
     const onChange = () => {
       if (toolbarRef.current?.contains(document.activeElement)) return;
-      setSelection(readSelection());
+      if (popupRef.current?.contains(document.activeElement)) return;
+      const target = readSelection();
+      if (!target) {
+        setSelection(null);
+        return;
+      }
+      const rect = window.getSelection()?.getRangeAt(0).getBoundingClientRect();
+      const x = rect ? rect.right + 8 : 8;
+      const y = rect ? rect.top : 0;
+      // Clamp so the popup stays within the viewport.
+      const clamped = Math.min(Math.max(x, 8), Math.max(8, window.innerWidth - POPUP_WIDTH - 8));
+      setSelection({ target, anchor: { x: clamped, y } });
     };
     document.addEventListener("selectionchange", onChange);
     return () => document.removeEventListener("selectionchange", onChange);
@@ -245,10 +283,9 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
   // ---------- client events ----------
 
   const appendEvent = useCallback(
-    async (req: Omit<ClientEventRequest, "occurred_at" | "idempotency_key" | "attempt_id" | "event_version">) => {
+    async (req: Omit<ClientEventRequest, "occurred_at" | "idempotency_key" | "attempt_id">) => {
       const body = {
         ...req,
-        event_version: 1,
         occurred_at: nowTimestamp(),
         idempotency_key: newIdempotencyKey(),
         attempt_id: attempt && attempt.status !== "completed" ? attempt.attempt_id : null,
@@ -267,6 +304,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
       setSteps((s) => ({ ...s, [vizId]: stepId }));
       appendEvent({
         event_type: "visualization.step_selected",
+        event_version: 1,
         payload: { visualization_id: vizId, content_version: vizDoc.content_version, step_id: stepId },
       }).catch((e) => setActionError(errText(e)));
     },
@@ -282,6 +320,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
         setOpenDoc(doc);
         await appendEvent({
           event_type: "content.opened",
+          event_version: 1,
           payload: {
             content_id: summary.definition_id,
             content_version: summary.content_version,
@@ -301,10 +340,10 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
       try {
         const ev = (await appendEvent({
           event_type: "content.highlighted",
+          event_version: 2,
           payload: {
             highlight_id: newHighlightId(),
-            content_id: t.contentId,
-            content_version: t.contentVersion,
+            source: t.source,
             selected_text: t.text,
             start_offset: t.start,
             end_offset: t.end,
@@ -314,8 +353,6 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
           },
         })) as unknown as HighlightEvent;
         setHighlights((h) => [...h, ev]);
-        window.getSelection()?.removeAllRanges();
-        setSelection(null);
         return ev;
       } catch (e) {
         setActionError(errText(e));
@@ -325,34 +362,92 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
     [appendEvent],
   );
 
-  const askAi = useCallback(
-    async (t: SelectionTarget) => {
-      const h = await saveHighlight(t);
-      if (h) setQuoted((q) => [...q, h]);
+  const clearSelection = useCallback(() => {
+    window.getSelection()?.removeAllRanges();
+    setSelection(null);
+  }, []);
+
+  /** Opens the popup chat for a saved highlight, collapsing any active selection. */
+  const openPopup = useCallback(
+    (h: HighlightEvent, anchor: { x: number; y: number }) => {
+      setPopup({ highlight: h, anchor });
+      setSelection(null);
+      window.getSelection()?.removeAllRanges();
     },
-    [saveHighlight],
+    [],
+  );
+
+  const openThread = useCallback(
+    (highlightId: string, anchor?: { x: number; y: number }) => {
+      const h = highlightsById.get(highlightId);
+      if (!h) return;
+      openPopup(h, anchor ?? { x: Math.max(8, window.innerWidth - POPUP_WIDTH - 16), y: 80 });
+    },
+    [highlightsById, openPopup],
+  );
+
+  const applyMemo = useCallback((m: MemoView) => {
+    setMemos((prev) => {
+      const i = prev.findIndex((x) => x.memo_id === m.memo_id);
+      if (i < 0) return [...prev, m];
+      const next = [...prev];
+      next[i] = m;
+      return next;
+    });
+  }, []);
+
+  const editMemo = useCallback(
+    async (memoId: string, title: string, body: string) => {
+      try {
+        await appendEvent({
+          event_type: "memo.edited",
+          event_version: 1,
+          payload: { memo_id: memoId, title, body },
+        });
+        setMemos((prev) =>
+          prev.map((m) =>
+            m.memo_id === memoId
+              ? { ...m, title, body, edited_by_learner: true, updated_at: nowTimestamp() }
+              : m,
+          ),
+        );
+      } catch (e) {
+        setActionError(errText(e));
+        throw e;
+      }
+    },
+    [appendEvent],
+  );
+
+  const askAi = useCallback(
+    async (s: SelectionState) => {
+      const h = await saveHighlight(s.target);
+      if (h) openPopup(h, s.anchor);
+    },
+    [saveHighlight, openPopup],
   );
 
   /** Finds a reference whose title or aliases occur in the selection, then opens it. */
   const openConcept = useCallback(
-    async (t: SelectionTarget) => {
+    async (s: SelectionState) => {
       if (!loaded) return;
-      const needle = t.text.trim().toLowerCase();
+      const needle = s.target.text.trim().toLowerCase();
       let match: ContentSummary | null = null;
-      for (const s of loaded.catalog.filter((c) => c.kind === "reference")) {
-        let doc = refDocs.current.get(s.definition_id);
+      for (const c of loaded.catalog.filter((x) => x.kind === "reference")) {
+        let doc = refDocs.current.get(c.definition_id);
         if (!doc) {
-          doc = await api.getSessionContent(sessionId, "reference", s.definition_id);
-          refDocs.current.set(s.definition_id, doc);
+          doc = await api.getSessionContent(sessionId, "reference", c.definition_id);
+          refDocs.current.set(c.definition_id, doc);
         }
         const ref = doc.document as unknown as ReferenceDocument;
         const terms = [ref.title, ...(ref.aliases ?? [])].map((x) => x.toLowerCase());
         if (terms.some((term) => needle.includes(term) || term.includes(needle))) {
-          match = s;
+          match = c;
           break;
         }
       }
-      const h = await saveHighlight(t);
+      const h = await saveHighlight(s.target);
+      clearSelection();
       if (!match) {
         setNotice("No concept in this pack matches the selection. Try “Ask AI”.");
         return;
@@ -360,7 +455,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
       setNotice(null);
       await openContent(match, h?.payload.highlight_id ?? null);
     },
-    [loaded, sessionId, saveHighlight, openContent],
+    [loaded, sessionId, saveHighlight, clearSelection, openContent],
   );
 
   // ---------- chat (AC-D3..D5) ----------
@@ -397,6 +492,66 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
     },
     [chat, attempt, quoted, sessionId, scheduleRefresh],
   );
+
+  /** Sends into a highlight thread (popup chat) and returns the exchange for the popup log. */
+  const sendPopupMessage = useCallback(
+    async (text: string, threadId: string): Promise<ChatExchange> => {
+      const h = popup?.highlight;
+      const references: ChatReference[] = h
+        ? [{ type: "highlight", id: h.payload.highlight_id }]
+        : [];
+      const base = {
+        occurred_at: nowTimestamp(),
+        thread_id: threadId,
+        attempt_id: attempt && attempt.status !== "completed" ? attempt.attempt_id : null,
+        text,
+        references,
+      };
+      // Retry after a 502 reuses the key so no second request event is appended.
+      const fingerprint = JSON.stringify([base.thread_id, base.attempt_id, text, base.references]);
+      const key =
+        pendingChat.current?.body === fingerprint ? pendingChat.current.key : newIdempotencyKey();
+      pendingChat.current = { body: fingerprint, key };
+      try {
+        const res = await api.sendChatMessage(sessionId, { ...base, idempotency_key: key });
+        pendingChat.current = null;
+        // The popup consumed the selection: clear it and collapse the DOM range.
+        window.getSelection()?.removeAllRanges();
+        setSelection(null);
+        scheduleRefresh();
+        return res.body;
+      } catch (e) {
+        setChatError(`${errText(e)} — send again to retry.`);
+        throw e;
+      }
+    },
+    [popup, attempt, sessionId, scheduleRefresh],
+  );
+
+  /** Terminal selections open the same toolbar/popup, anchored to the terminal host. */
+  const onTerminalSelection = useCallback((sel: TerminalSelection | null) => {
+    if (!sel) {
+      setSelection((s) => (s?.target.source.kind === "terminal" ? null : s));
+      return;
+    }
+    setSelection({
+      target: {
+        source: {
+          kind: "terminal",
+          terminal_id: sel.terminal_id,
+          first_sequence: sel.first_sequence,
+          last_sequence: sel.last_sequence,
+        },
+        anchor: null,
+        text: sel.text,
+        start: null,
+        end: null,
+        contextBefore: "",
+        contextAfter: "",
+      },
+      anchor: { x: sel.anchorRect.right + 8, y: sel.anchorRect.top },
+    });
+  }, []);
 
   // ---------- attempt commands ----------
 
@@ -463,10 +618,6 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
 
   // ---------- derived ----------
 
-  const highlightsById = useMemo(
-    () => new Map(highlights.map((h) => [h.payload.highlight_id, h])),
-    [highlights],
-  );
   const storedOutput = useMemo(
     () =>
       timeline
@@ -514,6 +665,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
           onLabStatus={onLabStatus}
           onServerMessage={onServerMessage}
           handleRef={terminalRef}
+          onSelection={onTerminalSelection}
         />
       );
     }
@@ -573,14 +725,16 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
           catalog={loaded.catalog}
           highlights={highlights}
           onOpen={(s) => void openContent(s)}
-          onAskAboutHighlight={(h) =>
-            setQuoted((q) => (q.some((x) => x.event_id === h.event_id) ? q : [...q, h]))
-          }
+          onAskAboutHighlight={(h, anchor) => openPopup(h, anchor)}
         />
       );
     }
     return <p className="muted">Component “{layout.sideComponent}” is not provided by the standard UI.</p>;
   };
+
+  const memoPane = layout.memoRegion ? (
+    <MemoPane memos={memos} onOpenThread={openThread} onEdit={editMemo} />
+  ) : null;
 
   const renderBottom = () => {
     if (layout.bottomComponent === "ai_chat") {
@@ -588,6 +742,7 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
         <ChatPanel
           events={chat}
           highlightsById={highlightsById}
+          highlights={highlights}
           quoted={quoted}
           onRemoveQuote={(id) => setQuoted((q) => q.filter((h) => h.payload.highlight_id !== id))}
           onSend={sendChat}
@@ -682,9 +837,14 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
         </div>
       </main>
 
-      {layout.sideComponent && <aside className="side-pane">{renderSide()}</aside>}
+      {layout.sideComponent && (
+        <aside className="side-pane">
+          {renderSide()}
+          {layout.memoRegion && layout.memoRegion !== "bottom" && <div className="memo-region">{memoPane}</div>}
+        </aside>
+      )}
       {layout.bottomComponent && (
-        <footer className="bottom-pane">
+        <footer className={`bottom-pane${layout.memoRegion === "bottom" ? " has-memo" : ""}`}>
           <div
             className="bottom-resize-handle"
             role="separator"
@@ -692,24 +852,46 @@ export function Workspace({ sessionId, onLeave }: { sessionId: string; onLeave: 
             aria-label="Resize chat panel"
             onMouseDown={startBottomResize}
           />
+          {layout.memoRegion === "bottom" && memoPane}
           {renderBottom()}
         </footer>
       )}
 
       {selection && (
         <div className="selection-toolbar" ref={toolbarRef} role="toolbar" aria-label="Selection actions">
-          <q>{selection.text.length > 40 ? selection.text.slice(0, 40) + "…" : selection.text}</q>
-          <button onMouseDown={(e) => e.preventDefault()} onClick={() => void saveHighlight(selection)}>
+          <q>{selection.target.text.length > 40 ? selection.target.text.slice(0, 40) + "…" : selection.target.text}</q>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              void saveHighlight(selection.target);
+              clearSelection();
+            }}
+          >
             Save highlight
           </button>
           <button onMouseDown={(e) => e.preventDefault()} onClick={() => void askAi(selection)}>
-            Ask AI
+            Ask AI / chat
           </button>
           {layout.sideComponent && (
             <button onMouseDown={(e) => e.preventDefault()} onClick={() => void openConcept(selection)}>
               Open concept
             </button>
           )}
+        </div>
+      )}
+
+      {popup && (
+        <div ref={popupRef}>
+          <PopupChat
+            sessionId={sessionId}
+            highlight={popup.highlight}
+            anchor={popup.anchor}
+            highlights={highlights}
+            highlightsById={highlightsById}
+            onClose={() => setPopup(null)}
+            onMemo={applyMemo}
+            onSend={sendPopupMessage}
+          />
         </div>
       )}
     </div>

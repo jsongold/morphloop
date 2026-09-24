@@ -1,18 +1,22 @@
-// Maps a DOM selection to a highlight target: which content document, which
-// in-document anchor, and character offsets into that region's text.
+// Maps a DOM selection to a highlight target: which source (pack content,
+// chat message), which in-document anchor, and character offsets into that
+// region's text. Terminal selections are built separately (see TerminalPane).
 //
 // A highlightable region is an element with `data-hl-content-id`,
-// `data-hl-content-version` and optional `data-hl-anchor`. Offsets are
-// measured over the region's `textContent`, which is exactly the plain text
-// the region renders (see HighlightableText).
+// `data-hl-content-version`, optional `data-hl-anchor` and optional
+// `data-hl-kind` ("chat_message"; default "pack"). Offsets are measured over
+// the region's `textContent`, which is exactly the plain text the region
+// renders (see HighlightableText).
+
+import type { HighlightSource } from "./types";
 
 export interface SelectionTarget {
-  contentId: string;
-  contentVersion: string;
+  source: HighlightSource;
   anchor: string | null;
   text: string;
-  start: number;
-  end: number;
+  /** UTF-16 offsets into the source text; null for terminal targets. */
+  start: number | null;
+  end: number | null;
   contextBefore: string;
   contextAfter: string;
 }
@@ -43,9 +47,15 @@ export function readSelection(): SelectionTarget | null {
   if (end <= start) return null;
   const text = full.slice(start, end);
   if (text.trim().length === 0) return null;
+  const kind = region.dataset.hlKind === "chat_message" ? "chat_message" : "pack";
+  const contentId = region.dataset.hlContentId ?? "";
+  const contentVersion = region.dataset.hlContentVersion ?? "";
+  const source: HighlightSource =
+    kind === "chat_message"
+      ? { kind: "chat_message", message_id: contentId }
+      : { kind: "pack", content_id: contentId, content_version: contentVersion };
   return {
-    contentId: region.dataset.hlContentId ?? "",
-    contentVersion: region.dataset.hlContentVersion ?? "",
+    source,
     anchor: region.dataset.hlAnchor ?? null,
     text,
     start,
