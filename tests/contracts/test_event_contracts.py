@@ -37,7 +37,12 @@ def _schema_files() -> list[Path]:
 
 
 def _payload_versions() -> set[tuple[str, int]]:
-    return {(p.parent.name, int(p.stem)) for p in PAYLOADS_DIR.glob("*/*.json")}
+    # v1 only: v2 payloads ("x-envelope": 2) are dispatched by contract_schemas (#43).
+    return {
+        (p.parent.name, int(p.stem))
+        for p in PAYLOADS_DIR.glob("*/*.json")
+        if "x-envelope" not in _load(p)
+    }
 
 
 def _payload_path(event: dict[str, Any]) -> str:

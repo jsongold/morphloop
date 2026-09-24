@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/envelope/v2/append.json",
+  "title": "Event v2 append request",
+  "description": "What a producer hands to the event store. DB-assigned fields (position, created_at) must be absent. dispatch.json has no file: harness.core.contract_schemas generates it by scanning the payload files, so validate through ContractSchemas.",
+  "$ref": "https://morphloop.dev/contracts/schemas/events/envelope/v2/fields.json",
+  "allOf": [
+    {
+      "$ref": "https://morphloop.dev/contracts/schemas/events/envelope/v2/dispatch.json"
+    }
+  ],
+  "unevaluatedProperties": false
+}
