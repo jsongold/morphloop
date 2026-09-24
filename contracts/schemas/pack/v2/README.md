@@ -12,8 +12,8 @@ the v1 schemas in `../`, which stay unchanged until v1 is removed. Conventions
 |---|---|---|
 | `manifest.json` | none (pack root) | identity, domain adapters, file lists per kind. No layout, registry or templates |
 | `labels.json` | `labels` (one file) | label vocabulary the pack declares |
-| `topic.json` | `topics` | one topic tree per file (`id`, `title`, `description`, `topics[]`) |
-| `text-doc.json` | `texts` | teaching text: `blocks[]` of `{id, body, labels}` |
+| `topic.json` | `topics` | one topic tree per file (`id`, `title`, `description`, `docs[]`, `topics[]`) |
+| `textbook-doc.json` | `textbooks` | teaching text: `blocks[]` of `{id, body, labels}` |
 | `drill-item.json` | `drills` | question + expected answer, `answer_mode` text / choice / artifact |
 | `artifact-spec.json` | `artifacts` | `{id, type, labels, spec}`; `type: lab` fixes the spec shape |
 | `defs.json` | none | label shapes |
@@ -34,6 +34,8 @@ that change SDK behavior (`answer_mode`, the `sys:` labels).
 ## Decisions
 
 - **Topics** hold no prerequisites, mastery thresholds or evidence dimensions.
+  A topic's optional `docs` is an ordered, unique list of textbook doc ids:
+  the pack's declared reading order for that topic.
 - **Text blocks** are paragraph-level. A block id is assigned once when the
   document is finalized and never changes; highlights anchor to it. `body` is
   CommonMark. An artifact is embedded as `::artifact{type=<type> ref=<id>}`
@@ -56,7 +58,9 @@ that change SDK behavior (`answer_mode`, the `sys:` labels).
 - `artifact_ref` and `::artifact{...}` refs name an artifact spec of that type;
 - artifact `type` is registered, and a lab's fixtures and checks are registered
   by an adapter in `domain_adapters`; the lab environment's `fixture` is in
-  `allowed_fixtures`.
+  `allowed_fixtures`;
+- every id in a topic's `docs` names an existing textbook doc, and every
+  textbook doc is listed under exactly one topic's `docs`.
 
 ## Tests
 

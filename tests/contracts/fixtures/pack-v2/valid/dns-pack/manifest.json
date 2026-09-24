@@ -8,7 +8,7 @@
   },
   "labels": "labels.json",
   "topics": ["topics/network.json"],
-  "texts": ["texts/dns-resolution.json"],
+  "textbooks": ["textbooks/dns-resolution.json"],
   "drills": [
     "drills/dns-resolver-text.json",
     "drills/dns-record-choice.json",

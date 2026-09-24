@@ -14,17 +14,20 @@
             {
               "id": "network.dns.lookup-path",
               "title": "How an application looks up a name",
-              "description": "Applications do not speak DNS. They call `getaddrinfo()`, which checks `/etc/hosts` first and only then asks DNS through the stub resolver. Tools like `dig` skip the first step, so they can disagree with what an application sees."
+              "description": "Applications do not speak DNS. They call `getaddrinfo()`, which checks `/etc/hosts` first and only then asks DNS through the stub resolver. Tools like `dig` skip the first step, so they can disagree with what an application sees.",
+              "docs": ["network.dns.lookup-path"]
             },
             {
               "id": "network.dns.resolver",
               "title": "Stub resolver and /etc/resolv.conf",
-              "description": "The stub resolver is the part of the C library that turns a name into DNS queries. It does not know any answers itself: it sends each query to the nameservers listed in `/etc/resolv.conf` and returns what they say."
+              "description": "The stub resolver is the part of the C library that turns a name into DNS queries. It does not know any answers itself: it sends each query to the nameservers listed in `/etc/resolv.conf` and returns what they say.",
+              "docs": ["network.dns.resolver"]
             },
             {
               "id": "network.dns.answers",
               "title": "Reading a DNS answer",
-              "description": "A DNS reply carries a status code and records. `NOERROR` with an `A` record is an address; `NXDOMAIN` means the server answered that the name does not exist; no reply at all means the server was never reached. These point to different hops."
+              "description": "A DNS reply carries a status code and records. `NOERROR` with an `A` record is an address; `NXDOMAIN` means the server answered that the name does not exist; no reply at all means the server was never reached. These point to different hops.",
+              "docs": ["network.dns.answers"]
             }
           ]
         }

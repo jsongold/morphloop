@@ -10,7 +10,7 @@
     "domain_adapters": {},
     "labels": "labels.json",
     "topics": ["topics/network.json"],
-    "texts": [],
+    "textbooks": [],
     "drills": [],
     "artifacts": [],
     "registry": {}

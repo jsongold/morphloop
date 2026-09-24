@@ -26,7 +26,7 @@ INVALID = sorted((FIXTURES / "invalid").glob("*.json"))
 
 LIST_SCHEMA = {
     "topics": "topic.json",
-    "texts": "text-doc.json",
+    "textbooks": "textbook-doc.json",
     "drills": "drill-item.json",
     "artifacts": "artifact-spec.json",
 }
