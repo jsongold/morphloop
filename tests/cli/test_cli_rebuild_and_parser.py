@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -106,3 +108,48 @@ def test_main_reports_a_failure_as_a_message_and_exit_code_one(
 
     assert code == 1
     assert capsys.readouterr().err.startswith("error: cannot read the pack")
+
+
+# CliRunner (used above) catches every exception itself, so it can't tell a usage
+# error handled by ``main`` apart from one that escapes it uncaught. These call
+# ``main`` directly, and via a real subprocess, to pin exit codes 2/1 and rule out
+# a raw traceback reaching the terminal (regression: a wrong exception type in
+# ``main``'s except clause let typer's usage errors escape uncaught).
+
+
+def test_main_treats_a_missing_command_as_a_usage_error_not_a_crash(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main([]) == 2
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_main_treats_generates_missing_arguments_as_a_usage_error_not_a_crash(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["generate"]) == 2
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "harness.cli", *args],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_the_real_entry_point_reports_a_missing_command_as_exit_code_two() -> None:
+    result = _run_cli()
+
+    assert result.returncode == 2
+    assert "Traceback" not in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+def test_the_real_entry_point_reports_generates_missing_arguments_as_exit_code_two() -> None:
+    result = _run_cli("generate")
+
+    assert result.returncode == 2
+    assert "Traceback" not in result.stdout
+    assert "Traceback" not in result.stderr

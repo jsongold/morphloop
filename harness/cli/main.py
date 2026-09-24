@@ -8,7 +8,7 @@ Run it as a module (``pyproject.toml`` declares no console script)::
     uv run python -m harness.cli rebuild
 
 Exit codes: ``0`` success, ``1`` a reported failure
-(:class:`~harness.cli.errors.CommandError`), ``2`` a usage error from typer/click.
+(:class:`~harness.cli.errors.CommandError`), ``2`` a usage error from typer.
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ import sys
 from collections.abc import Sequence
 from typing import Annotated
 
-import click
 import typer
+from typer.exceptions import TyperException
 
 from harness.cli import import_pack, rebuild, wiring
 from harness.cli.errors import CommandError
@@ -136,8 +136,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else list(argv)
     try:
         return int(app(args, standalone_mode=False))
-    except click.ClickException as exc:
-        exc.show()
+    except TyperException as exc:
+        # Usage errors (e.g. click's UsageError/MissingParameter) carry a
+        # ``.show()`` that prints "Usage: ...\nError: ..." to stderr, matching
+        # argparse's prior usage-error output; ``.exit_code`` is 2 for those.
+        exc.show()  # type: ignore[attr-defined]
         return exc.exit_code
     except CommandError as exc:
         print(f"error: {exc}", file=sys.stderr)
