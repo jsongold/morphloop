@@ -20,6 +20,14 @@ Where validation happens:
 The full prompt (``messages``) is a system log and never appears in an event;
 only the output and :class:`LLMProvenance` do (ADR-0016).
 
+Tool calling (v0.2.0) is a second, separate Port, :class:`LLMToolProvider`,
+so existing :class:`LLMProvider` implementations stay valid unchanged. The
+model may answer with text, with tool calls, or both; core runs each tool and
+sends the result back as an :class:`LLMToolResult` after the assistant
+:class:`LLMMessage` that carried the calls. The adapter guarantees each
+:class:`LLMToolCall` names a declared tool and carries a JSON object of
+arguments; core still validates arguments before a tool changes state.
+
 Value types are frozen dataclasses; see ``harness.core.ports`` for why.
 """
 
@@ -34,6 +42,7 @@ from harness.core.ports.json_types import JsonObject, PlainJson
 type LLMRole = Literal["tutor", "evaluator", "learner_model", "generator", "memo_summarizer"]
 type MessageRole = Literal["system", "user", "assistant"]
 type GenerationParameter = str | int | float | bool | None
+type ToolChoice = Literal["auto", "required", "none"]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -64,11 +73,58 @@ class LLMProvenance:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class LLMToolCall:
+    """One tool call the model asked for. ``id`` pairs it with its result."""
+
+    id: str
+    name: str
+    arguments: JsonObject
+
+    def __post_init__(self) -> None:
+        if not self.id or not self.name:
+            raise ValueError("a tool call needs a non-empty id and name")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class LLMMessage:
-    """One chat message. Core assembles these within the pack's context budget."""
+    """One chat message. Core assembles these within the pack's context budget.
+
+    ``tool_calls`` is set only on an assistant message replayed into a tool
+    conversation, so the following :class:`LLMToolResult` s have their calls.
+    """
 
     role: MessageRole
     content: str
+    tool_calls: Sequence[LLMToolCall] = ()
+
+    def __post_init__(self) -> None:
+        if self.tool_calls and self.role != "assistant":
+            raise ValueError("only an assistant message can carry tool calls")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LLMToolResult:
+    """The result of running one tool call, sent back to the model."""
+
+    tool_call_id: str
+    content: str
+
+    def __post_init__(self) -> None:
+        if not self.tool_call_id:
+            raise ValueError("a tool result needs the id of its tool call")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LLMTool:
+    """A tool the model may call. ``parameters`` is a JSON Schema object."""
+
+    name: str
+    description: str
+    parameters: JsonObject
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("a tool needs a non-empty name")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -102,6 +158,34 @@ class LLMResponse:
     provenance: LLMProvenance
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LLMToolRequest:
+    """A tool-calling chat turn. ``tool_choice`` is required (no defaults)."""
+
+    llm: LLMProvenance
+    messages: Sequence[LLMMessage | LLMToolResult]
+    tools: Sequence[LLMTool]
+    tool_choice: ToolChoice
+
+    def __post_init__(self) -> None:
+        if not self.messages:
+            raise ValueError("an LLM request needs at least one message")
+        if not self.tools:
+            raise ValueError("a tool request needs at least one tool")
+        names = [tool.name for tool in self.tools]
+        if len(set(names)) != len(names):
+            raise ValueError(f"tool names must be unique, got {names}")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LLMToolResponse:
+    """The model's reply: text, tool calls, or both, plus provenance."""
+
+    content: str | None
+    tool_calls: Sequence[LLMToolCall]
+    provenance: LLMProvenance
+
+
 class LLMError(Exception):
     """Base class for LLM adapter failures (transport, auth, rate limit, etc.)."""
 
@@ -126,5 +210,15 @@ class LLMProvider(Protocol):
         Raises :class:`LLMOutputError` when no JSON object can be parsed and
         :class:`LLMError` for other failures. Never retries silently with
         different parameters; any retry keeps ``request.llm`` unchanged.
+        """
+        ...
+
+
+class LLMToolProvider(Protocol):
+    """Provider-neutral tool-calling chat turn (synchronous, like :class:`LLMProvider`)."""
+
+    def complete_with_tools(self, request: LLMToolRequest) -> LLMToolResponse:
+        """Run one turn. Raises :class:`LLMOutputError` for a call to an
+        undeclared tool or non-object arguments, :class:`LLMError` otherwise.
         """
         ...

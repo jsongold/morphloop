@@ -57,6 +57,21 @@ no schema expresses. This adapter additionally runs the parsed output through
 ``jsonschema`` against ``request.output_schema`` as a defense-in-depth check;
 a failure raises :class:`LLMOutputError`, which core already treats as "no
 usable output, no state change" (AC-E4).
+
+Tool calling
+------------
+``complete_with_tools`` uses litellm's OpenAI-shaped tool API, as read from
+the installed source: ``litellm.completion(tools=[{"type": "function",
+"function": {"name", "description", "parameters"}}], tool_choice="auto" |
+"required" | "none")`` (``types/llms/openai.py`` ``ChatCompletionToolParam``;
+``utils.validate_chat_completion_tool_choice`` passes strings through). The
+reply's ``message.tool_calls`` is a list of ``ChatCompletionMessageToolCall``
+with ``id`` and ``function.name`` / ``function.arguments`` (a JSON string;
+``types/utils.py``). Replayed assistant calls go back as ``{"role":
+"assistant", "tool_calls": [{"id", "type": "function", "function": {"name",
+"arguments"}}]}`` and results as ``{"role": "tool", "tool_call_id",
+"content"}`` (``ChatCompletionToolMessage``). Arguments are parsed and
+checked against the declared tool's ``parameters`` like structured output.
 """
 
 from __future__ import annotations
@@ -75,7 +90,16 @@ from harness.core.ports import (
     LLMRequest,
     LLMResponse,
 )
-from harness.core.ports.json_types import to_plain_object
+from harness.core.ports.json_types import PlainJson, to_plain_object
+from harness.core.ports.llm import (
+    LLMMessage,
+    LLMProvenance,
+    LLMTool,
+    LLMToolCall,
+    LLMToolRequest,
+    LLMToolResponse,
+    LLMToolResult,
+)
 
 
 class CompletionCallable(Protocol):
@@ -126,14 +150,94 @@ class LiteLLMProvider:
 
         output = _extract_output(response)
         _validate_output(output, request.output_schema)
-        return LLMResponse(
-            output=output,
-            provenance=replace(
-                llm,
-                provider=provider,
-                model=str(getattr(response, "model", None) or llm.model),
-            ),
+        return LLMResponse(output=output, provenance=_echo(llm, provider, response))
+
+    def complete_with_tools(self, request: LLMToolRequest) -> LLMToolResponse:
+        llm = request.llm
+        provider = _provider_of(llm.model)
+
+        try:
+            response = self._completion(
+                model=llm.model,
+                messages=[_wire_message(message) for message in request.messages],
+                tools=[_wire_tool(tool) for tool in request.tools],
+                tool_choice=request.tool_choice,
+                **dict(llm.generation_parameters),
+            )
+        except Exception as exc:
+            raise LLMError(f"litellm call to {llm.model!r} failed: {exc}") from exc
+
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            raise LLMOutputError("the LLM response contained no choices")
+        message = getattr(choices[0], "message", None)
+        refusal = getattr(message, "refusal", None)
+        if refusal:
+            raise LLMOutputError(f"the LLM refused the request: {refusal}")
+
+        tools = {tool.name: tool for tool in request.tools}
+        tool_calls = [
+            _parse_tool_call(call, tools) for call in getattr(message, "tool_calls", None) or []
+        ]
+        return LLMToolResponse(
+            content=getattr(message, "content", None) or None,
+            tool_calls=tool_calls,
+            provenance=_echo(llm, provider, response),
         )
+
+
+def _echo(llm: LLMProvenance, provider: str, response: Any) -> LLMProvenance:
+    return replace(llm, provider=provider, model=str(getattr(response, "model", None) or llm.model))
+
+
+def _wire_tool(tool: LLMTool) -> dict[str, PlainJson]:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": to_plain_object(tool.parameters),
+        },
+    }
+
+
+def _wire_message(message: LLMMessage | LLMToolResult) -> dict[str, PlainJson]:
+    if isinstance(message, LLMToolResult):
+        return {"role": "tool", "tool_call_id": message.tool_call_id, "content": message.content}
+    wire: dict[str, PlainJson] = {"role": message.role, "content": message.content}
+    if message.tool_calls:
+        wire["tool_calls"] = [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {
+                    "name": call.name,
+                    "arguments": json.dumps(to_plain_object(call.arguments)),
+                },
+            }
+            for call in message.tool_calls
+        ]
+    return wire
+
+
+def _parse_tool_call(call: Any, tools: dict[str, LLMTool]) -> LLMToolCall:
+    function = getattr(call, "function", None)
+    name = getattr(function, "name", None)
+    tool = tools.get(name) if isinstance(name, str) else None
+    if tool is None:
+        raise LLMOutputError(f"the LLM called an undeclared tool {name!r}")
+    raw = getattr(function, "arguments", None) or "{}"
+    try:
+        arguments: Any = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise LLMOutputError(f"tool {name!r} arguments were not valid JSON: {exc}") from exc
+    if not isinstance(arguments, dict):
+        raise LLMOutputError(f"tool {name!r} arguments were not a JSON object")
+    _validate_output(arguments, tool.parameters)
+    call_id = getattr(call, "id", None)
+    if not call_id:
+        raise LLMOutputError(f"tool call {name!r} had no id")
+    return LLMToolCall(id=str(call_id), name=tool.name, arguments=arguments)
 
 
 def _provider_of(model: str) -> str:
