@@ -26,7 +26,7 @@ import type {
   TerminalOutputPayload,
   VisualizationDocument,
 } from "@/lib/types";
-import type { LabStatusMessage, ServerMessage } from "@/lib/ws";
+import type { LabStatusMessage, ServerMessage } from "@/lib/websocket";
 import { ChatPanel } from "./ChatPanel";
 import { ConceptPane } from "./ConceptPane";
 import { MemoPane } from "./MemoPane";

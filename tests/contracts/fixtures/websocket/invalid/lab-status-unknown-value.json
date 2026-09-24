@@ -1,6 +1,6 @@
 {
   "description": "status must be one of the registered lifecycle values.",
-  "schema": "schemas/ws/envelope/message.json",
+  "schema": "schemas/websocket/envelope/message.json",
   "expected_error_paths": [
     "$.payload.status"
   ],

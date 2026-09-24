@@ -1,6 +1,6 @@
 {
-  "description": "terminal.output events are pushed directly as their own message type, never re-announced through event.appended (see contracts/schemas/ws/README.md).",
-  "schema": "schemas/ws/envelope/message.json",
+  "description": "terminal.output events are pushed directly as their own message type, never re-announced through event.appended (see contracts/schemas/websocket/README.md).",
+  "schema": "schemas/websocket/envelope/message.json",
   "expected_error_paths": [
     "$.payload"
   ],

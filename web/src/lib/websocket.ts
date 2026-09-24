@@ -1,5 +1,5 @@
 // Hand-written client for the lab terminal WebSocket
-// (`/labs/{lab_instance_id}/terminal`, contracts/schemas/ws/).
+// (`/labs/{lab_instance_id}/terminal`, contracts/schemas/websocket/).
 //
 // One connection per LabInstance. After a lab reset the server closes the
 // socket; the caller connects a new LabSocket to the replacement instance.

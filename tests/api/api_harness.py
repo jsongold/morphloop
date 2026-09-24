@@ -6,7 +6,7 @@ with an explicit :class:`~harness.api.backend.Backend` holding the same loop
 serialization and error mapping against the same in-memory pack.
 
 Responses are checked against ``contracts/openapi/v0.1.yaml`` and WebSocket
-messages against ``contracts/schemas/ws/``; both are the language-neutral
+messages against ``contracts/schemas/websocket/``; both are the language-neutral
 source of truth and neither is generated from (ADR-0017).
 """
 
@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "core"))
 from loop_harness import LoopFixture, build_loop  # noqa: E402
 
 OPENAPI_URI = "https://morphloop.dev/contracts/openapi/v0.1.yaml"
-WS_MESSAGE_SCHEMA = "schemas/ws/envelope/message.json"
+WS_MESSAGE_SCHEMA = "schemas/websocket/envelope/message.json"
 
 SPEC: dict[str, Any] = yaml.safe_load(
     (CONTRACTS_DIR / "openapi" / "v0.1.yaml").read_text(encoding="utf-8")

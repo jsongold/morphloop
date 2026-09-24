@@ -1,4 +1,4 @@
-"""Terminal bridge (PTY) Port (ADR-0015; ``contracts/schemas/ws/README.md``).
+"""Terminal bridge (PTY) Port (ADR-0015; ``contracts/schemas/websocket/README.md``).
 
 Opens an interactive PTY session inside a running lab instance and streams
 raw bytes both ways. The PTY adapter lives in ``harness/adapters/pty/``.

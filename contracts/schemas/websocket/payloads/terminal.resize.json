@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://morphloop.dev/contracts/schemas/ws/payloads/terminal.resize.json",
+  "$id": "https://morphloop.dev/contracts/schemas/websocket/payloads/terminal.resize.json",
   "title": "terminal.resize payload",
   "description": "Learner resized the terminal pane (xterm.js fit). Not persisted as an event: applying the same size twice is a harmless no-op, so this message carries no idempotency_key.",
   "type": "object",

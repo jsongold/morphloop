@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://morphloop.dev/contracts/schemas/ws/payloads/event.appended.json",
+  "$id": "https://morphloop.dev/contracts/schemas/websocket/payloads/event.appended.json",
   "title": "event.appended payload",
-  "description": "Thin notification that a new event was appended to a session's timeline (ADR-0008), for any event type OTHER than terminal.output, which streams directly as its own 'terminal.output' WebSocket message instead (see contracts/schemas/ws/README.md, 'why event.appended does not embed the stored event'). Carries just enough (event_id, position, event_type/version, occurred_at, attempt scoping) for the UI to append a timeline row or refetch; it does not embed the stored event (contracts/schemas/events/envelope/stored.json). A client that needs the payload calls GET /sessions/{id}/timeline.",
+  "description": "Thin notification that a new event was appended to a session's timeline (ADR-0008), for any event type OTHER than terminal.output, which streams directly as its own 'terminal.output' WebSocket message instead (see contracts/schemas/websocket/README.md, 'why event.appended does not embed the stored event'). Carries just enough (event_id, position, event_type/version, occurred_at, attempt scoping) for the UI to append a timeline row or refetch; it does not embed the stored event (contracts/schemas/events/envelope/stored.json). A client that needs the payload calls GET /sessions/{id}/timeline.",
   "type": "object",
   "required": [
     "event_id",

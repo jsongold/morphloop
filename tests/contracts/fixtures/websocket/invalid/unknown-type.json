@@ -1,6 +1,6 @@
 {
   "description": "Only registered message types are accepted.",
-  "schema": "schemas/ws/envelope/message.json",
+  "schema": "schemas/websocket/envelope/message.json",
   "expected_error_paths": [
     "$.type"
   ],

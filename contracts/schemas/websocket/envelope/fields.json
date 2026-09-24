@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://morphloop.dev/contracts/schemas/ws/envelope/fields.json",
+  "$id": "https://morphloop.dev/contracts/schemas/websocket/envelope/fields.json",
   "title": "WebSocket message envelope fields (open base)",
   "description": "Shared envelope fields for every WebSocket message on the terminal/notification connection. Not closed: validate against envelope/message.json, never against this schema alone. The payload is checked by dispatch.json. Unlike the event envelope (contracts/schemas/events/), there is no separate 'append' vs 'stored' variant: WebSocket messages are not persisted; only the events some of them cause are.",
   "type": "object",
@@ -18,7 +18,7 @@
       "minLength": 1
     },
     "protocol_version": {
-      "description": "WebSocket protocol version for this whole message catalog (not per message type: see contracts/schemas/ws/README.md). v0.1 is 1.",
+      "description": "WebSocket protocol version for this whole message catalog (not per message type: see contracts/schemas/websocket/README.md). v0.1 is 1.",
       "type": "integer",
       "minimum": 1
     },

@@ -8,7 +8,7 @@ import type {
   TerminalCommandPayload,
   VisualizationDocument,
 } from "@/lib/types";
-import { argvToCommandLine } from "@/lib/ws";
+import { argvToCommandLine } from "@/lib/websocket";
 
 interface Props {
   content: ContentDocument<VisualizationDocument>;

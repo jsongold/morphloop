@@ -157,8 +157,10 @@ def test_every_internal_ref_resolves() -> None:
 
 def test_websocket_terminal_is_documented_with_ws_message_schema() -> None:
     ws = SPEC["x-websockets"]["/labs/{lab_instance_id}/terminal"]
-    assert ws["message"]["$ref"] == ID_BASE + "schemas/ws/envelope/message.json"
-    ws_types = set(SCHEMAS[ID_BASE + "schemas/ws/dispatch.json"]["properties"]["type"]["enum"])
+    assert ws["message"]["$ref"] == ID_BASE + "schemas/websocket/envelope/message.json"
+    ws_types = set(
+        SCHEMAS[ID_BASE + "schemas/websocket/dispatch.json"]["properties"]["type"]["enum"]
+    )
     assert set(ws["clientToServer"]) | set(ws["serverToClient"]) == ws_types
 
 

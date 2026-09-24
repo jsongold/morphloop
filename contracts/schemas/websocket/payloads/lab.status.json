@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://morphloop.dev/contracts/schemas/ws/payloads/lab.status.json",
+  "$id": "https://morphloop.dev/contracts/schemas/websocket/payloads/lab.status.json",
   "title": "lab.status payload",
   "description": "Push when the lab instance behind this connection changes lifecycle state, e.g. after a reset (lab.reset) or a crash. 'terminal_id' is null until the lab has a terminal ready to accept input.",
   "type": "object",

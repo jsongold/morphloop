@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://morphloop.dev/contracts/schemas/ws/payloads/error.json",
+  "$id": "https://morphloop.dev/contracts/schemas/websocket/payloads/error.json",
   "title": "error payload",
   "description": "Server-reported error for this connection, e.g. a malformed message, an oversized frame, or an action attempted before the lab is ready.",
   "type": "object",

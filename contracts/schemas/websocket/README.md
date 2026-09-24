@@ -1,4 +1,4 @@
-# contracts/schemas/ws/
+# contracts/schemas/websocket/
 
 JSON Schema for the WebSocket connection that carries (a) the xterm.js
 terminal ↔ backend PTY bridge for a learner's lab container and (b)

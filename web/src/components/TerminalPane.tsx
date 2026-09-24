@@ -11,7 +11,7 @@ import {
   type LabStatusMessage,
   type ServerMessage,
   type SocketState,
-} from "@/lib/ws";
+} from "@/lib/websocket";
 
 export interface TerminalHandle {
   /** Types a line into the lab PTY and presses Enter (AC-C3). */
@@ -115,7 +115,7 @@ export default function TerminalPane({
     };
 
     // Replay what this lab already printed (stored terminal.output events),
-    // then dedupe live chunks by `sequence` (ws/payloads/terminal.output.json).
+    // then dedupe live chunks by `sequence` (websocket/payloads/terminal.output.json).
     // A sequence counts within one terminal: every connection opens a new
     // terminal whose sequence restarts at 0, named by lab.status.terminal_id.
     const lastSeq = new Map<string, number>();
