@@ -1,0 +1,29 @@
+# URL -> Path Item map for the ws resource (ADR-0018). Owned by the
+# ws resource PR: this file is the only file that PR edits (plus an
+# optional new components/ws.yaml for ws-specific schemas).
+# Never edit ../root.yaml or another resource's paths/*.yaml — new URLs are
+# just new top-level keys in this file, merged into the document by
+# harness.testing.openapi_v2.load_merged_openapi_v2_spec (duplicate URLs
+# across files are a load-time error). See ../README.md.
+#
+# Workspace (ws): threads, memo. The learner's work area; one learner can hold several. A thread is a topic-of-conversation unit with an optional target and is the LLM context split unit.
+#
+# `/ws/_stub` below is a placeholder with no meaning; replace or
+# extend it with the resource's real paths.
+/ws/_stub:
+  get:
+    tags: [ws]
+    operationId: getWsStub
+    summary: Placeholder for the ws resource.
+    description: |
+      No behavior yet. Real endpoints for ws land in a follow-up PR
+      that edits only this file (ADR-0018, issue #34).
+    responses:
+      '200':
+        description: Stub response.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/common.yaml#/Stub'
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'

@@ -1,0 +1,56 @@
+openapi: 3.1.0
+info:
+  title: morphloop harness HTTP API (v0.2)
+  version: 0.2.0
+  summary: Skeleton of the v0.2.0 resource-centric HTTP contract (ADR-0018, issue #34).
+  description: |
+    Boundary contract between the harness API (`harness/api/`) and any UI,
+    same role as `contracts/openapi/v0.1.yaml` (ADR-0015). v0.1 stays
+    untouched and reachable while v0.2 is built up resource by resource
+    (parallel migration, issue #34).
+
+    This document is the root of a multi-file OpenAPI 3.1 spec. `paths`
+    below is intentionally always empty: each resource owns a URL -> Path
+    Item map in its own `paths/<resource>.yaml` file, and
+    `harness.testing.openapi_v2.load_merged_openapi_v2_spec` merges every
+    `paths/*.yaml` into this document's `paths` at load time (rejecting a
+    URL declared twice). A resource PR therefore never edits this file. See
+    `contracts/openapi/v0.2/README.md` for the file layout.
+
+    Resources (ADR-0018): session, ws (workspace), memo, text, drill,
+    artifact, chat, highlight, events, notebook. No code is generated from
+    this document (ADR-0017).
+servers:
+  - url: http://localhost:8000/v2
+    description: Local Docker Compose stack, v0.2 API base path.
+security: []
+tags:
+  - name: session
+  - name: ws
+  - name: memo
+  - name: text
+  - name: drill
+  - name: artifact
+  - name: chat
+  - name: highlight
+  - name: events
+  - name: notebook
+
+# Always empty on disk. harness.testing.openapi_v2.load_merged_openapi_v2_spec
+# fills this in by merging paths/*.yaml before validation (see above and
+# contracts/openapi/v0.2/README.md). Do not add entries here.
+paths: {}
+
+components:
+  schemas:
+    Problem:
+      $ref: './components/common.yaml#/Problem'
+    Stub:
+      $ref: './components/common.yaml#/Stub'
+  responses:
+    Problem:
+      description: Error (RFC 9457 problem details).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

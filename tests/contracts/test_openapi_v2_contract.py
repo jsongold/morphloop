@@ -1,0 +1,152 @@
+"""Contract tests for contracts/openapi/v0.2/ (ADR-0018, issue #44).
+
+Unlike `test_openapi_contract.py` (a single-file v0.1 document), v0.2's
+`root.yaml` keeps `paths: {}` on disk forever: each resource owns a URL ->
+Path Item map in its own `paths/<resource>.yaml`, and
+`harness.testing.openapi_v2.load_merged_openapi_v2_spec` merges every
+`paths/*.yaml` into the document's `paths` at load time, rejecting a URL
+declared twice. This means two resource PRs adding different URLs touch
+different files and never need to edit (or conflict on) `root.yaml`.
+`v0.1.yaml` is untouched.
+"""
+
+from __future__ import annotations
+
+import textwrap
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+from jsonschema_path import SchemaPath
+from jsonschema_path.handlers import default_handlers
+from openapi_spec_validator.validation import OpenAPIV31SpecValidator
+
+from harness.testing.contracts import CONTRACTS_DIR
+from harness.testing.openapi_v2 import V2_DIR, DuplicatePathError, load_merged_openapi_v2_spec
+
+RESOURCES = [
+    "session",
+    "ws",
+    "memo",
+    "text",
+    "drill",
+    "artifact",
+    "chat",
+    "highlight",
+    "events",
+    "notebook",
+]
+
+
+def _no_contracts_schema_handler(uri: str) -> Any:
+    # v0.2 skeleton does not yet reference any contracts/schemas/*.json by
+    # $id (the new event envelope is issue #43); a resource PR that adds one
+    # should extend this the same way test_openapi_contract.py resolves them.
+    raise LookupError(f"contracts/openapi/v0.2 does not expect an external ref to {uri}")
+
+
+def _schema_path(spec: dict[str, Any], base_uri: str) -> SchemaPath:
+    handlers = dict(default_handlers)
+    handlers["https"] = _no_contracts_schema_handler
+    handlers["http"] = _no_contracts_schema_handler
+    return SchemaPath.from_dict(spec, base_uri=base_uri, handlers=handlers)
+
+
+MERGED_SPEC = load_merged_openapi_v2_spec()
+ROOT = _schema_path(MERGED_SPEC, (V2_DIR / "root.yaml").resolve().as_uri())
+
+
+def test_v01_is_untouched() -> None:
+    v1 = (CONTRACTS_DIR / "openapi" / "v0.1.yaml").read_text(encoding="utf-8")
+    assert "openapi: 3.1.0" in v1
+    assert "version: 0.1.0" in v1
+
+
+def test_root_yaml_on_disk_keeps_paths_empty() -> None:
+    on_disk = yaml.safe_load((V2_DIR / "root.yaml").read_text(encoding="utf-8"))
+    assert on_disk["paths"] == {}
+
+
+def test_is_openapi_3_1() -> None:
+    assert ROOT["openapi"].startswith("3.1.")
+
+
+def test_merged_document_is_valid_openapi_3_1() -> None:
+    """Validates the merged spec with every $ref into components/ followed and
+    checked, proving the split-file layout resolves to one document."""
+    OpenAPIV31SpecValidator(ROOT).validate()
+
+
+def test_every_resource_has_its_own_stub_path_file() -> None:
+    for resource in RESOURCES:
+        path_file = V2_DIR / "paths" / f"{resource}.yaml"
+        assert path_file.is_file(), f"missing paths/{resource}.yaml"
+        doc = yaml.safe_load(path_file.read_text(encoding="utf-8"))
+        assert f"/{resource}/_stub" in doc, f"paths/{resource}.yaml has no /{resource}/_stub"
+
+
+def test_merge_produces_one_path_per_resource() -> None:
+    paths = ROOT["paths"]
+    assert set(paths.str_keys()) == {f"/{r}/_stub" for r in RESOURCES}
+    problem_code = ROOT["components"]["schemas"]["Problem"]["properties"]["code"].read_value()
+    for resource in RESOURCES:
+        op = paths[f"/{resource}/_stub"]["get"]
+        assert op["tags"].read_value() == [resource]
+        error_schema = op["responses"]["default"]["content"]["application/problem+json"]["schema"]
+        assert error_schema["properties"]["code"].read_value() == problem_code
+
+
+def test_duplicate_url_across_resource_files_is_rejected(tmp_path: Path) -> None:
+    v2_dir = tmp_path / "v0.2"
+    (v2_dir / "paths").mkdir(parents=True)
+    (v2_dir / "root.yaml").write_text(
+        textwrap.dedent(
+            """\
+            openapi: 3.1.0
+            info: {title: t, version: '1'}
+            paths: {}
+            """
+        ),
+        encoding="utf-8",
+    )
+    dup_path_item = textwrap.dedent(
+        """\
+        /dup:
+          get:
+            operationId: dup
+            responses:
+              '200': {description: ok}
+        """
+    )
+    (v2_dir / "paths" / "a.yaml").write_text(dup_path_item, encoding="utf-8")
+    (v2_dir / "paths" / "b.yaml").write_text(dup_path_item, encoding="utf-8")
+    with pytest.raises(DuplicatePathError, match="/dup"):
+        load_merged_openapi_v2_spec(v2_dir)
+
+
+def test_components_common_has_problem_and_stub() -> None:
+    common = yaml.safe_load((V2_DIR / "components" / "common.yaml").read_text(encoding="utf-8"))
+    assert set(common) == {"Problem", "Stub"}
+    assert common["Problem"]["required"] == ["type", "title", "status", "code"]
+
+
+def test_no_resource_component_files_yet() -> None:
+    # This skeleton PR adds no resource-specific components; those come with
+    # each resource's own follow-up PR (see contracts/openapi/v0.2/README.md).
+    components_dir = V2_DIR / "components"
+    assert [p.name for p in sorted(components_dir.glob("*.yaml"))] == ["common.yaml"]
+
+
+def test_paths_are_domain_agnostic() -> None:
+    names = " ".join(
+        [*(f"/{r}/_stub" for r in RESOURCES), *ROOT["components"]["schemas"].str_keys()]
+    ).lower()
+    assert "dns" not in names
+
+
+def test_readme_documents_the_merge_and_never_edit_root_rule() -> None:
+    readme = (V2_DIR / "README.md").read_text(encoding="utf-8")
+    assert "paths/<resource>.yaml" in readme
+    assert "components/<resource>.yaml" in readme
+    assert "openapi_v2" in readme
