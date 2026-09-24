@@ -1,0 +1,4 @@
+{
+  "markdown": "<b>bold</b> text\n\n<div>\nblock html\n</div>",
+  "plaintext": "bold text"
+}

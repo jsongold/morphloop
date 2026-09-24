@@ -1,0 +1,4 @@
+{
+  "markdown": "- `getent hosts <name>`: app view.\n- `dig <name>`: DNS view.",
+  "plaintext": "getent hosts <name>: app view.\ndig <name>: DNS view."
+}
