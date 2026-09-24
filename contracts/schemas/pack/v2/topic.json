@@ -18,6 +18,14 @@
     "description": {
       "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
     },
+    "docs": {
+      "description": "Ordered reading list of textbook doc ids attached to this topic.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+      }
+    },
     "topics": {
       "type": "array",
       "items": {

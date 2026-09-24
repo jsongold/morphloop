@@ -12,7 +12,7 @@
     "domain_adapters",
     "labels",
     "topics",
-    "texts",
+    "textbooks",
     "drills",
     "artifacts"
   ],
@@ -46,8 +46,8 @@
       "$ref": "#/$defs/paths",
       "minItems": 1
     },
-    "texts": {
-      "description": "Text document files (text-doc.json).",
+    "textbooks": {
+      "description": "Textbook document files (textbook-doc.json).",
       "$ref": "#/$defs/paths"
     },
     "drills": {

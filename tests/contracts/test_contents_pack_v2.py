@@ -24,7 +24,7 @@ V2 = "schemas/pack/v2/"
 PACK_DIR = CONTRACTS_DIR.parent / "contents" / "v2" / "software-engineering"
 LIST_SCHEMA = {
     "topics": "topic.json",
-    "texts": "text-doc.json",
+    "textbooks": "textbook-doc.json",
     "drills": "drill-item.json",
     "artifacts": "artifact-spec.json",
 }
@@ -58,7 +58,7 @@ def _topic_ids(topic: dict[str, Any]) -> Iterator[str]:
 
 
 def _labelled() -> Iterator[tuple[str, list[str]]]:
-    for kind in ("texts", "drills", "artifacts"):
+    for kind in ("textbooks", "drills", "artifacts"):
         for doc in _docs(kind):
             yield f"{kind}/{doc['id']}", doc["labels"]
             for block in doc.get("blocks", []):
@@ -88,6 +88,22 @@ def test_topic_ids_are_unique() -> None:
     assert len(ids) == len(set(ids))
 
 
+def _topic_docs(topic: dict[str, Any]) -> Iterator[str]:
+    yield from topic.get("docs", [])
+    for child in topic.get("topics", []):
+        yield from _topic_docs(child)
+
+
+def test_topic_docs_cover_every_textbook_doc_exactly_once() -> None:
+    textbook_ids = {doc["id"] for doc in _docs("textbooks")}
+    listed = [doc_id for topic in _docs("topics") for doc_id in _topic_docs(topic)]
+    unknown = set(listed) - textbook_ids
+    assert not unknown, f"topic.docs references unknown textbook doc(s): {sorted(unknown)}"
+    assert len(listed) == len(set(listed)), "a textbook doc is listed under more than one topic"
+    missing = textbook_ids - set(listed)
+    assert not missing, f"textbook doc(s) not listed under any topic: {sorted(missing)}"
+
+
 def test_labels_are_known() -> None:
     vocabulary = set(_load(PACK_DIR / _manifest()["labels"])["labels"])
     topics = {f"topic:{i}" for topic in _docs("topics") for i in _topic_ids(topic)}
@@ -109,7 +125,7 @@ def test_artifact_refs_resolve() -> None:
             assert item["artifact_ref"] in types, item["id"]
     directives = [
         (doc["id"], m)
-        for doc in _docs("texts")
+        for doc in _docs("textbooks")
         for b in doc["blocks"]
         for m in DIRECTIVE.findall(b["body"])
     ]

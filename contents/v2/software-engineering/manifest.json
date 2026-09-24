@@ -11,10 +11,10 @@
   "topics": [
     "topics/network.json"
   ],
-  "texts": [
-    "texts/network.dns.answers.json",
-    "texts/network.dns.lookup-path.json",
-    "texts/network.dns.resolver.json"
+  "textbooks": [
+    "textbooks/network.dns.answers.json",
+    "textbooks/network.dns.lookup-path.json",
+    "textbooks/network.dns.resolver.json"
   ],
   "drills": [
     "drills/dns-answer-no-servers-reached.json",
