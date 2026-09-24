@@ -4,6 +4,7 @@
 // One connection per LabInstance. After a lab reset the server closes the
 // socket; the caller connects a new LabSocket to the replacement instance.
 
+import ReconnectingWebSocket from "partysocket/ws";
 import { terminalSocketUrl } from "./api";
 import type { LabInstanceId, LabStatus, TerminalId } from "./types";
 
@@ -101,15 +102,15 @@ export function decodeOutput(p: { data: string; encoding: "utf-8" | "base64" }):
   return bytes;
 }
 
-/** Reconnect delays after an unexpected close; the socket gives up after the last one. */
-const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 8000, 8000, 8000];
+/** Reconnect attempts allowed after an unexpected close; the socket gives up after this many
+ *  (matches the old hand-rolled schedule: 500,1000,2000,4000,8000,8000,8000,8000ms). */
+const MAX_RETRIES = 8;
 
 export class LabSocket {
-  private ws: WebSocket | null = null;
+  private ws: ReconnectingWebSocket | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
-  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
-  private reconnect = true;
+  private manualStop = false;
 
   constructor(
     readonly terminalPath: string,
@@ -118,7 +119,18 @@ export class LabSocket {
 
   connect(): void {
     this.handlers.onStateChange?.("connecting");
-    const ws = new WebSocket(terminalSocketUrl(this.terminalPath));
+    // An api restart drops the socket; the lab survives it, so partysocket
+    // reattaches on its own using the schedule/cap below.
+    const ws = new ReconnectingWebSocket(terminalSocketUrl(this.terminalPath), [], {
+      minReconnectionDelay: 500,
+      maxReconnectionDelay: 8000,
+      reconnectionDelayGrowFactor: 2,
+      minUptime: 0,
+      shouldReconnectOnClose: () => {
+        this.retries += 1;
+        return !this.manualStop && this.retries <= MAX_RETRIES;
+      },
+    });
     this.ws = ws;
     ws.onopen = () => {
       this.retries = 0;
@@ -143,22 +155,15 @@ export class LabSocket {
     };
     ws.onclose = (ev) => {
       this.clearPing();
-      this.ws = null;
-      // An api restart drops the socket; the lab survives it, so reattach.
-      const delay = this.reconnect ? RECONNECT_DELAYS_MS[this.retries] : undefined;
-      if (delay === undefined) {
-        this.handlers.onStateChange?.("closed", ev.code);
-        return;
-      }
-      this.retries += 1;
-      this.handlers.onStateChange?.("reconnecting", ev.code);
-      this.retryTimer = setTimeout(() => this.connect(), delay);
+      // shouldReconnectOnClose above has already run and set `shouldReconnect`
+      // for this close, so it reliably tells us whether partysocket will retry.
+      this.handlers.onStateChange?.(ws.shouldReconnect ? "reconnecting" : "closed", ev.code);
     };
   }
 
   /** Stops reconnecting, for a lab that is gone (reset, error, shell exited). */
   stopReconnect(): void {
-    this.reconnect = false;
+    this.manualStop = true;
   }
 
   sendInput(data: string): void {
@@ -170,8 +175,7 @@ export class LabSocket {
   }
 
   close(): void {
-    this.reconnect = false;
-    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.manualStop = true;
     this.clearPing();
     const ws = this.ws;
     this.ws = null;
@@ -183,7 +187,8 @@ export class LabSocket {
   }
 
   private send(msg: ClientMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+    // Buffers automatically when not open and flushes on reconnect (partysocket).
+    this.ws?.send(JSON.stringify(msg));
   }
 
   private clearPing(): void {
