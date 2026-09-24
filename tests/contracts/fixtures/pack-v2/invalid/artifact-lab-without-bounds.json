@@ -1,0 +1,21 @@
+{
+  "description": "A lab spec bounds the generator with allowed fixtures and checks.",
+  "schema": "schemas/pack/v2/artifact-spec.json",
+  "expected_error_paths": ["$.spec"],
+  "instance": {
+    "id": "lab1",
+    "type": "lab",
+    "labels": [],
+    "spec": {
+      "environment": {
+        "id": "env1",
+        "fixture": "dns.broken-resolver",
+        "image": {
+          "repository": "ghcr.io/morphloop/dns-lab",
+          "digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+        },
+        "params": {}
+      }
+    }
+  }
+}

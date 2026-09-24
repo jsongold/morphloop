@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/v2/manifest.json",
+  "title": "Pack v2 manifest",
+  "description": "Root file of a v2 pack. Declares identity, the domain adapters its artifacts need, and the files of each kind. No layout, registry or templates: those are gone in v2.",
+  "type": "object",
+  "required": [
+    "pack_format",
+    "pack_id",
+    "pack_version",
+    "title",
+    "domain_adapters",
+    "labels",
+    "topics",
+    "texts",
+    "drills",
+    "artifacts"
+  ],
+  "properties": {
+    "pack_format": {
+      "description": "Version of the pack schema set: 2 is contracts/schemas/pack/v2/.",
+      "const": 2
+    },
+    "pack_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/pack_id"
+    },
+    "pack_version": {
+      "description": "Human-facing label; the pack content hash is the identity (ADR-0010).",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+    },
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+    },
+    "description": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+    },
+    "domain_adapters": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/manifest.json#/properties/domain_adapters"
+    },
+    "labels": {
+      "description": "The label vocabulary file (labels.json).",
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/relative_path"
+    },
+    "topics": {
+      "description": "Topic tree files (topic.json), one root topic each.",
+      "$ref": "#/$defs/paths",
+      "minItems": 1
+    },
+    "texts": {
+      "description": "Text document files (text-doc.json).",
+      "$ref": "#/$defs/paths"
+    },
+    "drills": {
+      "description": "Drill item files (drill-item.json).",
+      "$ref": "#/$defs/paths"
+    },
+    "artifacts": {
+      "description": "Artifact spec files (artifact-spec.json).",
+      "$ref": "#/$defs/paths"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "paths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/relative_path"
+      }
+    }
+  }
+}

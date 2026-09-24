@@ -1,0 +1,7 @@
+{
+  "id": "dns-resolver-text",
+  "question": "Which file tells the stub resolver where to send queries?",
+  "expected": "`/etc/resolv.conf`, via its `nameserver` lines.",
+  "answer_mode": "text",
+  "labels": ["topic:network.dns.resolution", "difficulty:easy"]
+}

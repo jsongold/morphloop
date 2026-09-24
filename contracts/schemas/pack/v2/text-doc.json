@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/v2/text-doc.json",
+  "title": "Text document",
+  "description": "Immutable teaching text split into paragraph-level blocks. A block id is assigned once, when the document is finalized, and never changes; highlights anchor to it. An artifact is embedded in a block body as the directive '::artifact{type=<type> ref=<artifact id>}' (validated by the Importer, not here).",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "labels",
+    "blocks"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+    },
+    "labels": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/v2/defs.json#/$defs/labels"
+    },
+    "blocks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "body",
+          "labels"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+          },
+          "body": {
+            "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+          },
+          "labels": {
+            "$ref": "https://morphloop.dev/contracts/schemas/pack/v2/defs.json#/$defs/labels"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

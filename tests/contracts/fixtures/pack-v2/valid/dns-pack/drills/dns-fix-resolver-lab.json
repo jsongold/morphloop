@@ -1,0 +1,8 @@
+{
+  "id": "dns-fix-resolver-lab",
+  "question": "`api.internal` does not resolve in the lab. Find out why and fix it.",
+  "expected": "The resolver points at a wrong nameserver; pointing it at the lab DNS server makes `api.internal` resolve.",
+  "answer_mode": "artifact",
+  "artifact_ref": "dns-broken-resolver-lab",
+  "labels": ["topic:network.dns.resolution", "troubleshooting", "difficulty:hard", "sys:holdout"]
+}

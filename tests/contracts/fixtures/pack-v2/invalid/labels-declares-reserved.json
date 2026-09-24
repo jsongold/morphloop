@@ -1,0 +1,6 @@
+{
+  "description": "The 'sys:' and 'topic:' namespaces cannot be declared in the vocabulary.",
+  "schema": "schemas/pack/v2/labels.json",
+  "expected_error_paths": ["$.labels[0]", "$.labels[1]"],
+  "instance": { "labels": ["sys:holdout", "topic:network", "concept"] }
+}

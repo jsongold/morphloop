@@ -1,0 +1,18 @@
+{
+  "description": "v2 manifests have no registry or layout, and need pack_format 2.",
+  "schema": "schemas/pack/v2/manifest.json",
+  "expected_error_paths": ["$", "$.pack_format"],
+  "instance": {
+    "pack_format": 1,
+    "pack_id": "software-engineering",
+    "pack_version": "0.2.0",
+    "title": "SE",
+    "domain_adapters": {},
+    "labels": "labels.json",
+    "topics": ["topics/network.json"],
+    "texts": [],
+    "drills": [],
+    "artifacts": [],
+    "registry": {}
+  }
+}

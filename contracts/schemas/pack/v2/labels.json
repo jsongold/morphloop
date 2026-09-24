@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/v2/labels.json",
+  "title": "Pack label vocabulary",
+  "description": "Every label the pack's items may carry, besides the reserved 'sys:' labels and the 'topic:<id>' labels derived from the topic tree. A label outside this vocabulary is an import error.",
+  "type": "object",
+  "required": [
+    "labels"
+  ],
+  "properties": {
+    "labels": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/pack/v2/defs.json#/$defs/vocabulary_label"
+      }
+    }
+  },
+  "additionalProperties": false
+}
