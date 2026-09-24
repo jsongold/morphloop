@@ -1,4 +1,4 @@
-"""The lab terminal WebSocket (``contracts/schemas/ws/``, AC-B1, AC-B3, AC-C3).
+"""The lab terminal WebSocket (``contracts/schemas/websocket/``, AC-B1, AC-B3, AC-C3).
 
 One connection per LabInstance, at ``/labs/{lab_instance_id}/terminal``. The
 routing here is as thin as the HTTP side: every byte and every event is handled
@@ -34,7 +34,7 @@ from harness.core.loop import LoopError, TerminalConnection, problem_body
 from harness.core.ports import PlainJson, TerminalSize
 
 PROTOCOL_VERSION = 1
-"""``ws/envelope/fields.json``: one version for the whole message catalog."""
+"""``websocket/envelope/fields.json``: one version for the whole message catalog."""
 
 INITIAL_SIZE = TerminalSize(cols=80, rows=24)
 """The PTY is opened at this size; the client's first ``terminal.resize`` wins."""
@@ -86,7 +86,7 @@ class Channel:
 
 
 class TerminalRegistry:
-    """The open terminal channels, so a reset can announce itself (``ws/README.md``)."""
+    """The open terminal channels, so a reset can announce itself (``websocket/README.md``)."""
 
     def __init__(self) -> None:
         self._channels: dict[str, Channel] = {}

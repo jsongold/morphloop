@@ -9,7 +9,7 @@ checked against these schemas in contract tests (see
 
 - `openapi/` — OpenAPI documents describing the HTTP API.
 - `schemas/events/` — JSON Schema for append-only event payloads.
-- `schemas/ws/` — JSON Schema for WebSocket messages.
+- `schemas/websocket/` — JSON Schema for WebSocket messages.
 - `schemas/pack/` — JSON Schema for subject pack content (definitions,
   templates, layout specs, etc.).
 - `schemas/llm/` — JSON Schema for structured LLM outputs (learner-model

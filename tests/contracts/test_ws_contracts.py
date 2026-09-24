@@ -1,7 +1,7 @@
-"""Contract tests for contracts/schemas/ws (ADR-0008, ADR-0015, ADR-0016, ADR-0017).
+"""Contract tests for contracts/schemas/websocket (ADR-0008, ADR-0015, ADR-0016, ADR-0017).
 
 Validates the schemas themselves, the $id / file layout convention, and example
-messages under tests/contracts/fixtures/ws/ against the real contracts tree.
+messages under tests/contracts/fixtures/websocket/ against the real contracts tree.
 Mirrors the style of tests/contracts/test_event_contracts.py.
 """
 
@@ -17,11 +17,11 @@ from jsonschema import Draft202012Validator
 from harness.testing.contracts import CONTRACTS_DIR, ContractViolation, validate
 
 ID_BASE = "https://morphloop.dev/contracts/"
-SCHEMA_DIR = CONTRACTS_DIR / "schemas" / "ws"
+SCHEMA_DIR = CONTRACTS_DIR / "schemas" / "websocket"
 PAYLOADS_DIR = SCHEMA_DIR / "payloads"
-MESSAGE = "schemas/ws/envelope/message.json"
+MESSAGE = "schemas/websocket/envelope/message.json"
 
-FIXTURES = Path(__file__).parent / "fixtures" / "ws"
+FIXTURES = Path(__file__).parent / "fixtures" / "websocket"
 VALID = sorted((FIXTURES / "valid").glob("*.json"))
 INVALID = sorted((FIXTURES / "invalid").glob("*.json"))
 

@@ -1,6 +1,6 @@
 {
   "description": "protocol_version is an integer, not a string.",
-  "schema": "schemas/ws/envelope/message.json",
+  "schema": "schemas/websocket/envelope/message.json",
   "expected_error_paths": [
     "$.protocol_version"
   ],

@@ -8,7 +8,7 @@ The terminal bridge Port moves bytes only; everything with meaning happens here
   ``terminal.command`` event with a deterministic ``idempotency_key``;
 - PTY output is split into ``terminal.output`` events, one per chunk, each
   chunk encoded ``utf-8`` when it decodes cleanly and holds no NUL, else
-  ``base64`` (``contracts/schemas/ws/payloads/terminal.output.json``);
+  ``base64`` (``contracts/schemas/websocket/payloads/terminal.output.json``);
 - ``sequence`` is shared by commands and output chunks of one terminal and is
   assigned in append order.
 
@@ -60,7 +60,7 @@ class TerminalChunk:
     event: StoredEvent
 
     def to_ws_payload(self) -> dict[str, str | int]:
-        """``ws/payloads/terminal.output.json``."""
+        """``websocket/payloads/terminal.output.json``."""
         return {"data": self.data, "encoding": self.encoding, "sequence": self.sequence}
 
 

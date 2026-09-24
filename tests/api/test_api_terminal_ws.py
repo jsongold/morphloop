@@ -1,6 +1,6 @@
-"""The lab terminal WebSocket against ``contracts/schemas/ws/`` (AC-B1..B4, AC-C3).
+"""The lab terminal WebSocket against ``contracts/schemas/websocket/`` (AC-B1..B4, AC-C3).
 
-Every frame the server sends is validated against ``ws/envelope/message.json``,
+Every frame the server sends is validated against ``websocket/envelope/message.json``,
 which dispatches the payload by ``type``, so an envelope or payload that drifts
 from the contract fails here. No Docker and no PTY: the loop is wired to
 ``FakeTerminalBridge``, which echoes what is written to it.

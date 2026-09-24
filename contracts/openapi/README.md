@@ -85,7 +85,7 @@ tutor, appends `assistant.message_generated` and returns both stored events
 
 - The WebSocket is scoped to a lab instance. Chat also happens outside an
   attempt or while a lab is resetting, when no socket exists.
-- `event.appended` is deliberately thin (`ws/README.md`), so a push would still
+- `event.appended` is deliberately thin (`websocket/README.md`), so a push would still
   need a follow-up fetch.
 - One tutor call is short enough for a request/response in v0.1. Streaming can
   be added later as a new endpoint or WS message without changing this one.
@@ -190,9 +190,9 @@ One shape: RFC 9457 problem details (`application/problem+json`) with a closed
 ### WebSocket
 
 OpenAPI cannot describe WebSockets. The root `x-websockets` extension documents
-`/labs/{lab_instance_id}/terminal`. It references `ws/envelope/message.json`
-and `ws/dispatch.json` and lists the message direction. The messages are
-defined only in `contracts/schemas/ws/`.
+`/labs/{lab_instance_id}/terminal`. It references `websocket/envelope/message.json`
+and `websocket/dispatch.json` and lists the message direction. The messages are
+defined only in `contracts/schemas/websocket/`.
 
 ### No authentication in v0.1
 

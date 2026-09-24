@@ -21,7 +21,7 @@ publish the database port, so ``DATABASE_URL`` is only reachable from there.
 Override with ``MORPHLOOP_REBUILD_CMD`` for another deployment.
 
 Response bodies are validated against ``contracts/openapi/v0.1.yaml`` and
-WebSocket frames against ``contracts/schemas/ws/``, with the same helpers the
+WebSocket frames against ``contracts/schemas/websocket/``, with the same helpers the
 fake-driven API tests use.
 """
 
@@ -136,7 +136,7 @@ class Terminal:
         self._ws = ws
 
     def wait_ready(self) -> str:
-        """Drain until the ``lab.status`` that carries the terminal id (ws/README.md)."""
+        """Drain until the ``lab.status`` that carries the terminal id (websocket/README.md)."""
         deadline = time.monotonic() + TERMINAL_TIMEOUT
         while time.monotonic() < deadline:
             message = self._receive()

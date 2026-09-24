@@ -30,7 +30,7 @@ info:
 
     The terminal WebSocket cannot be modeled in OpenAPI; it is documented under
     the root `x-websockets` extension and its messages are defined in
-    `contracts/schemas/ws/`.
+    `contracts/schemas/websocket/`.
 servers:
   - url: http://localhost:8000
     description: Local Docker Compose stack
@@ -643,8 +643,8 @@ x-websockets:
     summary: Terminal and push channel of one LabInstance (AC-B1, AC-C3).
     description: |
       WebSocket, one connection per LabInstance. Every frame is a JSON text
-      frame validated by `message` (contracts/schemas/ws/envelope/message.json,
-      dispatched by contracts/schemas/ws/dispatch.json). The server sends
+      frame validated by `message` (contracts/schemas/websocket/envelope/message.json,
+      dispatched by contracts/schemas/websocket/dispatch.json). The server sends
       `lab.status` first; `terminal_id` arrives with `status: ready`. The
       terminal bridge, not the client, appends `terminal.command` and
       `terminal.output` events (AC-B2). `event.appended` notifies of other
@@ -652,13 +652,13 @@ x-websockets:
       After a reset the server closes the connection and the client connects
       to the replacement instance returned by `POST /labs/{lab_instance_id}/reset`.
       An unknown lab instance is refused at the handshake with HTTP 404.
-      See contracts/schemas/ws/README.md.
+      See contracts/schemas/websocket/README.md.
     parameters:
       - $ref: '#/components/parameters/LabInstanceId'
     message:
-      $ref: https://morphloop.dev/contracts/schemas/ws/envelope/message.json
+      $ref: https://morphloop.dev/contracts/schemas/websocket/envelope/message.json
     dispatch:
-      $ref: https://morphloop.dev/contracts/schemas/ws/dispatch.json
+      $ref: https://morphloop.dev/contracts/schemas/websocket/dispatch.json
     clientToServer: [terminal.input, terminal.resize, ping]
     serverToClient: [terminal.output, terminal.exit, lab.status, event.appended, error, pong]
 
@@ -1076,7 +1076,7 @@ components:
         attempt_id:
           $ref: https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/attempt_id
         status:
-          $ref: https://morphloop.dev/contracts/schemas/ws/payloads/lab.status.json#/properties/status
+          $ref: https://morphloop.dev/contracts/schemas/websocket/payloads/lab.status.json#/properties/status
         terminal_id:
           description: Null until the lab is `ready`.
           anyOf:
