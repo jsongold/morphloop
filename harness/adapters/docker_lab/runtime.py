@@ -378,13 +378,15 @@ class DockerLabRuntime:
             if not container.put_archive("/", _files_tar(list(spec.files))):
                 raise LabRuntimeError(f"cannot copy files into lab {lab_instance_id!r}")
         container.start()
-        container.reload()
-        if container.status != "running":
-            raise LabRuntimeError(
-                f"lab {lab_instance_id!r} did not stay running (status {container.status!r})"
-            )
         if spec.readiness is not None:
+            # Checks the main process itself, so an early exit reads as a readiness failure.
             self._await_ready(lab_instance_id, container, spec.readiness)
+        else:
+            container.reload()
+            if container.status != "running":
+                raise LabRuntimeError(
+                    f"lab {lab_instance_id!r} did not stay running (status {container.status!r})"
+                )
         timer = threading.Timer(limits.lifetime_seconds, self._expire, args=(lab_instance_id,))
         timer.daemon = True
         with self._lock:
@@ -410,27 +412,44 @@ class DockerLabRuntime:
         deadline = time.monotonic() + probe.timeout_seconds
         attempts = 0
         last = "it was never run"
+
+        def stopped() -> LabNotReadyError | None:
+            try:
+                container.reload()
+                status = str(container.status)
+            except docker.errors.NotFound:
+                status = "removed"
+            if status == "running":
+                return None
+            return LabNotReadyError(
+                f"lab {lab_instance_id!r} stopped before it was ready "
+                f"(status {status!r}); readiness probe {list(probe.argv)}"
+            )
+
         while True:
-            container.reload()
-            if container.status != "running":
-                raise LabNotReadyError(
-                    f"lab {lab_instance_id!r} stopped before it was ready "
-                    f"(status {container.status!r}); readiness probe {list(probe.argv)}"
-                )
+            if (error := stopped()) is not None:
+                raise error
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
             attempts += 1
-            result = self.exec(
-                lab_instance_id,
-                ExecRequest(
-                    argv=probe.argv,
-                    timeout_seconds=remaining,
-                    max_output_bytes=_READINESS_MAX_OUTPUT_BYTES,
-                    env={},
-                    workdir=None,
-                ),
-            )
+            try:
+                result = self.exec(
+                    lab_instance_id,
+                    ExecRequest(
+                        argv=probe.argv,
+                        timeout_seconds=remaining,
+                        max_output_bytes=_READINESS_MAX_OUTPUT_BYTES,
+                        env={},
+                        workdir=None,
+                    ),
+                )
+            except LabRuntimeError as exc:
+                # The main process can exit between the check above and the
+                # probe's exec (not found / 404 / 409 "not running").
+                if (error := stopped()) is not None:
+                    raise error from exc
+                raise
             if not result.timed_out and result.exit_code == 0:
                 return
             last = (
