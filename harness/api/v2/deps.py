@@ -11,6 +11,18 @@ Tests: inject an `InMemoryEventStoreV2` either by setting
 `event_store_v2_of` in `app.dependency_overrides` (same idiom as
 `harness.api.routes.backend_of` / `harness.api.app.check_db`).
 
+Shared per-request inputs every resource route uses (#77) -- a resource
+never adds its own env var or loader:
+
+- `PackV2Dep`: the v2 pack from `MORPHLOOP_PACK_V2_DIR`, imported once and
+  cached on `app.state.pack_v2` (tests set `app.state.pack_v2`).
+- `GeneratedDocumentsDep`: runtime-generated content, Postgres by default,
+  cached on `app.state.generated_documents`.
+- `UserIdDep`: v0.2.0 has one learner, `MORPHLOOP_USER_ID`. A POST body never
+  carries `user_id`.
+- `EventIdDep`: the new event's `id`, from the `Idempotency-Key` header (a
+  UUID, else 400); the server assigns a fresh UUID when it is absent.
+
 A resource route file (`harness/api/v2/routes/<resource>.py`) builds its own
 service factories on top of these two dependencies; nothing here is
 resource-specific.
@@ -18,15 +30,20 @@ resource-specific.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Header, Request
 
 from harness.adapters.postgres.engine import create_engine_from_env
 from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
+from harness.adapters.postgres.generated_documents import PostgresGeneratedDocumentStore
 from harness.core.contract_schemas import ContractSchemas
+from harness.core.pack.v2.importer import PackV2, import_pack_v2
 from harness.core.ports.events_v2 import EventStoreV2, EventTransactionV2
+from harness.core.ports.generated_documents import GeneratedDocumentStore
+from harness.core.settings import Settings
 
 
 def build_event_store_v2() -> EventStoreV2:
@@ -54,3 +71,49 @@ def event_transaction_v2_of(store: EventStoreV2Dep) -> Iterator[EventTransaction
 
 
 EventTransactionV2Dep = Annotated[EventTransactionV2, Depends(event_transaction_v2_of)]
+
+
+def pack_v2_of(request: Request) -> PackV2:
+    """The v2 pack; imported from `MORPHLOOP_PACK_V2_DIR` and cached on first use."""
+    pack: PackV2 | None = getattr(request.app.state, "pack_v2", None)
+    if pack is None:
+        pack_dir = Settings().morphloop_pack_v2_dir
+        if pack_dir is None:
+            raise RuntimeError("MORPHLOOP_PACK_V2_DIR is not set")
+        pack = import_pack_v2(pack_dir)
+        request.app.state.pack_v2 = pack
+    return pack
+
+
+PackV2Dep = Annotated[PackV2, Depends(pack_v2_of)]
+
+
+def generated_documents_of(request: Request) -> GeneratedDocumentStore:
+    """The wired store; Postgres, built and cached on `app.state` on first use."""
+    store: GeneratedDocumentStore | None = getattr(request.app.state, "generated_documents", None)
+    if store is None:
+        store = PostgresGeneratedDocumentStore(create_engine_from_env())
+        request.app.state.generated_documents = store
+    return store
+
+
+GeneratedDocumentsDep = Annotated[GeneratedDocumentStore, Depends(generated_documents_of)]
+
+
+def user_id_of() -> str:
+    """The single v0.2.0 learner (`MORPHLOOP_USER_ID`)."""
+    return Settings().morphloop_user_id
+
+
+UserIdDep = Annotated[str, Depends(user_id_of)]
+
+
+def event_id_of(
+    idempotency_key: Annotated[uuid.UUID | None, Header(alias="Idempotency-Key")] = None,
+) -> str:
+    """The new event's `id`: the `Idempotency-Key` header in canonical lowercase
+    form, or a fresh UUID. A non-UUID header fails request validation (400)."""
+    return str(idempotency_key or uuid.uuid4())
+
+
+EventIdDep = Annotated[str, Depends(event_id_of)]

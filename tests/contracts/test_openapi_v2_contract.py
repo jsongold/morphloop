@@ -78,19 +78,29 @@ def test_merged_document_is_valid_openapi_3_1() -> None:
     OpenAPIV31SpecValidator(ROOT).validate()
 
 
-def test_every_resource_has_its_own_stub_path_file() -> None:
+def _path_file(resource: str) -> dict[str, Any]:
+    return yaml.safe_load((V2_DIR / "paths" / f"{resource}.yaml").read_text(encoding="utf-8")) or {}
+
+
+def test_every_resource_has_its_own_path_file() -> None:
+    # The `_stub` path is optional: a resource PR replaces it with real URLs.
     for resource in RESOURCES:
-        path_file = V2_DIR / "paths" / f"{resource}.yaml"
-        assert path_file.is_file(), f"missing paths/{resource}.yaml"
-        doc = yaml.safe_load(path_file.read_text(encoding="utf-8"))
-        assert f"/{resource}/_stub" in doc, f"paths/{resource}.yaml has no /{resource}/_stub"
+        assert (V2_DIR / "paths" / f"{resource}.yaml").is_file(), f"missing paths/{resource}.yaml"
 
 
-def test_merge_produces_one_path_per_resource() -> None:
+def test_merge_is_the_union_of_every_path_file() -> None:
+    expected: set[str] = set()
+    for path_file in sorted((V2_DIR / "paths").glob("*.yaml")):
+        expected |= set(yaml.safe_load(path_file.read_text(encoding="utf-8")) or {})
+    assert set(ROOT["paths"].str_keys()) == expected
+
+
+def test_remaining_stubs_are_tagged_and_share_problem() -> None:
     paths = ROOT["paths"]
-    assert set(paths.str_keys()) == {f"/{r}/_stub" for r in RESOURCES}
     problem_code = ROOT["components"]["schemas"]["Problem"]["properties"]["code"].read_value()
     for resource in RESOURCES:
+        if f"/{resource}/_stub" not in _path_file(resource):
+            continue
         op = paths[f"/{resource}/_stub"]["get"]
         assert op["tags"].read_value() == [resource]
         error_schema = op["responses"]["default"]["content"]["application/problem+json"]["schema"]
@@ -125,23 +135,21 @@ def test_duplicate_url_across_resource_files_is_rejected(tmp_path: Path) -> None
         load_merged_openapi_v2_spec(v2_dir)
 
 
-def test_components_common_has_problem_and_stub() -> None:
+def test_components_common_has_problem() -> None:
     common = yaml.safe_load((V2_DIR / "components" / "common.yaml").read_text(encoding="utf-8"))
-    assert set(common) == {"Problem", "Stub"}
+    assert "Problem" in common
     assert common["Problem"]["required"] == ["type", "title", "status", "code"]
 
 
-def test_no_resource_component_files_yet() -> None:
-    # This skeleton PR adds no resource-specific components; those come with
-    # each resource's own follow-up PR (see contracts/openapi/v0.2/README.md).
-    components_dir = V2_DIR / "components"
-    assert [p.name for p in sorted(components_dir.glob("*.yaml"))] == ["common.yaml"]
+def test_component_files_are_common_or_per_resource() -> None:
+    # Resource-specific components live in components/<resource>.yaml.
+    allowed = {"common.yaml", *(f"{r}.yaml" for r in RESOURCES)}
+    for path in (V2_DIR / "components").glob("*.yaml"):
+        assert path.name in allowed, path.name
 
 
 def test_paths_are_domain_agnostic() -> None:
-    names = " ".join(
-        [*(f"/{r}/_stub" for r in RESOURCES), *ROOT["components"]["schemas"].str_keys()]
-    ).lower()
+    names = " ".join([*ROOT["paths"].str_keys(), *ROOT["components"]["schemas"].str_keys()]).lower()
     assert "dns" not in names
 
 

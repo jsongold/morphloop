@@ -3,7 +3,8 @@
 The v2 dispatch is assembled by ``harness.core.contract_schemas`` from payload
 files declaring ``"x-envelope": 2``, so these tests validate through
 ``ContractSchemas``. Auto-discovery is proven on a temp copy of ``contracts/``
-with a test-only payload type added; real v2 types belong to resource PRs.
+with a test-only payload type added; real v2 types belong to resource PRs,
+so checks against the real set are subset checks.
 """
 
 from __future__ import annotations
@@ -74,10 +75,14 @@ def test_real_contracts_load_and_declare_known_actors() -> None:
 
 def test_payload_file_is_discovered(schemas: ContractSchemas) -> None:
     base = f"https://morphloop.dev/contracts/{PAYLOADS}/{PROBE_TYPE}"
-    assert schemas.event_types_v2 == {
+    # Subset: real v2 types added by resource PRs are discovered alongside the probe.
+    probe = {k: v for k, v in schemas.event_types_v2.items() if k.startswith(f"{PROBE_TYPE}")}
+    assert probe == {
         PROBE_TYPE: f"{base}/1.json",
         f"{PROBE_TYPE}.v2": f"{base}/2.json",
     }
+    real = ContractSchemas(CONTRACTS_DIR).event_types_v2
+    assert schemas.event_types_v2 == {**real, **probe}
 
 
 def test_valid_events(schemas: ContractSchemas) -> None:

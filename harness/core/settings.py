@@ -1,10 +1,10 @@
 """Environment variables the harness reads directly (pydantic-settings).
 
-One :class:`Settings` model for the four env vars previously read ad hoc via
-``os.environ.get``: ``MORPHLOOP_CONTRACTS_DIR``, ``DATABASE_URL``,
-``WEB_ORIGIN`` and ``HARNESS_VERSION``. Field names match their env var names
-case-insensitively (the library default), so no prefix or alias mapping is
-needed.
+One :class:`Settings` model for the env vars the harness reads:
+``MORPHLOOP_CONTRACTS_DIR``, ``DATABASE_URL``, ``WEB_ORIGIN``,
+``HARNESS_VERSION``, ``MORPHLOOP_PACK_V2_DIR`` and ``MORPHLOOP_USER_ID``.
+Field names match their env var names case-insensitively (the library
+default), so no prefix or alias mapping is needed.
 
 Callers must instantiate ``Settings()`` at the point of use, not cache it at
 import time: pydantic-settings reads the environment when the model is
@@ -15,6 +15,7 @@ expecting the next read to see the new value.
 
 from __future__ import annotations
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -25,3 +26,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://morphloop:morphloop@localhost:5432/morphloop"
     web_origin: str = "http://localhost:3000"
     harness_version: str | None = None
+    # v0.2.0 (#77): the v2 pack directory (no default: the harness names no pack)
+    # and the single learner's id (`contracts/schemas/common/ids.json` user_id).
+    morphloop_pack_v2_dir: str | None = None
+    morphloop_user_id: str = Field(default="usr_local", pattern=r"^usr_[0-9A-Za-z]{1,64}$")
