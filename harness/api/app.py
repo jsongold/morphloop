@@ -23,6 +23,7 @@ from harness.adapters.postgres.engine import create_engine_from_env, ping
 from harness.api import routes, terminal
 from harness.api.backend import Backend, build_backend
 from harness.api.problems import install_handlers
+from harness.api.v2 import build_v2_router
 from harness.core.settings import Settings
 
 WEB_ORIGIN_ENV_VAR = "WEB_ORIGIN"
@@ -84,6 +85,7 @@ def create_app(backend: Backend | None = None) -> FastAPI:
     install_handlers(app)
     app.include_router(routes.router)
     app.include_router(terminal.router)
+    app.include_router(build_v2_router())
     return app
 
 
