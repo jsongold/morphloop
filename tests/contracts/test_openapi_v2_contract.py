@@ -29,7 +29,7 @@ RESOURCES = [
     "session",
     "ws",
     "memo",
-    "text",
+    "textbook",
     "drill",
     "artifact",
     "chat",

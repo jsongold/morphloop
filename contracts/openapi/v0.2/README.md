@@ -15,7 +15,7 @@ components/<resource>.yaml  resource-specific schemas (added by that resource's 
 
 Resources (ADR-0018): `session`, `ws` (workspace, not to be confused with the
 `websocket` protocol contracts under `contracts/schemas/websocket/`), `memo`,
-`text`, `drill`, `artifact`, `chat`, `highlight`, `events`, `notebook`.
+`textbook`, `drill`, `artifact`, `chat`, `highlight`, `events`, `notebook`.
 
 ## Merge layout — `root.yaml` never needs editing
 

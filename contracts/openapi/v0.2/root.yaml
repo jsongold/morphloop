@@ -17,7 +17,7 @@ info:
     URL declared twice). A resource PR therefore never edits this file. See
     `contracts/openapi/v0.2/README.md` for the file layout.
 
-    Resources (ADR-0018): session, ws (workspace), memo, text, drill,
+    Resources (ADR-0018): session, ws (workspace), memo, textbook, drill,
     artifact, chat, highlight, events, notebook. No code is generated from
     this document (ADR-0017).
 servers:
@@ -28,7 +28,7 @@ tags:
   - name: session
   - name: ws
   - name: memo
-  - name: text
+  - name: textbook
   - name: drill
   - name: artifact
   - name: chat
