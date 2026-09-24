@@ -1,0 +1,16 @@
+{
+  "id": "dns-answer-nxdomain",
+  "question": "Which `status:` in `dig`'s header means the server answered that the name does not exist?",
+  "expected": "`NXDOMAIN`",
+  "answer_mode": "choice",
+  "choices": [
+    "`NOERROR`",
+    "`NXDOMAIN`",
+    "`SERVFAIL`",
+    "`REFUSED`"
+  ],
+  "labels": [
+    "topic:network.dns.answers",
+    "dimension:explain"
+  ]
+}

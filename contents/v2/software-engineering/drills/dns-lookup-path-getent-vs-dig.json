@@ -1,0 +1,10 @@
+{
+  "id": "dns-lookup-path-getent-vs-dig",
+  "question": "`getent hosts api.shop.example` succeeds but `dig api.shop.example` fails. Where is the answer coming from?",
+  "expected": "From `/etc/hosts`. `getent hosts api.shop.example` uses the same path as `curl` (`getaddrinfo()` checks `/etc/hosts` first); `dig api.shop.example` asks DNS only.",
+  "answer_mode": "text",
+  "labels": [
+    "topic:network.dns.lookup-path",
+    "dimension:explain"
+  ]
+}

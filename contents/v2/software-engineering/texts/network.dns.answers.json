@@ -1,0 +1,58 @@
+{
+  "id": "network.dns.answers",
+  "title": "Reading a DNS answer",
+  "labels": [
+    "topic:network.dns.answers"
+  ],
+  "blocks": [
+    {
+      "id": "summary",
+      "body": "A DNS reply carries a status code and records. `NOERROR` with an `A` record is an address; `NXDOMAIN` means the server answered that the name does not exist; no reply at all means the server was never reached. These point to different hops.",
+      "labels": [
+        "section:summary"
+      ]
+    },
+    {
+      "id": "what",
+      "body": "The `status:` in `dig`'s header and the `ANSWER SECTION`. Common statuses: `NOERROR`, `NXDOMAIN`, `SERVFAIL`, `REFUSED`. A timeout or `no servers could be reached` is not a status: nothing answered.",
+      "labels": [
+        "section:what"
+      ]
+    },
+    {
+      "id": "why",
+      "body": "The status tells you which hop failed: the path to the server (no reply), the server's ability to find an answer (`SERVFAIL`), or the data in the zone (`NXDOMAIN`, wrong address).",
+      "labels": [
+        "section:why"
+      ]
+    },
+    {
+      "id": "mechanism",
+      "body": "An authoritative server answers from its own zone and sets the `aa` flag. A recursive resolver answers from cache or by walking root -> TLD -> authoritative servers. Each record has a TTL that bounds how long it may be cached.",
+      "labels": [
+        "section:mechanism"
+      ]
+    },
+    {
+      "id": "example",
+      "body": "```\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR\n;; flags: qr aa rd; QUERY: 1, ANSWER: 1\napi.shop.example. 60 IN A 10.20.4.17\n;; SERVER: 10.20.0.2#53(10.20.0.2) (UDP)\n```",
+      "labels": [
+        "section:example"
+      ]
+    },
+    {
+      "id": "observe",
+      "body": "- `dig <name>`: status, flags, answer, server.\n- `dig @<server> <name>`: ask one specific server.\n- `dig +short <name>`: only the answer values.\n- `dig +norecurse @<server> <name>`: does this server know the answer itself?",
+      "labels": [
+        "section:observe"
+      ]
+    },
+    {
+      "id": "failure_modes",
+      "body": "- Reading `NXDOMAIN` as \"server down\" or a timeout as \"record missing\".\n- Trusting a cached answer after the zone changed (wait for the TTL or query the authoritative server).\n- Querying a different server than the application uses.",
+      "labels": [
+        "section:failure_modes"
+      ]
+    }
+  ]
+}
