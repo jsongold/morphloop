@@ -9,8 +9,21 @@ from __future__ import annotations
 import ipaddress
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
+from functools import lru_cache
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    StrictStr,
+    TypeAdapter,
+    ValidationError,
+    create_model,
+)
 
 from harness.core.domain_adapter import AdapterParamsError
 from harness.core.ports.json_types import JsonObject, JsonValue
@@ -23,42 +36,72 @@ _DNS_NAME_RE = re.compile(rf"^(?=.{{1,253}}\.?$){_LABEL}(?:\.{_LABEL})*\.?$")
 _RESOLV_OPTION_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}(?::[0-9]{1,5})?$")
 _HTTP_PATH_RE = re.compile(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$")
 
+_OBJ_ADAPTER: TypeAdapter[dict[str, Any]] = TypeAdapter(dict[str, Any])
+_ARRAY_ADAPTER: TypeAdapter[list[Any]] = TypeAdapter(list[Any])
+_STRING_ADAPTER: TypeAdapter[str] = TypeAdapter(Annotated[StrictStr, Field(min_length=1)])
+
+
+@lru_cache(maxsize=64)
+def _int_adapter(minimum: int, maximum: int) -> TypeAdapter[int]:
+    return TypeAdapter(Annotated[StrictInt, Field(ge=minimum, le=maximum)])
+
+
+@lru_cache(maxsize=64)
+def _enum_adapter(choices: tuple[str, ...]) -> TypeAdapter[str]:
+    return TypeAdapter(Literal[choices])
+
+
+@lru_cache(maxsize=128)
+def _only_keys_model(required: frozenset[str], optional: frozenset[str]) -> type[BaseModel]:
+    fields: dict[str, Any] = {k: (Any, ...) for k in required}
+    fields.update((k, (Any, None)) for k in optional)
+    return create_model("_OnlyKeysParams", __config__=ConfigDict(extra="forbid"), **fields)
+
 
 def obj(value: JsonValue, where: str) -> JsonObject:
-    if not isinstance(value, Mapping):
-        raise AdapterParamsError(f"{where} must be an object")
-    return value
+    try:
+        return _OBJ_ADAPTER.validate_python(value)
+    except ValidationError:
+        raise AdapterParamsError(f"{where} must be an object") from None
 
 
 def only_keys(value: JsonObject, where: str, *, required: set[str], optional: set[str]) -> None:
-    missing = sorted(required - value.keys())
-    if missing:
-        raise AdapterParamsError(f"{where} is missing {', '.join(missing)}")
-    unknown = sorted(value.keys() - required - optional)
-    if unknown:
-        raise AdapterParamsError(f"{where} has unknown keys: {', '.join(unknown)}")
+    model = _only_keys_model(frozenset(required), frozenset(optional))
+    try:
+        model.model_validate(dict(value))
+    except ValidationError as exc:
+        errors = exc.errors()
+        missing = sorted(str(err["loc"][0]) for err in errors if err["type"] == "missing")
+        if missing:
+            raise AdapterParamsError(f"{where} is missing {', '.join(missing)}") from None
+        unknown = sorted(str(err["loc"][0]) for err in errors if err["type"] == "extra_forbidden")
+        raise AdapterParamsError(f"{where} has unknown keys: {', '.join(unknown)}") from None
 
 
 def array(value: JsonValue, where: str, *, min_items: int) -> Sequence[JsonValue]:
-    if isinstance(value, str | bytes) or not isinstance(value, Sequence):
-        raise AdapterParamsError(f"{where} must be an array")
-    if len(value) < min_items:
+    try:
+        items = _ARRAY_ADAPTER.validate_python(value)
+    except ValidationError:
+        raise AdapterParamsError(f"{where} must be an array") from None
+    if len(items) < min_items:
         raise AdapterParamsError(f"{where} must have at least {min_items} item(s)")
-    return value
+    return items
 
 
 def string(value: JsonValue, where: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise AdapterParamsError(f"{where} must be a non-empty string")
-    return value
+    try:
+        return _STRING_ADAPTER.validate_python(value)
+    except ValidationError:
+        raise AdapterParamsError(f"{where} must be a non-empty string") from None
 
 
 def integer(value: JsonValue, where: str, *, minimum: int, maximum: int) -> int:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise AdapterParamsError(f"{where} must be an integer")
-    if not minimum <= value <= maximum:
-        raise AdapterParamsError(f"{where} must be between {minimum} and {maximum}")
-    return value
+    try:
+        return _int_adapter(minimum, maximum).validate_python(value)
+    except ValidationError as exc:
+        if any(err["type"] == "int_type" for err in exc.errors()):
+            raise AdapterParamsError(f"{where} must be an integer") from None
+        raise AdapterParamsError(f"{where} must be between {minimum} and {maximum}") from None
 
 
 def seconds(value: JsonValue, where: str, *, maximum: float) -> float:
@@ -70,10 +113,10 @@ def seconds(value: JsonValue, where: str, *, maximum: float) -> float:
 
 
 def enum(value: JsonValue, where: str, choices: Sequence[str]) -> str:
-    if value not in choices:
-        raise AdapterParamsError(f"{where} must be one of {', '.join(choices)}")
-    assert isinstance(value, str)
-    return value
+    try:
+        return _enum_adapter(tuple(choices)).validate_python(value)
+    except ValidationError:
+        raise AdapterParamsError(f"{where} must be one of {', '.join(choices)}") from None
 
 
 def dns_name(value: JsonValue, where: str) -> str:
