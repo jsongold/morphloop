@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/v2/topic.json",
+  "title": "Topic tree",
+  "description": "A topic and its subtopics. A file holds one root topic. A session copies the chosen subtree. Topics carry no prerequisites, mastery thresholds or evidence dimensions. Items attach to a topic with the label 'topic:<id>'. Ids are unique across the pack (Importer).",
+  "type": "object",
+  "required": [
+    "id",
+    "title"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+    },
+    "description": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "$ref": "#"
+      }
+    }
+  },
+  "additionalProperties": false
+}

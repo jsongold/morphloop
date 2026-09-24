@@ -1,0 +1,17 @@
+{
+  "id": "dns-resolution",
+  "title": "How a name is resolved",
+  "labels": ["topic:network.dns.resolution", "concept"],
+  "blocks": [
+    {
+      "id": "b1",
+      "body": "A stub resolver reads `/etc/resolv.conf` and asks the listed **nameserver**.",
+      "labels": []
+    },
+    {
+      "id": "b2",
+      "body": "::artifact{type=diagram ref=dns-resolution-flow}",
+      "labels": ["topic:network.dns.resolution"]
+    }
+  ]
+}

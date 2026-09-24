@@ -54,7 +54,7 @@ def _document_hash(doc: Any) -> str:
 
 
 def _schema_files() -> list[Path]:
-    return sorted(PACK_SCHEMAS.rglob("*.json"))
+    return sorted(PACK_SCHEMAS.glob("*.json"))
 
 
 def _manifest() -> dict[str, Any]:

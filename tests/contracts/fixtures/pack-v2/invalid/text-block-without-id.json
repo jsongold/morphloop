@@ -1,0 +1,11 @@
+{
+  "description": "Every block has a stable id for highlight anchors.",
+  "schema": "schemas/pack/v2/text-doc.json",
+  "expected_error_paths": ["$.blocks[0]"],
+  "instance": {
+    "id": "doc",
+    "title": "Doc",
+    "labels": [],
+    "blocks": [{ "body": "text", "labels": [] }]
+  }
+}

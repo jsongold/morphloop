@@ -1,0 +1,12 @@
+{
+  "description": "answer_mode 'artifact' needs artifact_ref.",
+  "schema": "schemas/pack/v2/drill-item.json",
+  "expected_error_paths": ["$"],
+  "instance": {
+    "id": "q1",
+    "question": "Q?",
+    "expected": "A",
+    "answer_mode": "artifact",
+    "labels": []
+  }
+}

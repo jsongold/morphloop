@@ -1,0 +1,18 @@
+{
+  "pack_format": 2,
+  "pack_id": "software-engineering",
+  "pack_version": "0.2.0",
+  "title": "Software Engineering",
+  "domain_adapters": {
+    "dns": ">=0.1.0,<0.2.0"
+  },
+  "labels": "labels.json",
+  "topics": ["topics/network.json"],
+  "texts": ["texts/dns-resolution.json"],
+  "drills": [
+    "drills/dns-resolver-text.json",
+    "drills/dns-record-choice.json",
+    "drills/dns-fix-resolver-lab.json"
+  ],
+  "artifacts": ["artifacts/dns-broken-resolver-lab.json", "artifacts/dns-resolution-flow.json"]
+}

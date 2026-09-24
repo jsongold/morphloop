@@ -1,0 +1,10 @@
+{
+  "description": "Topics carry no prerequisites or mastery thresholds, at any depth.",
+  "schema": "schemas/pack/v2/topic.json",
+  "expected_error_paths": ["$.topics[0]"],
+  "instance": {
+    "id": "network",
+    "title": "Networking",
+    "topics": [{ "id": "network.dns", "title": "DNS", "mastery_threshold": 0.8 }]
+  }
+}

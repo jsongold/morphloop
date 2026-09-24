@@ -1,0 +1,9 @@
+{
+  "id": "dns-resolution-flow",
+  "type": "diagram",
+  "labels": ["topic:network.dns.resolution"],
+  "spec": {
+    "actors": ["client", "resolver", "nameserver"],
+    "steps": [{ "from": "client", "to": "resolver", "label": "query api.internal" }]
+  }
+}

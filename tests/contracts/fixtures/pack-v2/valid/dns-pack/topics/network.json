@@ -1,0 +1,15 @@
+{
+  "id": "network",
+  "title": "Networking",
+  "topics": [
+    {
+      "id": "network.dns",
+      "title": "DNS",
+      "description": "How names become addresses.",
+      "topics": [
+        { "id": "network.dns.resolution", "title": "Resolution" },
+        { "id": "network.dns.records", "title": "Records" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/v2/drill-item.json",
+  "title": "Drill item",
+  "description": "A question with its expected answer. The learner's answer is compared with 'expected' to find the gap. Pack items and generated items share this shape and differ only by label. 'expected' is withheld from the learner and from a 'mode:hint' thread.",
+  "type": "object",
+  "required": [
+    "id",
+    "question",
+    "expected",
+    "answer_mode",
+    "labels"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "question": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+    },
+    "expected": {
+      "description": "Expected answer. For 'choice', the Importer checks it is one of 'choices'.",
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+    },
+    "answer_mode": {
+      "description": "How the learner answers; selects the SDK answer UI and evaluation input.",
+      "enum": [
+        "text",
+        "choice",
+        "artifact"
+      ]
+    },
+    "choices": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+      }
+    },
+    "artifact_ref": {
+      "description": "Id of the artifact spec the learner works in (e.g. a lab).",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "labels": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/v2/defs.json#/$defs/labels"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "answer_mode": {
+            "const": "choice"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "choices"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "choices"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "answer_mode": {
+            "const": "artifact"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "artifact_ref"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "artifact_ref"
+          ]
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}
