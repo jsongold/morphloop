@@ -7,20 +7,17 @@ API; this module does not import any other adapter (``.importlinter``).
 Security (``docs/ARCHITECTURE.md`` Security boundaries): ``request.argv`` runs
 through ``docker exec`` inside the lab container only. Nothing here runs a host
 shell, spawns a host process or allocates a host PTY; terminal input is written
-to the exec's attached socket and nowhere else.
+to the exec's attached stream and nowhere else.
 
-Threading model. The Docker SDK is blocking, so:
-
-* one-shot API calls (inspect, exec create/start/resize, the kill helper) run in
-  the default executor via :func:`asyncio.to_thread`;
-* output is read by one dedicated daemon thread per session doing blocking
-  ``recv`` on the hijacked exec socket and handing each chunk to the event loop
-  with ``call_soon_threadsafe``; EOF (process exit or close) ends the stream;
-* writes are ``sendall`` calls in the executor, serialised by an
-  :class:`asyncio.Lock` so chunks never interleave.
+Transport. ``aiodocker`` talks to the daemon on the event loop: the exec is
+attached with :meth:`aiodocker.execs.Exec.start`, whose stream has no read
+timeout, so an idle shell stays open however long it waits for input. One
+reader task per session copies output chunks into a queue until EOF (process
+exit or close), so :meth:`DockerTerminalSession.wait` works whether or not
+anyone consumes :meth:`DockerTerminalSession.output`.
 
 Terminating the process. Docker has no "kill exec" API and closing the attach
-socket does not end a TTY exec. The exec is therefore started with a random
+stream does not end a TTY exec. The exec is therefore started with a random
 marker variable in its environment; :meth:`DockerTerminalSession.close` runs a
 fixed helper inside the lab that sends ``SIGHUP`` (a terminal hang-up) and then
 ``SIGKILL`` to every process carrying that marker. The marker is passed as a
@@ -34,13 +31,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import secrets
-import socket
-import threading
 from collections.abc import AsyncIterator
-from typing import Any
 
-import docker
-import docker.errors
+import aiodocker
+import aiohttp
+from aiodocker.containers import DockerContainer
+from aiodocker.execs import Exec
+from aiodocker.stream import Stream
 
 from harness.core.ports.terminal_bridge import (
     TerminalBridgeError,
@@ -62,49 +59,30 @@ _KILL_SCRIPT = (
     'hit "$p" && kill -"$s" "${p#/proc/}" 2>/dev/null; done; sleep 0.2; done; true'
 )
 
-_READ_SIZE = 64 * 1024
 _EXIT_POLL_INTERVAL = 0.05
 _EXIT_POLL_ATTEMPTS = 100
 
-
-def _raw_socket(attached: Any) -> socket.socket:
-    """The plain socket under what ``exec_start(socket=True)`` returned."""
-    if isinstance(attached, socket.socket):
-        return attached
-    inner = getattr(attached, "_sock", None)
-    if isinstance(inner, socket.socket):
-        return inner
-    raise TerminalBridgeError(
-        f"unsupported Docker transport for a terminal: {type(attached).__name__}"
-    )
+# What the daemon connection raises: API errors and transport failures.
+_DOCKER_ERRORS = (aiodocker.DockerError, aiohttp.ClientError, OSError)
 
 
 class DockerTerminalSession:
-    """One ``docker exec`` with a TTY, attached over a hijacked socket."""
+    """One ``docker exec`` with a TTY, attached over an aiodocker stream."""
 
     def __init__(
         self,
         *,
-        api: docker.APIClient,
         terminal_id: str,
-        container: str,
-        exec_id: str,
+        container: DockerContainer,
+        exec_: Exec,
         marker: str,
-        attached: Any,
-        loop: asyncio.AbstractEventLoop,
+        stream: Stream,
     ) -> None:
-        self._api = api
         self._terminal_id = terminal_id
         self._container = container
-        self._exec_id = exec_id
+        self._exec = exec_
         self._marker = marker
-        self._attached = attached  # keeps the HTTP response (and so the socket) alive
-        self._sock = _raw_socket(attached)
-        # The socket inherits the Docker client's request timeout (60s by
-        # default), so an idle shell looked like EOF. Block until output or
-        # close; _release_socket shuts it down to end the read.
-        self._sock.settimeout(None)
-        self._loop = loop
+        self._stream = stream
         self._queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._eof = asyncio.Event()
         self._write_lock = asyncio.Lock()
@@ -112,32 +90,20 @@ class DockerTerminalSession:
         self._close_lock = asyncio.Lock()
         self._exit_code: int | None = None
         self._output_taken = False
-        self._reader = threading.Thread(
-            target=self._read_loop, name=f"pty-reader-{terminal_id}", daemon=True
-        )
-        self._reader.start()
+        self._reader = asyncio.create_task(self._read_loop(), name=f"pty-reader-{terminal_id}")
 
     @property
     def terminal_id(self) -> str:
         return self._terminal_id
 
-    # --- reader thread ------------------------------------------------------
-
-    def _read_loop(self) -> None:
+    async def _read_loop(self) -> None:
         try:
-            while True:
-                data = self._sock.recv(_READ_SIZE)
-                if not data:
-                    break
-                self._post(self._queue.put_nowait, data)
-        except OSError:
+            while (message := await self._stream.read_out()) is not None:
+                self._queue.put_nowait(message.data)
+        except (*_DOCKER_ERRORS, RuntimeError):
             pass
         finally:
-            self._post(self._on_eof)
-
-    def _post(self, fn: Any, *args: Any) -> None:
-        with contextlib.suppress(RuntimeError):  # event loop already closed
-            self._loop.call_soon_threadsafe(fn, *args)
+            self._on_eof()
 
     def _on_eof(self) -> None:
         if not self._eof.is_set():
@@ -155,17 +121,15 @@ class DockerTerminalSession:
         async with self._write_lock:
             self._check_open()
             try:
-                await asyncio.to_thread(self._sock.sendall, data)
-            except OSError as exc:
+                await self._stream.write_in(data)
+            except (*_DOCKER_ERRORS, RuntimeError) as exc:
                 raise TerminalClosedError(self._terminal_id) from exc
 
     async def resize(self, size: TerminalSize) -> None:
         self._check_open()
         try:
-            await asyncio.to_thread(
-                self._api.exec_resize, self._exec_id, height=size.rows, width=size.cols
-            )
-        except docker.errors.APIError as exc:
+            await self._exec.resize(h=size.rows, w=size.cols)
+        except _DOCKER_ERRORS as exc:
             raise TerminalBridgeError(f"resize failed: {exc}") from exc
 
     async def output(self) -> AsyncIterator[bytes]:
@@ -175,10 +139,6 @@ class DockerTerminalSession:
         while (chunk := await self._queue.get()) is not None:
             yield chunk
 
-    async def _inspect(self) -> dict[str, Any]:
-        info: dict[str, Any] = await asyncio.to_thread(self._api.exec_inspect, self._exec_id)
-        return info
-
     async def wait(self) -> int | None:
         await self._eof.wait()
         async with self._close_lock:
@@ -186,12 +146,12 @@ class DockerTerminalSession:
                 return self._exit_code
         try:
             for _ in range(_EXIT_POLL_ATTEMPTS):
-                info = await self._inspect()
+                info = await self._exec.inspect()
                 if not info.get("Running"):
                     code = info.get("ExitCode")
                     return code if isinstance(code, int) else None
                 await asyncio.sleep(_EXIT_POLL_INTERVAL)
-        except docker.errors.APIError:
+        except _DOCKER_ERRORS:
             return None
         return None
 
@@ -201,92 +161,74 @@ class DockerTerminalSession:
                 return
             self._closed = True
             try:
-                info = await self._inspect()
+                info = await self._exec.inspect()
                 if info.get("Running"):
-                    await asyncio.to_thread(self._kill_in_lab)
+                    await self._kill_in_lab()
                 else:
                     code = info.get("ExitCode")
                     self._exit_code = code if isinstance(code, int) else None
-            except docker.errors.APIError:
+            except _DOCKER_ERRORS:
                 pass  # container gone: nothing left to terminate
-            self._release_socket()
+            with contextlib.suppress(*_DOCKER_ERRORS):
+                await self._stream.close()
+            self._reader.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reader
             self._on_eof()
-            await asyncio.to_thread(self._reader.join, 5.0)
 
-    def _kill_in_lab(self) -> None:
-        with contextlib.suppress(docker.errors.APIError):
-            created = self._api.exec_create(
-                self._container,
+    async def _kill_in_lab(self) -> None:
+        with contextlib.suppress(*_DOCKER_ERRORS):
+            killer = await self._container.exec(
                 ["/bin/sh", "-c", _KILL_SCRIPT, "morphloop-pty-kill", self._marker],
                 stdout=True,
                 stderr=True,
             )
-            self._api.exec_start(created["Id"])
-
-    def _release_socket(self) -> None:
-        with contextlib.suppress(OSError):
-            self._sock.shutdown(socket.SHUT_RDWR)
-        with contextlib.suppress(OSError):
-            self._sock.close()
-        response = getattr(self._attached, "_response", None)
-        if response is not None:
-            with contextlib.suppress(Exception):
-                response.close()
+            async with killer.start() as stream:  # attached: returns when the helper ends
+                while await stream.read_out() is not None:
+                    pass
 
 
 class DockerTerminalBridge:
     """:class:`~harness.core.ports.TerminalBridge` over ``docker exec`` with a TTY."""
 
-    def __init__(self, client: docker.DockerClient | None = None) -> None:
+    def __init__(self, client: aiodocker.Docker | None = None) -> None:
         self._client = client
 
-    def _api(self) -> docker.APIClient:
+    def _docker(self) -> aiodocker.Docker:
+        # Created lazily so the aiohttp session belongs to the serving event loop.
         if self._client is None:
-            self._client = docker.from_env()
-        return self._client.api
+            self._client = aiodocker.Docker()
+        return self._client
 
     async def open(self, request: TerminalOpenRequest) -> TerminalSession:
-        loop = asyncio.get_running_loop()
-        api = await asyncio.to_thread(self._api)
-        container = request.runtime_ref
         marker = secrets.token_hex(16)
-
-        def start() -> tuple[str, Any]:
-            state = api.inspect_container(container).get("State") or {}
-            if not state.get("Running"):
+        try:
+            docker = self._docker()
+            container = await docker.containers.get(request.runtime_ref)
+            if not (container["State"] or {}).get("Running"):
                 raise TerminalBridgeError(f"lab {request.lab_instance_id!r} is not running")
-            env = dict(request.env)
-            env[MARKER_ENV] = marker
-            created = api.exec_create(
-                container,
+            exec_ = await container.exec(
                 list(request.argv),
                 stdin=True,
                 tty=True,
-                environment=env,
+                environment={**request.env, MARKER_ENV: marker},
                 workdir=request.workdir,
             )
-            exec_id: str = created["Id"]
-            attached = api.exec_start(exec_id, tty=True, socket=True)
-            _raw_socket(attached)
-            return exec_id, attached
-
-        try:
-            exec_id, attached = await asyncio.to_thread(start)
-        except docker.errors.NotFound as exc:
-            raise TerminalBridgeError(f"lab {request.lab_instance_id!r} not found") from exc
-        except docker.errors.APIError as exc:
+            stream = exec_.start(timeout=None)  # no read timeout: idle shells stay open
+            await stream.__aenter__()  # attach now so failures surface as open failures
+        except aiodocker.DockerError as exc:
+            if exc.status == 404:
+                raise TerminalBridgeError(f"lab {request.lab_instance_id!r} not found") from exc
             raise TerminalBridgeError(f"cannot start terminal: {exc}") from exc
-        except docker.errors.DockerException as exc:
+        except (aiohttp.ClientError, OSError, ValueError) as exc:
             raise TerminalBridgeError(f"Docker unavailable: {exc}") from exc
 
         session = DockerTerminalSession(
-            api=api,
             terminal_id=request.terminal_id,
             container=container,
-            exec_id=exec_id,
+            exec_=exec_,
             marker=marker,
-            attached=attached,
-            loop=loop,
+            stream=stream,
         )
         # A program that already exited cannot be resized; that is not an open failure.
         with contextlib.suppress(TerminalBridgeError):
