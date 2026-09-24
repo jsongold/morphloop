@@ -1,0 +1,9 @@
+{
+  "description": "A role with no prompt file is meaningless: the harness has nothing to send.",
+  "schema": "schemas/pack/v2/llm-role.json",
+  "expected_error_paths": ["$"],
+  "instance": {
+    "role": "assistant",
+    "model": "gpt-5.4-2026-03-05"
+  }
+}

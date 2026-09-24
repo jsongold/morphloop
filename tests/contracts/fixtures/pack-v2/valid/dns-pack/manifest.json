@@ -14,5 +14,6 @@
     "drills/dns-record-choice.json",
     "drills/dns-fix-resolver-lab.json"
   ],
-  "artifacts": ["artifacts/dns-broken-resolver-lab.json", "artifacts/dns-resolution-flow.json"]
+  "artifacts": ["artifacts/dns-broken-resolver-lab.json", "artifacts/dns-resolution-flow.json"],
+  "llm_roles": ["llm/assistant.json"]
 }

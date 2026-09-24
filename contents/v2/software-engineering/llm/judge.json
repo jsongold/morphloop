@@ -1,0 +1,6 @@
+{
+  "role": "judge",
+  "model": "gpt-5.4-2026-03-05",
+  "max_tokens": 16000,
+  "prompt": "llm/judge.md"
+}

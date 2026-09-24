@@ -39,7 +39,16 @@ def test_se_pack_imports() -> None:
     assert pack.pack_id == "software-engineering"
     assert pack.pack_hash.startswith("sha256:")
     assert "network.dns.resolver" in pack.topic_ids
-    assert set(pack.documents) == {"labels", "topics", "textbooks", "drills", "artifacts"}
+    assert set(pack.documents) == {
+        "labels",
+        "topics",
+        "textbooks",
+        "drills",
+        "artifacts",
+        "llm_roles",
+    }
+    assert set(pack.llm_roles) == {"assistant", "generator", "judge", "schedule"}
+    assert pack.llm_roles["assistant"].prompt_text.startswith("# assistant")
     with pytest.raises(TypeError):
         pack.topics[0]["id"] = "x"  # type: ignore[index]
 
@@ -54,6 +63,18 @@ def test_hash_is_stable_and_content_bound(pack: Path) -> None:
 def test_unlisted_file_is_rejected(pack: Path) -> None:
     (pack / "drills" / "stray.json").write_text("{}", encoding="utf-8")
     assert "drills/stray.json: file is not listed in the manifest" in _problems(pack)
+
+
+def test_llm_role_missing_prompt_file_is_rejected(pack: Path) -> None:
+    _edit(pack / "llm" / "assistant.json", lambda d: d.update(prompt="llm/missing.md"))
+    problems = _problems(pack)
+    assert "llm/assistant.json: prompt file 'llm/missing.md' does not exist" in problems
+    assert "llm/assistant.md: file is not listed in the manifest" in problems
+
+
+def test_duplicate_llm_role_name_is_rejected(pack: Path) -> None:
+    _edit(pack / "llm" / "generator.json", lambda d: d.update(role="assistant"))
+    assert "[llm_roles] llm role 'assistant' is declared 2 times" in _problems(pack)
 
 
 def test_schema_error_names_the_file(pack: Path) -> None:
