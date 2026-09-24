@@ -5,14 +5,19 @@ description = "Adaptive Interactive Learning OS / Harness"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "aiodocker>=0.27.0",
     "alembic>=1.20.0",
     "docker>=7.2.0",
     "fastapi>=0.141.1",
     "jsonschema>=4.26.0",
     "litellm>=1.83.0",
     "psycopg[binary]>=3",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
+    "rfc8785>=0.1.4",
     "sqlalchemy>=2",
+    "typer>=0.27.2",
     "uvicorn[standard]>=0.53.0",
 ]
 
