@@ -1,0 +1,10 @@
+{
+  "description": "A topic's docs list is a reading order, not a set: no duplicate doc ids.",
+  "schema": "schemas/pack/v2/topic.json",
+  "expected_error_paths": ["$.docs"],
+  "instance": {
+    "id": "network.dns.resolution",
+    "title": "Resolution",
+    "docs": ["dns-resolution", "dns-resolution"]
+  }
+}
