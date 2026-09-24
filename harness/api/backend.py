@@ -17,7 +17,6 @@ the stack reports *why* it is down instead of refusing to start.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 
@@ -29,6 +28,7 @@ from harness.cli import wiring
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.loop import LearningLoop
 from harness.core.ports import EventStore
+from harness.core.settings import Settings
 
 HARNESS_VERSION_ENV_VAR = "HARNESS_VERSION"
 
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 def harness_version() -> str:
     """The version recorded as provenance on ``session.started`` (ADR-0010)."""
-    override = os.environ.get(HARNESS_VERSION_ENV_VAR)
+    override = Settings().harness_version
     if override:
         return override
     try:

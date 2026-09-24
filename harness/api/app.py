@@ -13,7 +13,6 @@ asks it.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -24,6 +23,7 @@ from harness.adapters.postgres.engine import create_engine_from_env, ping
 from harness.api import routes, terminal
 from harness.api.backend import Backend, build_backend
 from harness.api.problems import install_handlers
+from harness.core.settings import Settings
 
 WEB_ORIGIN_ENV_VAR = "WEB_ORIGIN"
 DEFAULT_WEB_ORIGIN = "http://localhost:3000"
@@ -67,7 +67,7 @@ def create_app(backend: Backend | None = None) -> FastAPI:
 
     app = FastAPI(title="morphloop-api", lifespan=lifespan)
 
-    web_origin = os.environ.get(WEB_ORIGIN_ENV_VAR, DEFAULT_WEB_ORIGIN)
+    web_origin = Settings().web_origin
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[web_origin],

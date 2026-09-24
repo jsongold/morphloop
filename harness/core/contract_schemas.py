@@ -20,7 +20,6 @@ A packaged deployment that does not ship the repository must use 1 or 2.
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -31,6 +30,7 @@ from referencing import Registry, Resource
 from referencing.exceptions import Unresolvable
 
 from harness.core.ports import PlainJson, to_plain_json
+from harness.core.settings import Settings
 
 CONTRACTS_DIR_ENV = "MORPHLOOP_CONTRACTS_DIR"
 CONTRACTS_ID_BASE = "https://morphloop.dev/contracts/"
@@ -58,11 +58,12 @@ class ContractValidationError(ValueError):
 
 def locate_contracts_dir(contracts_dir: Path | str | None = None) -> Path:
     """Return the contracts directory (see the module docstring for the order)."""
+    env_contracts_dir = Settings().morphloop_contracts_dir
     if contracts_dir is not None:
         candidate = Path(contracts_dir)
         source = "argument"
-    elif os.environ.get(CONTRACTS_DIR_ENV):
-        candidate = Path(os.environ[CONTRACTS_DIR_ENV])
+    elif env_contracts_dir:
+        candidate = Path(env_contracts_dir)
         source = CONTRACTS_DIR_ENV
     else:
         for parent in Path(__file__).resolve().parents:
