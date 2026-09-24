@@ -14,6 +14,6 @@ place that adds files to a pack and it runs from here.
 - :mod:`harness.cli.wiring` -- which adapter implements which Port here.
 """
 
-from harness.cli.main import build_parser, main
+from harness.cli.main import app, main
 
-__all__ = ["build_parser", "main"]
+__all__ = ["app", "main"]

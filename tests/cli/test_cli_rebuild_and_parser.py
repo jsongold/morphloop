@@ -1,15 +1,18 @@
-"""Tests for ``harness.cli.rebuild`` and the argparse surface of ``harness.cli.main``."""
+"""Tests for ``harness.cli.rebuild`` and the typer CLI surface of ``harness.cli.main``."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
-from harness.cli.main import build_parser, main
+from harness.cli.main import app, main
 from harness.cli.rebuild import format_result, rebuild
 from harness.core.loop import LOOP_PROJECTIONS
 from harness.testing.fakes import InMemoryEventStore
+
+runner = CliRunner()
 
 
 def test_rebuilding_an_empty_log_replays_nothing_and_clears_the_projections() -> None:
@@ -37,20 +40,31 @@ def test_rebuild_does_not_touch_the_pack_projection() -> None:
         assert tx.get_projection("pack", "software-engineering/0.1.0/sha256:0") == {"kept": True}
 
 
-def test_generate_takes_a_pack_and_a_template() -> None:
-    args = build_parser().parse_args(
-        ["generate", "contents/software-engineering", "--template", "diagnose-dns"]
-    )
+def _params(argv: list[str]) -> dict[str, object]:
+    """Parse ``argv`` through the real typer command and return its ``ctx.params``.
 
-    assert args.command == "generate"
-    assert args.pack == "contents/software-engineering"
-    assert args.template == "diagnose-dns"
-    assert args.activity_id is None
-    assert args.max_attempts is None
+    Uses ``make_context`` (parsing only, no callback invocation) so these tests
+    check the CLI surface -- names, options, defaults -- without running the
+    command body (which needs a database/pack on disk).
+    """
+    from typer.main import get_command
+
+    group = get_command(app)
+    name = argv[0]
+    return group.commands[name].make_context(name, argv[1:]).params
+
+
+def test_generate_takes_a_pack_and_a_template() -> None:
+    params = _params(["generate", "contents/software-engineering", "--template", "diagnose-dns"])
+
+    assert params["pack"] == "contents/software-engineering"
+    assert params["template"] == "diagnose-dns"
+    assert params["activity_id"] is None
+    assert params["max_attempts"] is None
 
 
 def test_generate_takes_an_explicit_id_and_attempt_count() -> None:
-    args = build_parser().parse_args(
+    params = _params(
         [
             "generate",
             "contents/software-engineering",
@@ -63,29 +77,25 @@ def test_generate_takes_an_explicit_id_and_attempt_count() -> None:
         ]
     )
 
-    assert args.activity_id == "gen-dns-001"
-    assert args.max_attempts == 2
+    assert params["activity_id"] == "gen-dns-001"
+    assert params["max_attempts"] == 2
 
 
 def test_generate_requires_a_template() -> None:
-    with pytest.raises(SystemExit) as excinfo:
-        build_parser().parse_args(["generate", "contents/software-engineering"])
+    result = runner.invoke(app, ["generate", "contents/software-engineering"])
 
-    assert excinfo.value.code == 2
+    assert result.exit_code == 2
 
 
 def test_import_takes_a_pack_and_rebuild_takes_nothing() -> None:
-    parser = build_parser()
-
-    assert parser.parse_args(["import", "contents/x"]).pack == "contents/x"
-    assert parser.parse_args(["rebuild"]).command == "rebuild"
+    assert _params(["import", "contents/x"])["pack"] == "contents/x"
+    assert _params(["rebuild"]) == {}
 
 
 def test_a_command_is_required() -> None:
-    with pytest.raises(SystemExit) as excinfo:
-        build_parser().parse_args([])
+    result = runner.invoke(app, [])
 
-    assert excinfo.value.code == 2
+    assert result.exit_code == 2
 
 
 def test_main_reports_a_failure_as_a_message_and_exit_code_one(
