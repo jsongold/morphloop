@@ -71,7 +71,7 @@ def build_backend() -> Backend:
         algorithms=wiring.algorithms(),
         llm=wiring.llm_provider(),
         labs=labs,
-        terminals=DockerTerminalBridge(client),
+        terminals=DockerTerminalBridge(),
         harness_version=harness_version(),
     )
     return Backend(loop=loop, store=store)

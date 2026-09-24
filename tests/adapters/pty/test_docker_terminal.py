@@ -13,6 +13,8 @@ import uuid
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
+import aiodocker
+import aiohttp
 import pytest
 import pytest_asyncio
 
@@ -102,8 +104,16 @@ async def _drain(stream: AsyncIterator[bytes]) -> None:
 
 
 @pytest_asyncio.fixture
-async def session(lab_container: Any) -> AsyncIterator[TerminalSession]:
-    bridge: TerminalBridge = DockerTerminalBridge()
+async def bridge(docker_client: Any) -> AsyncIterator[TerminalBridge]:
+    client = aiodocker.Docker()  # docker_client: skip when Docker is unavailable
+    try:
+        yield DockerTerminalBridge(client)
+    finally:
+        await client.close()
+
+
+@pytest_asyncio.fixture
+async def session(bridge: TerminalBridge, lab_container: Any) -> AsyncIterator[TerminalSession]:
     opened = await bridge.open(_request(lab_container.id))
     try:
         yield opened
@@ -142,8 +152,8 @@ async def test_echo_resize_exit_and_close(session: TerminalSession) -> None:
 @pytest.mark.asyncio
 async def test_idle_terminal_outlives_the_client_request_timeout(lab_container: Any) -> None:
     """An idle shell stays open past the Docker client's request timeout."""
-    bridge: TerminalBridge = DockerTerminalBridge(docker.from_env(timeout=1))
-    opened = await bridge.open(_request(lab_container.id))
+    client = aiodocker.Docker(timeout=aiohttp.ClientTimeout(total=1, sock_read=1))
+    opened = await DockerTerminalBridge(client).open(_request(lab_container.id))
     try:
         stream = opened.output()
         await asyncio.sleep(2.5)
@@ -151,6 +161,7 @@ async def test_idle_terminal_outlives_the_client_request_timeout(lab_container: 
         await _read_until(stream, b"still-42", bytearray())
     finally:
         await opened.close()
+        await client.close()
 
 
 @pytest.mark.asyncio
@@ -175,20 +186,18 @@ async def test_close_terminates_process_and_ends_output(
     assert await asyncio.wait_for(session.wait(), _TIMEOUT) is None
     with pytest.raises(TerminalClosedError):
         await session.write(b"x")
-    exec_id = session._exec_id  # type: ignore[attr-defined]
+    exec_id = session._exec.id  # type: ignore[attr-defined]
     assert docker_client.api.exec_inspect(exec_id)["Running"] is False
 
 
 @pytest.mark.asyncio
-async def test_open_on_stopped_lab_fails(lab_container: Any) -> None:
+async def test_open_on_stopped_lab_fails(bridge: TerminalBridge, lab_container: Any) -> None:
     lab_container.kill()
     with pytest.raises(TerminalBridgeError):
-        await DockerTerminalBridge().open(_request(lab_container.id))
+        await bridge.open(_request(lab_container.id))
 
 
 @pytest.mark.asyncio
-async def test_open_on_missing_lab_fails(docker_client: Any) -> None:
+async def test_open_on_missing_lab_fails(bridge: TerminalBridge) -> None:
     with pytest.raises(TerminalBridgeError):
-        await DockerTerminalBridge(docker_client).open(
-            _request(f"morphloop-pty-test-missing-{uuid.uuid4().hex}")
-        )
+        await bridge.open(_request(f"morphloop-pty-test-missing-{uuid.uuid4().hex}"))
