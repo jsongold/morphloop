@@ -82,6 +82,7 @@ import docker
 import docker.errors
 from docker.models.containers import Container
 from docker.types import LogConfig
+from docker.utils.socket import STDERR as _STDERR
 from docker.utils.socket import read as _socket_read
 
 from harness.core.ports import (
@@ -301,7 +302,7 @@ class DockerLabRuntime:
                         break
                     stream_id, size = struct.unpack(">BxxxL", header)
                     payload = _read_exactly(sock, size, deadline) if size else b""
-                    (stderr if stream_id == 2 else stdout).add(payload)
+                    (stderr if stream_id == _STDERR else stdout).add(payload)
             except _Deadline:
                 timed_out = True
             finally:
