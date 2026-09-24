@@ -247,7 +247,36 @@ def test_main_process_that_stops_before_ready_fails_the_start(
         ),
     )
 
-    with pytest.raises(LabRuntimeError, match="ready"):
+    with pytest.raises(LabNotReadyError, match="stopped before it was ready"):
+        runtime.start(lab_id, spec)
+    assert runtime.status(lab_id) == "absent"
+
+
+def test_probe_exec_on_a_stopped_main_process_fails_as_not_ready(
+    runtime: DockerLabRuntime,
+    client: docker.DockerClient,
+    new_id: Callable[[], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The main process exits between the status check and the probe's exec (#72)."""
+    lab_id = new_id()
+    real_exec = runtime.exec
+    filters: dict[str, str | list[str] | bool] = {"label": f"{LABEL_LAB_ID}={lab_id}"}
+
+    def exec_after_exit(lab_instance_id: str, request: ExecRequest) -> ExecResult:
+        deadline = time.monotonic() + 15
+        while client.containers.list(filters=filters) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return real_exec(lab_instance_id, request)
+
+    monkeypatch.setattr(runtime, "exec", exec_after_exit)
+    spec = make_spec(
+        network="none",
+        command=("sh", "-c", "sleep 1; exit 3"),
+        readiness=ReadinessProbe(argv=("true",), timeout_seconds=20, interval_seconds=0.2),
+    )
+
+    with pytest.raises(LabNotReadyError, match="stopped before it was ready"):
         runtime.start(lab_id, spec)
     assert runtime.status(lab_id) == "absent"
 
