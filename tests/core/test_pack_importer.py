@@ -322,9 +322,16 @@ def test_reimport_is_idempotent_and_never_overwrites() -> None:
     second = _importer(edited, store).import_pack(LOCATION)
     assert second.created and second.ref.content_hash != first.ref.content_hash
     assert second.ref.pack_version == first.ref.pack_version
-    assert sorted(PackCatalog(store).list_packs(), key=lambda r: r.key) == sorted(
-        [first.ref, second.ref], key=lambda r: r.key
-    )
+    # Listed in import order per pack_id (last = latest); re-importing the older
+    # content is a no-op and does not make it the latest again.
+    assert PackCatalog(store).list_packs() == [first.ref, second.ref]
+    assert not _importer(files, store).import_pack(LOCATION).created
+    assert PackCatalog(store).list_packs() == [first.ref, second.ref]
+    # Opposite import order, opposite result: the order is import order, not the key.
+    other = InMemoryEventStore()
+    older = _importer(edited, other).import_pack(LOCATION).ref
+    newer = _importer(files, other).import_pack(LOCATION).ref
+    assert PackCatalog(other).list_packs() == [older, newer]
 
 
 def test_different_content_under_an_existing_key_is_a_conflict() -> None:

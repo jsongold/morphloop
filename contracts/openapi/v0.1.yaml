@@ -790,13 +790,19 @@ components:
     Pack:
       title: Imported pack version
       type: object
-      required: [pack, title, imported_at]
+      required: [pack, title, imported_at, latest]
       properties:
         pack:
           $ref: https://morphloop.dev/contracts/schemas/common/provenance.json#/$defs/pack
         title:
           type: string
           minLength: 1
+        latest:
+          type: boolean
+          description: >-
+            True for the most recent import of this pack_id (import order, not wall-clock).
+            New sessions start only on the latest import; older ones stay reachable
+            through existing sessions.
         imported_at:
           $ref: https://morphloop.dev/contracts/schemas/common/timestamp.json
       additionalProperties: false

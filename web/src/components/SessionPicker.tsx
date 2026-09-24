@@ -27,7 +27,9 @@ export function SessionPicker({ learnerId, onLearner, onSession }: Props) {
       .catch(() => !cancelled && setHealth("down"));
     api
       .listPacks()
-      .then((r) => !cancelled && setPacks(r.packs))
+      // Only the newest import of each pack starts a new session; older imports
+      // stay reachable through Resume (sessions are pinned to their pack, ADR-0010).
+      .then((r) => !cancelled && setPacks(r.packs.filter((p) => p.latest)))
       .catch((e) => !cancelled && setError(String(e instanceof Error ? e.message : e)));
     return () => {
       cancelled = true;

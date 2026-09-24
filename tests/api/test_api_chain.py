@@ -11,13 +11,18 @@ here rather than in the browser.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
 from api_harness import assert_component, build_app
 from fastapi.testclient import TestClient
-from loop_harness import ACTIVITY_ID, LEARNER_ID, PACK_ID, SKILL_ID, LoopFixture
+from loop_harness import ACTIVITY_ID, LEARNER_ID, PACK_ID, SKILL_ID, LoopFixture, pack_files
+
+from harness.core.pack import PackImporter
+from harness.core.registry.builtin import v01_algorithm_registry
+from harness.testing.fakes import InMemoryPackSource
 
 HIGHLIGHT_PAYLOAD = {
     "highlight_id": "hl_first",
@@ -65,7 +70,43 @@ def test_packs_lists_the_imported_pack(wired: tuple[TestClient, LoopFixture]) ->
     # import time (the pack projection holds no timestamp and the EventStore
     # Port exposes none), so the field is omitted rather than invented.
     assert "imported_at" not in body["packs"][0]
+    assert body["packs"][0]["latest"] is True
     assert_component(body["packs"][0], "Pack", optional=("imported_at",))
+
+
+def test_packs_marks_the_latest_import_of_each_pack(
+    wired: tuple[TestClient, LoopFixture],
+) -> None:
+    """Two imports of one pack_id: only the newer is `latest` (the web offers only
+    it for a new session); re-importing the older one does not move `latest`."""
+    client, fixture = wired
+    files = pack_files()
+    manifest = json.loads(files["manifest.json"])
+    manifest["description"] = "A newer import."
+    source = InMemoryPackSource(
+        {
+            "old": files,
+            "new": {**files, "manifest.json": json.dumps(manifest, sort_keys=True).encode()},
+        }
+    )
+    importer = PackImporter(
+        source=source,
+        store=fixture.store,
+        schemas=fixture.schemas,
+        adapters=fixture.adapters,
+        algorithms=v01_algorithm_registry(),
+    )
+    newer = importer.import_pack("new").ref
+    assert not importer.import_pack("old").created
+
+    packs = client.get("/packs").json()["packs"]
+
+    assert [(p["pack"]["pack_content_hash"], p["latest"]) for p in packs] == [
+        (fixture.pack.content_hash, False),
+        (newer.content_hash, True),
+    ]
+    for pack in packs:
+        assert_component(pack, "Pack", optional=("imported_at",))
 
 
 def test_create_learner_returns_a_learner_identity(

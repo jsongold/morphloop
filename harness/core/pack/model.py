@@ -40,6 +40,15 @@ PACK_PROJECTION = "pack"
 DEFINITION_PROJECTION = "pack_definition"
 SECRET_PROJECTION = "pack_secret"
 PROJECTION_FORMAT = 1
+# Pack projection field: 1-based import order within a pack_id (highest = latest import).
+IMPORT_SEQ = "import_seq"
+
+
+def import_seq(doc: JsonObject) -> int:
+    """``IMPORT_SEQ`` of a pack projection document; 0 if imported before it existed."""
+    seq = doc.get(IMPORT_SEQ)
+    return seq if isinstance(seq, int) else 0
+
 
 type FileKind = Literal[
     "skill",

@@ -20,6 +20,7 @@ from harness.core.pack.model import (
     PackRef,
     Prompt,
     ReferenceSolution,
+    import_seq,
 )
 from harness.core.ports import EventStore, JsonObject, JsonValue
 from harness.core.registry.algorithms import RegistrySelection
@@ -57,10 +58,12 @@ class PackCatalog:
         self._store = store
 
     def list_packs(self, pack_id: str | None = None) -> list[PackRef]:
-        """Imported packs (all, or of ``pack_id``), sorted by key."""
+        """Imported packs (all, or of ``pack_id``), grouped by pack_id in import
+        order: the last of each pack_id is its latest import (``import_seq``)."""
         prefix = "" if pack_id is None else pack_id + "/"
         with self._store.transaction() as tx:
             docs = tx.list_projection(PACK_PROJECTION, key_prefix=prefix)
+        docs = sorted(docs, key=lambda kd: (_str(kd[1], "pack_id"), import_seq(kd[1]), kd[0]))
         return [_ref(doc) for _, doc in docs]
 
     def get_pack(self, ref: PackRef) -> LoadedPack:

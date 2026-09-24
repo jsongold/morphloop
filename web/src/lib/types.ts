@@ -206,6 +206,8 @@ export interface Pack {
   pack: PackIdentity;
   title: string;
   imported_at: Timestamp;
+  /** Newest import of this pack_id; new sessions start only on it. */
+  latest: boolean;
 }
 
 export interface Learner {
