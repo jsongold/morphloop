@@ -1,0 +1,29 @@
+# URL -> Path Item map for the notebook resource (ADR-0018). Owned by the
+# notebook resource PR: this file is the only file that PR edits (plus an
+# optional new components/notebook.yaml for notebook-specific schemas).
+# Never edit ../root.yaml or another resource's paths/*.yaml — new URLs are
+# just new top-level keys in this file, merged into the document by
+# harness.testing.openapi_v2.load_merged_openapi_v2_spec (duplicate URLs
+# across files are a load-time error). See ../README.md.
+#
+# Notebook: functions only, no children of its own (ADR-0018: a resource has children; a function-only surface is not a resource). Chat drives the notebook through this function surface.
+#
+# `/notebook/_stub` below is a placeholder with no meaning; replace or
+# extend it with the resource's real paths.
+/notebook/_stub:
+  get:
+    tags: [notebook]
+    operationId: getNotebookStub
+    summary: Placeholder for the notebook resource.
+    description: |
+      No behavior yet. Real endpoints for notebook land in a follow-up PR
+      that edits only this file (ADR-0018, issue #34).
+    responses:
+      '200':
+        description: Stub response.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/common.yaml#/Stub'
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'

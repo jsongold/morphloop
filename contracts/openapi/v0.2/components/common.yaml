@@ -1,0 +1,78 @@
+# Common OpenAPI components shared by every contracts/openapi/v0.2/paths/*.yaml
+# file. Owned by this skeleton PR (#44); a resource PR does not edit this file
+# — it adds its own components/<resource>.yaml instead (see ../README.md).
+#
+# Problem carries over the v0.1 RFC 9457 shape verbatim (contracts/openapi/v0.1.yaml
+# components.schemas.Problem), so error handling is identical across v0.1 and
+# v0.2 clients. The `code` enum is closed here again because v0.2 is a fresh
+# document (ADR-0015: contracts are frozen per document, not shared by $ref
+# across major versions).
+Problem:
+  title: Problem details
+  description: |
+    RFC 9457 problem details with a closed `code` vocabulary. `code` → status:
+    `invalid-request` 400 (malformed JSON or parameters);
+    `not-found` 404;
+    `idempotency-key-reused` 409 (same key, different body);
+    `state-conflict` 409 (operation not allowed in the current state);
+    `validation-failed` 422 (body fails its schema; `errors` lists paths);
+    `llm-failed` 502 (an LLM call failed or its output failed validation;
+    no learner state changed);
+    `lab-unavailable` 503 (the lab runtime could not start or reset a lab);
+    `internal` 500.
+  type: object
+  required: [type, title, status, code]
+  properties:
+    type:
+      description: URI reference identifying the problem type, `about:blank` or `https://morphloop.dev/problems/<code>`.
+      type: string
+      format: uri-reference
+    title:
+      type: string
+      minLength: 1
+    status:
+      type: integer
+      minimum: 400
+      maximum: 599
+    detail:
+      type: string
+    instance:
+      type: string
+      format: uri-reference
+    code:
+      enum:
+        - invalid-request
+        - not-found
+        - idempotency-key-reused
+        - state-conflict
+        - validation-failed
+        - llm-failed
+        - lab-unavailable
+        - internal
+    errors:
+      description: Validation errors, for `validation-failed`.
+      type: array
+      items:
+        type: object
+        required: [path, message]
+        properties:
+          path:
+            description: JSON path into the request, e.g. `$.payload.end_offset`.
+            type: string
+          message:
+            type: string
+        additionalProperties: false
+  additionalProperties: false
+
+# Placeholder response body for the per-resource `_stub` endpoints below.
+# Replaced by real schemas as each resource PR fills in its own paths file.
+Stub:
+  title: Stub response
+  description: Placeholder only; no meaning until the owning resource PR lands.
+  type: object
+  properties:
+    resource:
+      type: string
+      minLength: 1
+  required: [resource]
+  additionalProperties: false
