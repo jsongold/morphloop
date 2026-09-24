@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/artifact.reset/1.json",
+  "title": "artifact.reset payload v1",
+  "description": "The artifact was reset: its lab was destroyed and a fresh one started from the same spec. Nothing from the old lab survives.",
+  "x-envelope": 2,
+  "x-actors": [
+    "learner",
+    "assistant",
+    "system"
+  ],
+  "type": "object",
+  "required": [
+    "artifact_id",
+    "replaces_lab_instance_id",
+    "lab"
+  ],
+  "properties": {
+    "artifact_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/artifact_id"
+    },
+    "replaces_lab_instance_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/lab_instance_id"
+    },
+    "lab": {
+      "$ref": "https://morphloop.dev/contracts/schemas/events/payloads/artifact.started/1.json#/$defs/lab"
+    }
+  },
+  "additionalProperties": false
+}
