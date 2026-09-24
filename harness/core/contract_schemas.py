@@ -7,6 +7,12 @@ by ``$id`` and bundles a schema (external ``$ref``s inlined) for
 :class:`~harness.core.ports.LLMRequest`. It is the core-side counterpart of
 ``harness.testing.contracts``, which core must not import.
 
+The v2 event dispatch (``EVENT_V2_DISPATCH_ID``) has no file: it is assembled
+from every ``schemas/events/payloads/<type>/<n>.json`` declaring
+``"x-envelope": 2`` and ``"x-actors": [...]``. File ``<n>.json`` is event type
+``<type>`` when ``n`` is 1, else ``<type>.v<n>``. Adding a v2 event type is
+adding its payload file; nothing else is edited.
+
 Locating ``contracts/`` at runtime (:func:`locate_contracts_dir`), first match wins:
 
 1. the ``contracts_dir`` argument (wiring or tests pass it explicitly);
@@ -35,6 +41,10 @@ from harness.core.settings import Settings
 CONTRACTS_DIR_ENV = "MORPHLOOP_CONTRACTS_DIR"
 CONTRACTS_ID_BASE = "https://morphloop.dev/contracts/"
 _MAX_BUNDLE_DEPTH = 64
+_PAYLOADS_DIR = ("schemas", "events", "payloads")
+EVENT_V2_DISPATCH_ID = CONTRACTS_ID_BASE + "schemas/events/envelope/v2/dispatch.json"
+EVENT_V2_APPEND_ID = CONTRACTS_ID_BASE + "schemas/events/envelope/v2/append.json"
+EVENT_V2_STORED_ID = CONTRACTS_ID_BASE + "schemas/events/envelope/v2/stored.json"
 
 
 class ContractsNotFoundError(RuntimeError):
@@ -81,20 +91,59 @@ def _json_path(path: Any) -> str:
     return "$" + "".join(f"[{p}]" if isinstance(p, int) else f".{p}" for p in path)
 
 
+def _event_v2_type(rel: Path, schema: dict[str, Any]) -> tuple[str, tuple[str, list[str]]]:
+    """``(type, (payload $id, allowed actors))`` for one ``x-envelope: 2`` payload file."""
+    if rel.parts[:-2] != _PAYLOADS_DIR or not rel.stem.isdigit() or rel.stem.startswith("0"):
+        raise ValueError(
+            f"{rel}: an x-envelope 2 schema must be {'/'.join(_PAYLOADS_DIR)}/<type>/<n>.json"
+        )
+    actors = schema.get("x-actors")
+    if not isinstance(actors, list) or not actors:
+        raise ValueError(f"{rel}: x-actors must be a non-empty list")
+    n = int(rel.stem)
+    event_type = rel.parts[-2] if n == 1 else f"{rel.parts[-2]}.v{n}"
+    return event_type, (str(schema["$id"]), actors)
+
+
+def _event_v2_dispatch(types: Mapping[str, tuple[str, list[str]]]) -> Resource[Any]:
+    """Per-type rules for the v2 envelope: known ``type``, allowed ``actor``, payload schema."""
+    return Resource.from_contents(
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": EVENT_V2_DISPATCH_ID,
+            "properties": {"type": {"enum": sorted(types)}},
+            "allOf": [
+                {
+                    "if": {"properties": {"type": {"const": t}}, "required": ["type"]},
+                    "then": {"properties": {"actor": {"enum": actors}, "payload": {"$ref": pid}}},
+                }
+                for t, (pid, actors) in sorted(types.items())
+            ],
+        }
+    )
+
+
 class ContractSchemas:
     """Every ``$id``-bearing schema under one contracts directory."""
 
     def __init__(self, contracts_dir: Path) -> None:
         self.contracts_dir = contracts_dir
         resources: list[tuple[str, Resource[Any]]] = []
+        v2_types: dict[str, tuple[str, list[str]]] = {}
         for path in sorted(contracts_dir.rglob("*.json")):
             contents = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(contents, dict) or "$id" not in contents:
                 continue
+            if contents.get("x-envelope") == 2:
+                event_type, spec = _event_v2_type(path.relative_to(contracts_dir), contents)
+                v2_types[event_type] = spec
             resource: Resource[Any] = Resource.from_contents(contents)
             resource_id = resource.id()
             if resource_id is not None:
                 resources.append((resource_id, resource))
+        self.event_types_v2: Mapping[str, str] = {t: pid for t, (pid, _) in v2_types.items()}
+        """v2 event type -> payload schema ``$id``, as discovered by the scan."""
+        resources.append((EVENT_V2_DISPATCH_ID, _event_v2_dispatch(v2_types)))
         self._ids = frozenset(resource_id for resource_id, _ in resources)
         self._registry: Registry[Any] = Registry().with_resources(resources).crawl()
         self._validators: dict[str, Draft202012Validator] = {}

@@ -108,6 +108,43 @@
       "description": "Groups related events (one attempt, one chat round trip). May reuse an existing id such as an attempt_id.",
       "type": "string",
       "pattern": "^[0-9A-Za-z_.:-]{1,128}$"
+    },
+    "event_uuid": {
+      "description": "v0.2 event id (envelope v2 'id'): a client-generated UUID in canonical lowercase form, unique across the event store; a resend with the same id is the same event. Kept apart from the v0.1 'evt_' event_id until the v0.1 contracts are removed.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "user_id": {
+      "description": "v0.2 learner (user) id.",
+      "type": "string",
+      "pattern": "^usr_[0-9A-Za-z]{1,64}$"
+    },
+    "ws_id": {
+      "description": "v0.2 workspace (ws) id.",
+      "type": "string",
+      "pattern": "^ws_[0-9A-Za-z]{1,64}$"
+    },
+    "entry_id": {
+      "description": "v0.2 memo entry id.",
+      "type": "string",
+      "pattern": "^ent_[0-9A-Za-z]{1,64}$"
+    },
+    "artifact_id": {
+      "description": "v0.2 artifact instance id.",
+      "type": "string",
+      "pattern": "^art_[0-9A-Za-z]{1,64}$"
+    },
+    "doc_id": {
+      "description": "v0.2 text doc id. Pack-authored name or a lowercase UUID for a generated doc (both match definition_id).",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "block_id": {
+      "description": "v0.2 text block id, assigned once when the block is finalized. Pack-authored name or a lowercase UUID.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "item_id": {
+      "description": "v0.2 drill item id. Pack-authored name or a lowercase UUID for a generated item.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
     }
   }
 }

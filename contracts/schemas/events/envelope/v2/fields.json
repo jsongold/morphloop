@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/envelope/v2/fields.json",
+  "title": "Event envelope v2 fields (open base)",
+  "description": "Shared v0.2 envelope fields. Not closed: validate against append.json or stored.json, never against this schema alone. type, actor and payload are checked per type by the v2 dispatch, which harness.core.contract_schemas assembles from payload files declaring 'x-envelope: 2'.",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "actor",
+    "user_id",
+    "payload"
+  ],
+  "properties": {
+    "id": {
+      "description": "Client-generated; also the idempotency key (a resend with the same id is the same event).",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/event_uuid"
+    },
+    "type": {
+      "description": "'<resource>.<past tense>', with a '.v<n>' (n >= 2) suffix only after a breaking change. Payload schema: events/payloads/<type without suffix>/<n or 1>.json.",
+      "type": "string",
+      "pattern": "^[a-z][a-z_]*\\.[a-z][a-z_]*(\\.v([2-9]|[1-9][0-9]+))?$"
+    },
+    "actor": {
+      "enum": [
+        "learner",
+        "assistant",
+        "system"
+      ]
+    },
+    "user_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/user_id"
+    },
+    "session_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/session_id"
+    },
+    "ws_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/ws_id"
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}
