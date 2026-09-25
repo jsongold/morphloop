@@ -154,6 +154,34 @@ def test_unknown_spec_artifact_ws_and_user() -> None:
     assert _status(f, lambda tx: f.service.get(tx, artifact_id, user_id="usr_other")) == 404
 
 
+def test_get_keeps_the_internal_position_out_of_responses() -> None:
+    """``position`` orders the list but is storage metadata, not an artifact property."""
+    f = build()
+    artifact_id = start(f)
+    with f.tx() as tx:
+        document = f.service.get(tx, artifact_id, user_id=USER_ID, ws_id=WS_ID)
+        stored = ArtifactView.get(tx, artifact_id)
+    assert "position" not in document
+    assert stored is not None and isinstance(stored.get("position"), int)
+
+
+def test_list_tolerates_legacy_documents_without_position() -> None:
+    """A view document written before ``position`` existed must not 500 the list."""
+    f = build()
+    first = start(f)
+    second = start(f)
+    with f.tx() as tx:
+        legacy = dict(ArtifactView.get(tx, first) or {})
+        legacy.pop("position", None)
+        tx.put_view(ArtifactView.name, first, legacy)
+    with f.tx() as tx:  # a later stop applies to the legacy document, keeping the omission
+        f.service.stop(tx, first, event_id=new_key(), user_id=USER_ID, ws_id=WS_ID)
+    with f.tx() as tx:
+        items = f.service.list_artifacts(tx, user_id=USER_ID, ws_id=WS_ID)
+    assert [item["artifact_id"] for item in items] == [first, second]
+    assert items[0]["status"] == "stopped"
+
+
 def test_list_is_type_neutral_ordered_and_scoped() -> None:
     f = build()
     first = start(f)

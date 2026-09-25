@@ -86,6 +86,20 @@ def test_lifecycle_and_check(client: TestClient, lab: LabFixture) -> None:
     assert lab.labs.labs == {}
 
 
+def test_artifact_responses_never_expose_the_internal_position(client: TestClient) -> None:
+    response = client.post(f"/v2/ws/{WS_ID}/artifacts", json={"spec_id": SPEC_ID})
+    assert response.status_code == 201, response.text
+    artifact_id = str(response.json()["artifact_id"])
+    base = f"/v2/ws/{WS_ID}/artifacts/{artifact_id}"
+    documents = [
+        response.json(),
+        client.get(base).json(),
+        client.post(f"{base}/reset").json(),
+        client.post(f"{base}/stop").json(),
+    ]
+    assert all("position" not in document for document in documents)
+
+
 def test_start_is_idempotent_and_needs_no_ws_lookup_on_resend(
     client: TestClient, lab: LabFixture
 ) -> None:
