@@ -14,7 +14,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 from lab_fixture import SESSION_ID, SPEC, SPEC_ID, USER_ID, WS_ID, LabFixture, build
-from openapi_lab import assert_check_response, assert_lab_document
+from openapi_lab import assert_check_response, assert_lab_document, assert_list_response
 
 from harness.sdk import PackV2, create_app
 from harness.testing.contracts import validate
@@ -96,6 +96,33 @@ def test_start_is_idempotent_and_needs_no_ws_lookup_on_resend(
     assert len(lab.labs.labs) == 1
     reused = client.post(f"/v2/ws/{WS_ID}/artifacts", json={"spec_id": "other"}, headers=key)
     assert reused.status_code == 409 and reused.json()["code"] == "idempotency-key-reused"
+
+
+def test_list_is_type_neutral_ordered_and_filterable(
+    client: TestClient, lab: LabFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _start(client)
+    second = _start(client)
+
+    listed = client.get(f"/v2/ws/{WS_ID}/artifacts")
+    assert listed.status_code == 200, listed.text
+    body = listed.json()
+    assert_list_response(body)
+    assert [item["artifact_id"] for item in body["items"]] == [first, second]
+    assert body["items"][0] == {
+        "artifact_id": first,
+        "type": "lab",
+        "spec_id": SPEC_ID,
+        "status": "running",
+    }
+
+    same_spec = client.get(f"/v2/ws/{WS_ID}/artifacts?spec_id={SPEC_ID}")
+    assert same_spec.json()["items"] == body["items"]
+    assert client.get(f"/v2/ws/{WS_ID}/artifacts?spec_id=nope").json()["items"] == []
+
+    _as_other_learner(client, lab, monkeypatch)
+    assert client.get(f"/v2/ws/{WS_ID}/artifacts").status_code == 404
+    assert client.get("/v2/ws/ws_other/artifacts").json()["items"] == []
 
 
 def test_errors_are_problems(client: TestClient, lab: LabFixture) -> None:

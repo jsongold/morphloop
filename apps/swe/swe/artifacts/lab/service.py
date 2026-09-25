@@ -129,6 +129,17 @@ class LabArtifactService:
             raise _not_found(f"artifact {artifact_id!r} not found")
         return document
 
+    def list_artifacts(
+        self,
+        tx: EventTransactionV2,
+        *,
+        user_id: str,
+        ws_id: str,
+        spec_id: str | None = None,
+    ) -> list[JsonObject]:
+        """The learner's artifacts in ``ws_id``, in creation order; type-neutral."""
+        return ArtifactView.list_for_ws(tx, ws_id, user_id=user_id, spec_id=spec_id)
+
     def _running(
         self, tx: EventTransactionV2, artifact_id: str, user_id: str | None, ws_id: str | None
     ) -> JsonObject:

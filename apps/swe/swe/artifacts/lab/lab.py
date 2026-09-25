@@ -107,7 +107,8 @@ class LabArtifact(Artifact):
 
 class ArtifactView(View):
     """``artifact`` view: ``{artifact_id, type, spec_id, user_id, session_id, ws_id,
-    status: running|stopped, lab}``."""
+    status: running|stopped, position, lab}``. ``position`` (the started event's
+    DB-assigned order, ADR-0008) is internal, kept only to list in creation order."""
 
     name = "artifact"
     handles = frozenset({"artifact.started", "artifact.reset", "artifact.stopped"})
@@ -128,6 +129,7 @@ class ArtifactView(View):
                     "session_id": event.session_id,
                     "ws_id": event.ws_id,
                     "status": "running",
+                    "position": event.position,
                     "lab": to_plain_json(payload.get("lab")),
                 },
             )
@@ -138,3 +140,32 @@ class ArtifactView(View):
         else:
             document["status"] = "stopped"
         tx.put_view(cls.name, artifact_id, document)
+
+    @classmethod
+    def list_for_ws(
+        cls, tx: ViewDocumentStore, ws_id: str, *, user_id: str, spec_id: str | None = None
+    ) -> list[JsonObject]:
+        """The learner's artifacts in ``ws_id``, in creation order.
+
+        Type-neutral (``artifact_id``, ``type``, ``spec_id``, ``status`` only):
+        a type's own runtime state (this type's ``lab``, another type's own
+        key) is that type's concern, not a cross-type list's (ADR-0018 s19).
+        """
+        # ponytail: scans every artifact view document; key by ws_id if this grows.
+        matches = [
+            document
+            for _, document in cls.list(tx)
+            if document["ws_id"] == ws_id
+            and document["user_id"] == user_id
+            and (spec_id is None or document["spec_id"] == spec_id)
+        ]
+        matches.sort(key=lambda document: int(document["position"]))  # type: ignore[arg-type]
+        return [
+            {
+                "artifact_id": document["artifact_id"],
+                "type": document["type"],
+                "spec_id": document["spec_id"],
+                "status": document["status"],
+            }
+            for document in matches
+        ]

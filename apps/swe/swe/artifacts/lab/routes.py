@@ -1,4 +1,4 @@
-"""`/v2` lab artifact routes (#62, #95): start, read, reset, stop and check labs.
+"""`/v2` lab artifact routes (#62, #95, #128): list, start, read, reset, stop and check labs.
 
 The wired :class:`LabArtifactService` is built once and cached on
 `app.state.artifact_lab` (tests set it there first): the Docker lab runtime,
@@ -18,10 +18,10 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import Annotated, Any
 
 import anyio
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.requests import HTTPConnection
@@ -158,6 +158,21 @@ def start_artifact(
             event_id=event_id,
         ),
         201,
+    )
+
+
+@router.get("/ws/{ws_id}/artifacts")
+def list_artifacts(
+    request: Request,
+    ws_id: str,
+    user_id: UserIdDep,
+    tx: EventTransactionV2Dep,
+    spec_id: Annotated[str | None, Query(min_length=1)] = None,
+) -> JSONResponse:
+    ws_or_404(tx, ws_id, user_id=user_id)  # another learner's ws is 404, not an empty list
+    return _run(
+        request,
+        lambda s: {"items": s.list_artifacts(tx, user_id=user_id, ws_id=ws_id, spec_id=spec_id)},
     )
 
 
