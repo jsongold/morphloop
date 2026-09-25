@@ -69,6 +69,10 @@ def test_pack_directives_resolve() -> None:
             "artifact 'missing' is not in the pack",
         ),
         (
+            "1. ::artifact{type=diagram ref=missing}",
+            "artifact 'missing' is not in the pack",
+        ),
+        (
             "# ::artifact{type=diagram ref=missing}",
             "artifact 'missing' is not in the pack",
         ),
@@ -134,6 +138,21 @@ def test_multiline_code_span_directive_is_ignored(tmp_path: Path) -> None:
     shutil.copytree(PACK, pack)
     doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
     doc["blocks"][BLOCK]["body"] = "Try `\n::artifact{type=lab ref=missing}\n` here."
+    (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
+    import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
+
+
+def test_ordered_list_not_starting_at_one_does_not_interrupt_paragraph(
+    tmp_path: Path,
+) -> None:
+    """CommonMark: an ordered list item can't interrupt a paragraph unless it starts
+    at 1, so ``"Intro line\\n2. ::artifact{...}"`` is one paragraph of literal text,
+    not a list item containing a directive — even with a missing ref, it must not
+    be refused (#f4)."""
+    pack = tmp_path / "pack"
+    shutil.copytree(PACK, pack)
+    doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
+    doc["blocks"][BLOCK]["body"] = "Intro line\n2. ::artifact{type=lab ref=missing}"
     (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
     import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
 

@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
@@ -41,7 +42,8 @@ def _client(store: ConnectionTrackingStore, *, user_id: str | None = None) -> Te
     install_handlers(app)
     app.include_router(build_v2_router())
     app.dependency_overrides[event_store_v2_of] = lambda: store
-    app.dependency_overrides[pack_v2_of] = lambda: import_pack_v2(PACK_DIR)
+    pack = import_pack_v2(PACK_DIR, artifact_types=PACK_ARTIFACT_TYPES)
+    app.dependency_overrides[pack_v2_of] = lambda: pack
     if user_id is not None:
         app.dependency_overrides[user_id_of] = lambda: user_id
     return TestClient(app)

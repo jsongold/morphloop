@@ -11,6 +11,7 @@ import yaml
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
@@ -64,7 +65,8 @@ def _client(store: InMemoryEventStoreV2, *, user_id: str | None = None) -> TestC
     install_handlers(app)
     app.include_router(build_v2_router())
     app.dependency_overrides[event_store_v2_of] = lambda: store
-    app.dependency_overrides[pack_v2_of] = lambda: import_pack_v2(PACK_DIR)
+    pack = import_pack_v2(PACK_DIR, artifact_types=PACK_ARTIFACT_TYPES)
+    app.dependency_overrides[pack_v2_of] = lambda: pack
     if user_id is not None:
         app.dependency_overrides[user_id_of] = lambda: user_id
     return TestClient(app)

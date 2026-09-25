@@ -1,0 +1,4 @@
+{
+  "markdown": "1. First\n2. ::artifact{type=lab ref=x}\n3. Third",
+  "plaintext": "First\nThird"
+}

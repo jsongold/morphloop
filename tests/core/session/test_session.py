@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import PackV2, import_pack_v2
@@ -26,7 +27,7 @@ PACK_DIR = Path(__file__).parents[2] / "contracts/fixtures/pack-v2/valid/dns-pac
 
 @pytest.fixture(scope="module")
 def pack() -> PackV2:
-    return import_pack_v2(PACK_DIR)
+    return import_pack_v2(PACK_DIR, artifact_types=PACK_ARTIFACT_TYPES)
 
 
 @pytest.fixture
