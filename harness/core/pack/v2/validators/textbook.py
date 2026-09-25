@@ -12,9 +12,12 @@ token's ``map`` line range, not from decoded/rendered content): an escaped brace
 (``::artifact\\{...}``) or an HTML entity (``&#58;&#58;artifact{...}``) can decode to
 something that *looks* like a directive, but the raw source never reads
 ``::artifact{...}`` there, so it is plain text, not a directive. A leading
-blockquote/list/heading marker is stripped from that literal text first, since
-CommonMark always opens (or continues) one of those when a line starts with its
-marker, so removing it is unambiguous (:func:`raw_line_texts`; shared with
+blockquote/heading marker is always stripped from that literal text first (both
+can interrupt a paragraph unconditionally in CommonMark); a leading list marker is
+stripped only where markdown-it actually opened a list item on that line — an
+ordered list starting at a number other than 1 does not interrupt a preceding
+paragraph, so e.g. ``"2. x"`` right after plain text is literal text, not a list
+item (:func:`raw_line_texts`, :func:`list_item_open_lines`; shared with
 :mod:`harness.core.textbook.plaintext` so both agree).
 Block ids are unique within a doc and doc ids are unique across the pack.
 (Topic coverage of textbook docs is checked by :mod:`.topics`.)
@@ -52,20 +55,50 @@ def inline_lines(children: Sequence[Token]) -> Iterator[list[Token]]:
     yield line
 
 
-_BLOCK_PREFIX = re.compile(r"^(?:>[ \t]?|[-*+][ \t]+|\d{1,9}[.)][ \t]+|#{1,6}[ \t]+)")
-"""A blockquote/bullet/ordered-list/ATX-heading marker, always at a line's start."""
+_QUOTE_OR_HEADING_PREFIX = re.compile(r"^(?:>[ \t]?|#{1,6}[ \t]+)")
+"""A blockquote or ATX-heading marker: both can interrupt a paragraph unconditionally
+in CommonMark, so one at a line's start always unambiguously opens/continues it."""
+
+_LIST_MARKER_PREFIX = re.compile(r"^(?:[-*+][ \t]+|\d{1,9}[.)][ \t]+)")
+"""A bullet/ordered-list marker: only safe to strip on a line where markdown-it
+actually opened a list item there (see :func:`list_item_open_lines`) — an ordered
+list whose start number isn't 1 cannot interrupt a paragraph, so e.g. ``"2. x"``
+right after plain text is literal paragraph text, not a list item."""
 
 
-def _strip_block_prefix(text: str) -> str:
-    """Strip leading blockquote/list/heading markers (repeated, for nesting): any of
-    these at a line's start unambiguously opens or continues that construct in
-    CommonMark, so removing it recovers the literal displayed-paragraph text."""
-    while match := _BLOCK_PREFIX.match(text):
-        text = text[match.end() :]
+def list_item_open_lines(tokens: Iterable[Token]) -> frozenset[int]:
+    """0-based source lines where a ``list_item_open`` token starts.
+
+    A list marker appears in the raw source only on a list item's first line, and
+    only when CommonMark actually opened that item there (e.g. an ordered list
+    starting at a number other than 1 does not interrupt a preceding paragraph, so
+    no ``list_item_open`` is emitted and its would-be marker line is plain text).
+    """
+    return frozenset(t.map[0] for t in tokens if t.type == "list_item_open" and t.map)
+
+
+def _strip_block_prefix(text: str, *, at_list_item_open: bool) -> str:
+    """Strip leading blockquote/list/heading markers (repeated, for nesting).
+
+    Blockquote/heading markers are always safe to strip (they interrupt a
+    paragraph unconditionally). A list marker is stripped only when
+    ``at_list_item_open`` says markdown-it actually opened a list item on this
+    line — otherwise it's literal paragraph text that merely looks like one.
+    """
+    while True:
+        if match := _QUOTE_OR_HEADING_PREFIX.match(text):
+            text = text[match.end() :]
+            continue
+        if at_list_item_open and (match := _LIST_MARKER_PREFIX.match(text)):
+            text = text[match.end() :]
+            continue
+        break
     return text
 
 
-def raw_line_texts(source_lines: Sequence[str], token: Token) -> list[str | None]:
+def raw_line_texts(
+    source_lines: Sequence[str], token: Token, list_item_open_lines: frozenset[int]
+) -> list[str | None]:
     """Literal (undecoded) source text of an inline token's split lines, with any
     blockquote/list/heading prefix stripped, so ``::artifact`` can be told apart from
     an escape/entity that merely decodes to look like one.
@@ -79,8 +112,14 @@ def raw_line_texts(source_lines: Sequence[str], token: Token) -> list[str | None
     lines = list(inline_lines(token.children or ()))
     start, end = token.map or (0, 0)
     n = len(lines)
+
+    def strip(line_no: int) -> str:
+        return _strip_block_prefix(
+            source_lines[line_no].strip(), at_list_item_open=line_no in list_item_open_lines
+        )
+
     if end - start == n:
-        return [_strip_block_prefix(source_lines[start + i].strip()) for i in range(n)]
+        return [strip(start + i) for i in range(n)]
 
     multiline_capable = {"code_inline", "html_inline"}
     is_complex = [any(t.type in multiline_capable for t in line) for line in lines]
@@ -89,9 +128,9 @@ def raw_line_texts(source_lines: Sequence[str], token: Token) -> list[str | None
     first, last = is_complex.index(True), len(is_complex) - 1 - is_complex[::-1].index(True)
     result: list[str | None] = [None] * n
     for i in range(first):
-        result[i] = _strip_block_prefix(source_lines[start + i].strip())
+        result[i] = strip(start + i)
     for i in range(last + 1, n):
-        result[i] = _strip_block_prefix(source_lines[end - n + i].strip())
+        result[i] = strip(end - n + i)
     return result
 
 
@@ -100,9 +139,11 @@ def text_lines(body: str) -> Iterator[str]:
     raw source line; used only to find literal ``::artifact`` directives, never code.
     """
     source_lines = body.splitlines()
-    for token in MD.parse(body):
+    tokens = MD.parse(body)
+    open_lines = list_item_open_lines(tokens)
+    for token in tokens:
         if token.type == "inline":
-            for raw in raw_line_texts(source_lines, token):
+            for raw in raw_line_texts(source_lines, token, open_lines):
                 if raw is not None:
                     yield raw
 

@@ -1,0 +1,4 @@
+{
+  "markdown": "Intro line\n2. ::artifact{type=lab ref=missing}",
+  "plaintext": "Intro line\n2. ::artifact{type=lab ref=missing}"
+}

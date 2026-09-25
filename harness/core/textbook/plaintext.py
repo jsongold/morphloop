@@ -38,6 +38,7 @@ from harness.core.pack.v2.validators.textbook import (
     ARTIFACT_DIRECTIVE,
     MD,
     inline_lines,
+    list_item_open_lines,
     raw_line_texts,
 )
 
@@ -58,10 +59,10 @@ def _html_text(html: str) -> str:
     return "".join(parser.parts).strip()
 
 
-def _paragraph(token: Token, source_lines: Sequence[str]) -> str | None:
+def _paragraph(token: Token, source_lines: Sequence[str], open_lines: frozenset[int]) -> str | None:
     """Inline text without directive lines; ``None`` if every line is a directive."""
     lines = list(inline_lines(token.children or ()))
-    raws = raw_line_texts(source_lines, token)
+    raws = raw_line_texts(source_lines, token, open_lines)
     kept = [
         _inline(line)
         for line, raw in zip(lines, raws, strict=True)
@@ -86,9 +87,11 @@ def block_plaintext(body: str) -> str:
     """The plaintext of one block body (CommonMark)."""
     chunks: list[str] = []
     source_lines = body.splitlines()
-    for token in MD.parse(body):
+    tokens = MD.parse(body)
+    open_lines = list_item_open_lines(tokens)
+    for token in tokens:
         if token.type == "inline":
-            if (text := _paragraph(token, source_lines)) is not None:
+            if (text := _paragraph(token, source_lines, open_lines)) is not None:
                 chunks.append(text)
         elif token.type in ("fence", "code_block"):
             chunks.append(token.content.removesuffix("\n"))
