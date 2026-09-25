@@ -130,7 +130,10 @@
         in: query
         required: false
         description: When given, the response also carries `sittings` derived from this session's events with this idle gap.
-        schema: { type: integer, minimum: 1 }
+        # maximum: the largest minute count `timedelta` can represent
+        # (`timedelta.max // timedelta(minutes=1)`); a larger value is a 422,
+        # not a 500 from an OverflowError (#89 review).
+        schema: { type: integer, minimum: 1, maximum: 1439999999999 }
     responses:
       '200':
         description: The session.

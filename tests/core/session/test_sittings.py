@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import pytest
 
 from harness.core.ports.events_v2 import StoredEventV2
-from harness.core.session.sittings import Sitting, sittings
+from harness.core.session.sittings import MAX_IDLE_MINUTES, Sitting, sittings
 
 
 def _event(n: int, minute: int) -> StoredEventV2:
@@ -52,3 +52,8 @@ def test_input_order_does_not_matter() -> None:
 def test_idle_minutes_must_be_positive() -> None:
     with pytest.raises(ValueError, match="idle_minutes"):
         sittings([_event(1, 0)], idle_minutes=0)
+
+
+def test_idle_minutes_beyond_timedelta_range_raises_instead_of_overflowing() -> None:
+    with pytest.raises(ValueError, match="idle_minutes"):
+        sittings([_event(1, 0)], idle_minutes=MAX_IDLE_MINUTES + 1)

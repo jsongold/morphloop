@@ -16,10 +16,11 @@ without needing to look anything up first.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 from harness.core.pack.v2.importer import PackV2
 from harness.core.ports import JsonObject
-from harness.core.ports.events_v2 import EventTransactionV2, EventV2
+from harness.core.ports.events_v2 import EventIdConflictError, EventTransactionV2, EventV2
 from harness.core.session.model import SessionView, TopicNotFoundError, find_topic
 from harness.core.view import dispatch
 
@@ -60,15 +61,32 @@ def create_session(
 
     Raises :class:`PackMismatchError` for a ``pack_id`` that is not the
     loaded pack, and :class:`TopicNotFoundError` for a ``topic_id`` outside
-    its topic tree -- both before any event is appended. A reused
-    ``event_id`` with a different ``pack_id``/``topic_id`` raises
-    :class:`~harness.core.ports.events_v2.EventIdConflictError` from
-    ``tx.append`` itself.
+    its topic tree -- both before any event is appended.
+
+    Checks a resend of ``event_id`` against the *stored* event first, before
+    either check: the currently loaded pack can have moved on (a new
+    ``pack_version``/``pack_content_hash``, or a since-edited topic tree)
+    since the original request, and re-deriving the payload from today's pack
+    would then wrongly 404/409 an identical replay (#89 review). Only the
+    client-controlled fields (``user_id``, ``pack_id``, ``topic_id``) decide
+    replay vs. conflict; a mismatch raises
+    :class:`~harness.core.ports.events_v2.EventIdConflictError`.
     """
+    session_id = session_id_for(event_id)
+    existing = tx.get(event_id)
+    if existing is not None:
+        if (
+            existing.user_id != user_id
+            or existing.payload.get("pack_id") != pack_id
+            or existing.payload.get("topic_id") != topic_id
+        ):
+            raise EventIdConflictError(existing)
+        doc = SessionView.get(tx, session_id)
+        assert doc is not None
+        return doc
     if pack_id != pack.pack_id:
         raise PackMismatchError(pack_id)
     topic = find_topic(pack.topics, topic_id)
-    session_id = session_id_for(event_id)
     result = tx.append(
         EventV2(
             id=event_id,
@@ -92,11 +110,22 @@ def create_session(
     return doc
 
 
-def get_session(tx: EventTransactionV2, session_id: str) -> JsonObject | None:
-    """The session document at ``session_id``, or ``None``."""
-    return SessionView.get(tx, session_id)
+def get_session(tx: EventTransactionV2, session_id: str, *, user_id: str) -> JsonObject | None:
+    """The session document at ``session_id`` if it belongs to ``user_id``, else ``None``.
+
+    A session of another user is reported the same as a missing one (#89
+    review): the caller does not learn that the id exists.
+    """
+    doc = SessionView.get(tx, session_id)
+    return doc if doc is not None and doc["user_id"] == user_id else None
 
 
-def list_sessions(tx: EventTransactionV2) -> Sequence[JsonObject]:
-    """Every session document, in key (creation) order."""
-    return [doc for _key, doc in SessionView.list(tx)]
+def list_sessions(tx: EventTransactionV2, *, user_id: str) -> Sequence[JsonObject]:
+    """Every session document of ``user_id``, in creation order.
+
+    Sorted by the creating event's ``position``, not the view's ``ses_<uuid>``
+    key order -- that key is unrelated to creation order (#89 review).
+    """
+    docs = [doc for _key, doc in SessionView.list(tx) if doc["user_id"] == user_id]
+    docs.sort(key=lambda doc: cast(int, doc["position"]))
+    return docs

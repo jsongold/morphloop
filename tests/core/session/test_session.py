@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -163,7 +164,23 @@ def test_reused_event_id_with_a_different_body_conflicts(
 
 def test_get_session_returns_none_when_missing(store: InMemoryEventStoreV2) -> None:
     with store.transaction() as tx:
-        assert get_session(tx, "ses_missing") is None
+        assert get_session(tx, "ses_missing", user_id="usr_alice") is None
+
+
+def test_get_session_of_another_user_returns_none(
+    pack: PackV2, store: InMemoryEventStoreV2
+) -> None:
+    with store.transaction() as tx:
+        created = create_session(
+            tx,
+            pack=pack,
+            user_id="usr_alice",
+            event_id=str(uuid.uuid4()),
+            pack_id=pack.pack_id,
+            topic_id="network",
+        )
+    with store.transaction() as tx:
+        assert get_session(tx, created["id"], user_id="usr_bob") is None
 
 
 def test_list_sessions_returns_every_created_session(
@@ -187,5 +204,75 @@ def test_list_sessions_returns_every_created_session(
             topic_id="network.dns.records",
         )
     with store.transaction() as tx:
-        topic_ids = {doc["topic_id"] for doc in list_sessions(tx)}
+        topic_ids = {doc["topic_id"] for doc in list_sessions(tx, user_id="usr_alice")}
     assert topic_ids == {"network.dns.resolution", "network.dns.records"}
+
+
+def test_list_sessions_excludes_other_users(pack: PackV2, store: InMemoryEventStoreV2) -> None:
+    with store.transaction() as tx:
+        create_session(
+            tx,
+            pack=pack,
+            user_id="usr_alice",
+            event_id=str(uuid.uuid4()),
+            pack_id=pack.pack_id,
+            topic_id="network",
+        )
+    with store.transaction() as tx:
+        assert list_sessions(tx, user_id="usr_bob") == []
+
+
+def test_list_sessions_is_in_creation_order_not_uuid_order(
+    pack: PackV2, store: InMemoryEventStoreV2
+) -> None:
+    # A UUID sort would put "aaaa..." before "ffff...", opposite of creation order.
+    first_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    second_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    with store.transaction() as tx:
+        create_session(
+            tx,
+            pack=pack,
+            user_id="usr_alice",
+            event_id=first_id,
+            pack_id=pack.pack_id,
+            topic_id="network.dns.resolution",
+        )
+        create_session(
+            tx,
+            pack=pack,
+            user_id="usr_alice",
+            event_id=second_id,
+            pack_id=pack.pack_id,
+            topic_id="network.dns.records",
+        )
+    with store.transaction() as tx:
+        topic_ids = [doc["topic_id"] for doc in list_sessions(tx, user_id="usr_alice")]
+    assert topic_ids == ["network.dns.resolution", "network.dns.records"]
+
+
+def test_resend_after_the_pack_changed_still_returns_the_same_session(
+    pack: PackV2, store: InMemoryEventStoreV2
+) -> None:
+    """A server restart with an updated pack must not turn an identical
+    resend into a 404/409 (#89 review)."""
+    event_id = str(uuid.uuid4())
+    with store.transaction() as tx:
+        first = create_session(
+            tx,
+            pack=pack,
+            user_id="usr_alice",
+            event_id=event_id,
+            pack_id=pack.pack_id,
+            topic_id="network",
+        )
+    updated_pack = replace(pack, pack_version="9.9.9", pack_hash="sha256:" + "0" * 64, topics=())
+    with store.transaction() as tx:
+        second = create_session(
+            tx,
+            pack=updated_pack,
+            user_id="usr_alice",
+            event_id=event_id,
+            pack_id=pack.pack_id,
+            topic_id="network",
+        )
+    assert second == first

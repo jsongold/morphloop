@@ -15,6 +15,10 @@ from datetime import datetime, timedelta
 
 from harness.core.ports.events_v2 import StoredEventV2
 
+# The largest value `timedelta(minutes=...)` can represent without overflow
+# (#89 review: an unbounded idle_minutes raises OverflowError, a 500).
+MAX_IDLE_MINUTES = timedelta.max // timedelta(minutes=1)
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Sitting:
@@ -25,8 +29,10 @@ class Sitting:
 def sittings(events: Sequence[StoredEventV2], *, idle_minutes: int) -> list[Sitting]:
     """One sitting per run of ``events`` with no gap larger than ``idle_minutes``
     between consecutive ``created_at`` times. ``events`` need not be sorted."""
-    if idle_minutes <= 0:
-        raise ValueError(f"idle_minutes must be positive, got {idle_minutes}")
+    if not 0 < idle_minutes <= MAX_IDLE_MINUTES:
+        raise ValueError(
+            f"idle_minutes must be between 1 and {MAX_IDLE_MINUTES}, got {idle_minutes}"
+        )
     ordered = sorted(events, key=lambda event: event.created_at)
     if not ordered:
         return []

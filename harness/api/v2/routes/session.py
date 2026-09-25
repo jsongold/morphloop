@@ -31,6 +31,7 @@ from harness.core.session.service import (
     get_session,
     list_sessions,
 )
+from harness.core.session.sittings import MAX_IDLE_MINUTES
 from harness.core.session.sittings import sittings as derive_sittings
 
 router = APIRouter(tags=["session"])
@@ -51,7 +52,11 @@ class CreateSessionRequest(BaseModel):
 
 
 def _document(doc: JsonObject) -> dict[str, PlainJson]:
-    return to_plain_object(doc)
+    # `position` is internal ordering only (see SessionView.apply); the
+    # response schema is `additionalProperties: false` and does not list it.
+    plain = to_plain_object(doc)
+    plain.pop("position", None)
+    return plain
 
 
 @router.post("/sessions", status_code=201)
@@ -85,23 +90,30 @@ def create_session_route(
 
 
 @router.get("/sessions")
-def list_sessions_route(tx: EventTransactionV2Dep) -> list[dict[str, PlainJson]]:
-    return [_document(doc) for doc in list_sessions(tx)]
+def list_sessions_route(
+    tx: EventTransactionV2Dep, user_id: UserIdDep
+) -> list[dict[str, PlainJson]]:
+    return [_document(doc) for doc in list_sessions(tx, user_id=user_id)]
 
 
 @router.get("/sessions/{session_id}")
 def get_session_route(
     session_id: str,
-    tx: EventTransactionV2Dep,
     store: EventStoreV2Dep,
-    idle_minutes: Annotated[int | None, Query(ge=1)] = None,
+    user_id: UserIdDep,
+    idle_minutes: Annotated[int | None, Query(ge=1, le=MAX_IDLE_MINUTES)] = None,
 ) -> dict[str, PlainJson]:
-    doc = get_session(tx, session_id)
+    # Read the events (if any) before opening the transaction below, so this
+    # request never holds two pool connections at once (#89 review: the
+    # `EventTransactionV2Dep` used to stay open across a second, separate
+    # `store.read` connection).
+    events = store.read(session_id=session_id) if idle_minutes is not None else ()
+    with store.transaction() as tx:
+        doc = get_session(tx, session_id, user_id=user_id)
     if doc is None:
         raise HTTPException(status_code=404, detail=f"no session {session_id!r}")
     result = _document(doc)
     if idle_minutes is not None:
-        events = store.read(session_id=session_id)
         result["sittings"] = [
             {
                 "started_at": format_timestamp(sitting.started_at),

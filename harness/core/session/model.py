@@ -48,6 +48,11 @@ class SessionView(View):
         assert event.session_id is not None
         doc: dict[str, PlainJson] = {
             "id": event.session_id,
+            # Not part of the API response (stripped by the route's
+            # `_document`): the view key is `ses_<event uuid>`, unrelated to
+            # creation order, so `position` is what `list_sessions` sorts by
+            # (README "Events and views"; #89 review).
+            "position": event.position,
             "user_id": event.user_id,
             "created_at": format_timestamp(event.created_at),
             **to_plain_object(event.payload),
