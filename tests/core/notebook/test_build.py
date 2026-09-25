@@ -3,6 +3,7 @@
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,7 @@ from harness.core.notebook.build import build_workspace
 from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.events_v2 import EventTransactionV2, StoredEventV2
 from harness.core.ports.generated_documents import GeneratedDocument
-from harness.core.session.service import create_session
+from harness.core.session.service import PackMismatchError, create_session
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 
@@ -88,6 +89,38 @@ def test_build_selects_generated_docs_and_checks_session_owner() -> None:
         assert any(doc["id"] == "generated-doc" for doc in result["documents"])
         with pytest.raises(LookupError):
             build_workspace(tx, user_id="usr_other", **{**params, "event_id": str(uuid.uuid4())})
+
+
+def test_build_rejects_a_session_pinned_to_a_different_pack() -> None:
+    """#117 P1: a session whose pinned pack revision differs from the loaded
+    pack is rejected before content is selected from the current pack."""
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    generated = InMemoryGeneratedDocumentStore()
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    with store.transaction() as tx:
+        session = create_session(
+            tx,
+            pack=pack,
+            user_id="usr_local",
+            event_id=str(uuid.uuid4()),
+            pack_id=pack.pack_id,
+            topic_id="network.dns",
+        )
+        for changed in (
+            replace(pack, pack_id="different-pack"),
+            replace(pack, pack_version="different-version"),
+            replace(pack, pack_hash="different-hash"),
+        ):
+            with pytest.raises(PackMismatchError):
+                build_workspace(
+                    tx,
+                    pack=changed,
+                    generated=generated,
+                    event_id=str(uuid.uuid4()),
+                    user_id="usr_local",
+                    session_id=str(session["id"]),
+                    labels=["concept"],
+                )
 
 
 def test_build_replay_is_race_safe_when_selection_appears() -> None:
