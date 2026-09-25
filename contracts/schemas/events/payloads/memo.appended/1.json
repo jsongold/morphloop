@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/memo.appended/1.json",
+  "title": "memo.appended payload v1",
+  "description": "The learner or the assistant appended one entry to a ws's memo log (issue #59, parent design #34). Append-only: a correction is a new entry, there is no edit or delete of an existing one, and there is no automatic summarization. `entry_id` is derived from the event's own id (its idempotency key), so a resend of the same request appends the same entry once.",
+  "x-envelope": 2,
+  "x-actors": [
+    "learner",
+    "assistant"
+  ],
+  "x-scope": [
+    "session_id",
+    "ws_id"
+  ],
+  "type": "object",
+  "required": [
+    "entry_id",
+    "body"
+  ],
+  "properties": {
+    "entry_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/entry_id"
+    },
+    "body": {
+      "description": "Short Markdown note.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "source": {
+      "description": "What this entry is about, if anything: a highlight thread or a chat thread. Absent for a free-standing entry.",
+      "type": "object",
+      "oneOf": [
+        {
+          "properties": {
+            "highlight_id": {
+              "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/highlight_id"
+            }
+          },
+          "required": [
+            "highlight_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "thread_id": {
+              "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/thread_id"
+            }
+          },
+          "required": [
+            "thread_id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "labels": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/v2/defs.json#/$defs/labels"
+    }
+  },
+  "additionalProperties": false
+}
