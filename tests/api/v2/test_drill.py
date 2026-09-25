@@ -79,6 +79,7 @@ def client(tmp_path: Path) -> Any:
     app.dependency_overrides[event_store_v2_of] = lambda: store
     with TestClient(app) as c:
         c.store = store  # type: ignore[attr-defined]
+        c.app = app  # type: ignore[attr-defined]
         yield c
 
 
@@ -131,3 +132,35 @@ def test_answer_values_outside_the_payload_schema_are_client_errors(client: Any)
     assert client.post(URL, json={"artifact_id": ""}).status_code == 422
     assert client.post(URL, json={"artifact_id": "lab-1"}).status_code == 422
     assert len(client.store.read(ws_id="ws_1")) == 1  # only ws.created
+
+
+def test_answer_rejects_nul_and_explicit_null(client: Any) -> None:
+    # #93 hardening: NUL/surrogates are a 422 (Text), and an explicit JSON
+    # `null` is rejected the same as an out-of-schema value (omission only).
+    assert client.post(URL, json={"actual": "a\u0000b"}).status_code == 422
+    assert client.post(URL, json={"actual": None}).status_code == 422
+    assert client.post(URL, json={"artifact_id": None}).status_code == 422
+    assert len(client.store.read(ws_id="ws_1")) == 1  # only ws.created
+
+
+def test_answer_resend_after_pack_change_returns_stored_result(client: Any) -> None:
+    # #93: a resend must replay from the stored event, not re-run item lookup
+    # -- an item removed/changed in the pack must not break idempotency.
+    from harness.api.v2.routes.drill import drill_service_of
+    from harness.core.drill import DrillService
+
+    key = {"Idempotency-Key": str(uuid.uuid4())}
+    first = client.post(URL, json={"actual": "`NXDOMAIN`"}, headers=key)
+    assert first.status_code == 201
+
+    def _no_items() -> DrillService:
+        return DrillService([])
+
+    client.app.dependency_overrides[drill_service_of] = _no_items
+    try:
+        resend = client.post(URL, json={"actual": "`NXDOMAIN`"}, headers=key)
+    finally:
+        del client.app.dependency_overrides[drill_service_of]
+    assert resend.status_code == 201, resend.text
+    assert resend.json() == first.json()
+    assert len(client.store.read(ws_id="ws_1")) == 2  # ws.created + one answer

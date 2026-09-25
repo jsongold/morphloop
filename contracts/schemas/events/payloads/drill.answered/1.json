@@ -5,6 +5,7 @@
   "description": "The learner answered one drill item in a ws. Records the answer (actual) only; the gap against the item's expected answer is judged separately. 'text' and 'choice' items carry 'actual' (for 'choice', one of the item's choices); 'artifact' items carry 'artifact_id', the artifact the learner worked in.",
   "x-envelope": 2,
   "x-actors": ["learner"],
+  "x-scope": ["session_id", "ws_id"],
   "type": "object",
   "required": ["item_id", "answer_mode"],
   "properties": {

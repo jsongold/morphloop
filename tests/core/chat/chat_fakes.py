@@ -27,6 +27,7 @@ SESSION = "ses_1"
 WS = "ws_1"
 THREAD = "thr_1"
 USER = "usr_local"  # MORPHLOOP_USER_ID default
+SESSION = "ses_1"
 LLM = LLMProvenance(
     provider="fake",
     model="fake/model",

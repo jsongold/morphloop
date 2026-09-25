@@ -172,3 +172,13 @@ def test_unscoped_type_accepts_missing_ids(schemas: ContractSchemas) -> None:
 def test_invalid_x_scope_is_rejected_at_load(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="x-scope"):
         contract_schemas_with_probe(tmp_path, scope=["ws_id"])
+
+
+@pytest.mark.parametrize("event_type", ["drill.answered", "chat.sent", "chat.replied"])
+def test_ws_scoped_types_declare_full_scope(event_type: str) -> None:
+    # drill answers and chat messages always carry session_id and ws_id
+    # (#93 hardening); an append missing either is now a 4xx, not a silent gap.
+    real = ContractSchemas(CONTRACTS_DIR)
+    payload_id = real.event_types_v2[event_type]
+    schema = json.loads((CONTRACTS_DIR / payload_id.split("contracts/", 1)[1]).read_text())
+    assert schema.get("x-scope") == ["session_id", "ws_id"]

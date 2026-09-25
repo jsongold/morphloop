@@ -14,7 +14,9 @@ They exist so each route does not re-discover the same input bugs (#87, #92).
   The request model is the only check before the event store.
 - Strict types: integers are `StrictInt` (no `"3"` or `3.0`); an optional
   field the schema does not allow as `null` is non-nullable (omitted is not
-  `null`). `Query(...)` parameters carry the same constraints as the contract.
+  `null`) -- add a `model_validator(mode="before")` calling `reject_null(data,
+  *field_names)` (`models.py`). `Query(...)` parameters carry the same
+  constraints as the contract (wrap a free-text one in `Text` too).
 - A POST body never carries `user_id`; use `UserIdDep`.
 
 ## Shared dependencies (`harness/api/v2/deps.py`)
@@ -33,6 +35,11 @@ They exist so each route does not re-discover the same input bugs (#87, #92).
   `409 idempotency-key-reused` by `harness/api/problems.py`. Do not catch it.
 - Anything generated into the event (ids, timestamps in the payload) must be
   derived deterministically from the event id, or a resend never matches.
+- When part of the payload comes from a lookup that could change (a pack item,
+  say), check `tx.get(event_id)` first: if found, build the candidate from the
+  *stored* event's own fields (not a fresh lookup) so a resend still replays
+  after the pack changed, instead of failing the lookup before ever reaching
+  `replay_or_conflict`.
 
 ## Events and views
 

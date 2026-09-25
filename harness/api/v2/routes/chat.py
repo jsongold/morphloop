@@ -11,10 +11,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from harness.api.problems import problem
 from harness.api.v2.deps import EventIdDep, EventStoreV2Dep, PackV2Dep, UserIdDep
+from harness.api.v2.models import Text, V2Model
 from harness.core.chat import (
     AssistantConfig,
     AssistantError,
@@ -22,7 +23,6 @@ from harness.core.chat import (
     list_messages,
     send_message,
 )
-from harness.core.ports.events_v2 import EventIdConflictError
 from harness.core.ports.json_types import JsonObject
 from harness.core.ports.llm import LLMError, LLMProvenance, LLMToolProvider
 
@@ -61,10 +61,8 @@ def chat_config_of(pack: PackV2Dep) -> AssistantConfig:
     )
 
 
-class SendBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    text: str = Field(min_length=1)
+class SendBody(V2Model):
+    text: Annotated[Text, Field(min_length=1)]
     allow_writes: bool = False
 
 
@@ -107,8 +105,6 @@ def post_message(
         )
     except ThreadNotFoundError as error:
         return _not_found(error)
-    except EventIdConflictError as error:
-        return problem(status=409, code="idempotency-key-reused", detail=str(error))
     except (LLMError, AssistantError) as error:
         return problem(status=502, code="llm-failed", detail=str(error))
     return {"sent": result.sent, "reply": result.reply}

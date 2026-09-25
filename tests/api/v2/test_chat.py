@@ -84,3 +84,12 @@ def test_unknown_thread_is_404(client: TestClient) -> None:
     response = client.get(f"/v2/ws/{WS}/threads/thr_missing/messages")
     assert response.status_code == 404
     assert response.json()["code"] == "not-found"
+
+
+def test_send_rejects_out_of_schema_body(client: TestClient, llm: FakeToolProvider) -> None:
+    # #93 hardening: unknown field / NUL text is a 422 before anything runs.
+    assert client.post(URL, json={"text": "hi", "user_id": "usr_x"}).status_code == 422
+    assert client.post(URL, json={"text": "a\u0000b"}).status_code == 422
+    assert client.post(URL, json={"text": ""}).status_code == 422
+    assert llm.requests == []
+    assert client.get(URL).json() == {"messages": []}

@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from harness.api.v2.deps import GeneratedDocumentsDep, PackV2Dep
+from harness.api.v2.models import Text
 from harness.core.ports import PlainJson
 from harness.core.textbook.service import Textbook, TextbookNotFoundError
 
@@ -15,7 +16,9 @@ router = APIRouter(prefix="/textbook", tags=["textbook"])
 
 @router.get("/docs")
 def list_docs(
-    pack: PackV2Dep, generated: GeneratedDocumentsDep, topic_id: Annotated[str, Query(min_length=1)]
+    pack: PackV2Dep,
+    generated: GeneratedDocumentsDep,
+    topic_id: Annotated[Text, Query(min_length=1)],
 ) -> dict[str, PlainJson]:
     try:
         return {"docs": list(Textbook(pack, generated).reading_list(topic_id))}
