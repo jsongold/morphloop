@@ -1,0 +1,142 @@
+# Schemas and parameters owned by the highlight resource (ADR-0018, issue
+# #34/#60). Referenced only from ../paths/highlight.yaml.
+#
+# Selector shapes follow the W3C Web Annotation Data Model. Positions are
+# offsets into the SDK-defined block plaintext (issue #55); this contract
+# checks shape only -- start < end is a harness.core.highlight invariant, not
+# expressible in JSON Schema/OpenAPI (it cannot compare two sibling
+# properties), so a request with start >= end is still a 422
+# validation-failed, just raised by the API's pydantic model instead of by
+# this document.
+#
+# Id/label patterns are inlined rather than $ref'd into contracts/schemas/,
+# because contracts/openapi/v0.2 does not yet resolve external
+# https://morphloop.dev/contracts/schemas/... refs
+# (tests/contracts/test_openapi_v2_contract.py's `_no_contracts_schema_handler`);
+# wiring that up is out of scope for this PR (only paths/highlight.yaml and
+# this file are owned by it). Keep these in sync with
+# contracts/schemas/common/ids.json and contracts/schemas/pack/v2/defs.json
+# by hand until that's done.
+WsId:
+  type: string
+  pattern: '^ws_[0-9A-Za-z]{1,64}$'
+
+HighlightId:
+  type: string
+  pattern: '^hl_[0-9A-Za-z]{1,64}$'
+
+DefinitionId:
+  description: Shared by doc_id and block_id (common/ids.json#/$defs/definition_id).
+  type: string
+  pattern: '^[a-z0-9][a-z0-9._-]{0,127}$'
+
+EventUuid:
+  type: string
+  pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+
+Label:
+  type: string
+  pattern: '^[a-z0-9][a-z0-9._-]{0,63}(:[a-z0-9][a-z0-9._-]{0,127})?$'
+
+Labels:
+  type: array
+  uniqueItems: true
+  items:
+    $ref: '#/Label'
+
+TextQuoteSelector:
+  type: object
+  required: [type, exact]
+  properties:
+    type:
+      const: TextQuoteSelector
+    exact:
+      type: string
+      minLength: 1
+    prefix:
+      type: string
+    suffix:
+      type: string
+  additionalProperties: false
+
+TextPositionSelector:
+  type: object
+  required: [type, start, end]
+  properties:
+    type:
+      const: TextPositionSelector
+    start:
+      type: integer
+      minimum: 0
+    end:
+      type: integer
+      minimum: 0
+  additionalProperties: false
+
+HighlightAnchor:
+  description: v0.2.0 supports one textbook block only.
+  type: object
+  required: [doc_id, block_id, selector]
+  properties:
+    doc_id:
+      $ref: '#/DefinitionId'
+    block_id:
+      $ref: '#/DefinitionId'
+    selector:
+      description: Always [TextQuoteSelector, TextPositionSelector], in that order.
+      type: array
+      minItems: 2
+      maxItems: 2
+      prefixItems:
+        - $ref: '#/TextQuoteSelector'
+        - $ref: '#/TextPositionSelector'
+  additionalProperties: false
+
+HighlightCreateRequest:
+  type: object
+  required: [anchor]
+  properties:
+    anchor:
+      $ref: '#/HighlightAnchor'
+    labels:
+      $ref: '#/Labels'
+  additionalProperties: false
+
+Highlight:
+  description: A learner's highlight, current as of HighlightView.
+  type: object
+  required: [highlight_id, ws_id, anchor, labels, created_event_id, created_at]
+  properties:
+    highlight_id:
+      $ref: '#/HighlightId'
+    ws_id:
+      $ref: '#/WsId'
+    anchor:
+      $ref: '#/HighlightAnchor'
+    labels:
+      $ref: '#/Labels'
+    created_event_id:
+      $ref: '#/EventUuid'
+    created_at:
+      type: string
+      format: date-time
+  additionalProperties: false
+
+HighlightList:
+  type: object
+  required: [highlights]
+  properties:
+    highlights:
+      type: array
+      items:
+        $ref: '#/Highlight'
+  additionalProperties: false
+
+IdempotencyKeyHeader:
+  name: Idempotency-Key
+  in: header
+  description: UUID identifying this write; a resend with the same key and body returns the original result (ADR-0008). A fresh one is assigned when absent.
+  required: false
+  schema:
+    type: string
+    format: uuid
