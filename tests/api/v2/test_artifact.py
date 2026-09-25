@@ -1,4 +1,4 @@
-"""`/v2` lab artifact routes (#62), over in-memory fakes."""
+"""`/v2` lab artifact routes and terminal socket (#62), over in-memory fakes."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from api_harness import build_app
+from api_harness import assert_ws_message, build_app
 from artifact_lab.lab_fixture import SPEC, SPEC_ID, USER_ID, WS_ID, LabFixture, build
 from fastapi.testclient import TestClient
 
@@ -80,3 +80,43 @@ def test_errors_are_problems(client: TestClient) -> None:
         f"/v2/ws/{WS_ID}/artifacts/{artifact_id}/check", json={"check_id": "fake.nope"}
     )
     assert bad.status_code == 422 and bad.json()["code"] == "validation-failed"
+
+
+def test_terminal_socket(client: TestClient, lab: LabFixture) -> None:
+    artifact_id = _start(client)
+    with client.websocket_connect(f"/v2/artifacts/{artifact_id}/terminal") as socket:
+        ready = socket.receive_json()
+        assert_ws_message(ready)
+        assert ready["type"] == "lab.status" and ready["payload"]["status"] == "ready"
+        socket.send_json(
+            {
+                "type": "terminal.input",
+                "protocol_version": 1,
+                "correlation_id": None,
+                "idempotency_key": None,
+                "payload": {"data": "ls\n"},
+            }
+        )
+        output = socket.receive_json()
+        assert_ws_message(output)
+        assert output["type"] == "terminal.output" and output["payload"]["data"] == "ls\n"
+        socket.send_json(
+            {
+                "type": "ping",
+                "protocol_version": 1,
+                "correlation_id": "c1",
+                "idempotency_key": None,
+                "payload": {},
+            }
+        )
+        pong = socket.receive_json()
+        assert pong["type"] == "pong" and pong["correlation_id"] == "c1"
+    types = [e.type for e in lab.store.read(ws_id=WS_ID)]
+    assert "artifact.input" in types and "artifact.output" in types
+
+
+def test_terminal_socket_unknown_artifact(client: TestClient) -> None:
+    with client.websocket_connect("/v2/artifacts/art_nope/terminal") as socket:
+        error = socket.receive_json()
+        assert_ws_message(error)
+        assert error["type"] == "error" and error["payload"]["code"] == "not-found"

@@ -1,6 +1,6 @@
-"""Start, reset, stop and check lab artifacts (#62).
+"""Start, reset, stop, check and attach to lab artifacts (#62).
 
-Uses only the :class:`LabRuntime` Port and the
+Uses only the Ports (:class:`LabRuntime`, :class:`TerminalBridge`) and the
 domain adapter registry; never an adapter. Every change is one v2 event appended
 with its view update in one transaction (ADR-0008). The ws is an opaque id.
 
@@ -19,10 +19,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from harness.core.artifact_lab.lab import ArtifactView, LabArtifact
+from harness.core.artifact_lab.terminal import LabTerminal
 from harness.core.domain_adapter import (
     AdapterParamsError,
     DomainAdapterError,
     DomainAdapterRegistry,
+    TerminalTool,
     run_check,
 )
 from harness.core.ports.events_v2 import (
@@ -34,6 +36,7 @@ from harness.core.ports.events_v2 import (
 )
 from harness.core.ports.json_types import JsonObject, PlainJson, to_plain_json, to_plain_object
 from harness.core.ports.lab_runtime import ImageRef, LabInfo, LabRuntime, LabRuntimeError, LabSpec
+from harness.core.ports.terminal_bridge import TerminalBridge, TerminalOpenRequest, TerminalSize
 from harness.core.view import dispatch
 
 
@@ -80,6 +83,7 @@ class LabArtifactService:
 
     store: EventStoreV2
     labs: LabRuntime
+    terminals: TerminalBridge
     adapters: DomainAdapterRegistry
     now: Callable[[], datetime] = field(default=_utc_now)
     new_id: Callable[[str], str] = field(default=_new_id)
@@ -262,7 +266,52 @@ class LabArtifactService:
                 stopped.append(artifact_id)
         return stopped
 
+    # --- terminal -----------------------------------------------------------
+
+    async def open_terminal(
+        self, artifact_id: str, size: TerminalSize, *, user_id: str | None = None
+    ) -> LabTerminal:
+        """Open a PTY in the running lab; its traffic is recorded as artifact.input/output."""
+        document = self._running(artifact_id, user_id, None)
+        lab = document["lab"]
+        assert isinstance(lab, Mapping)
+        lab_instance_id = str(lab["lab_instance_id"])
+        tool = self._tool(str(lab["fixture_id"]))
+        launch = tool.launch()
+        try:
+            session = await self.terminals.open(
+                TerminalOpenRequest(
+                    lab_instance_id=lab_instance_id,
+                    runtime_ref=str(lab["runtime_ref"]),
+                    terminal_id=self.new_id("term"),
+                    argv=launch.argv,
+                    size=size,
+                    env=launch.env,
+                    workdir=launch.workdir,
+                )
+            )
+        except Exception as exc:  # adapter failures are lab failures to the learner
+            raise _unavailable(f"could not open a terminal: {exc}") from exc
+        scope = _scope_of(document)
+        return LabTerminal(
+            artifact_id=artifact_id,
+            lab_instance_id=lab_instance_id,
+            session=session,
+            detector=tool.new_command_detector(),
+            append=lambda event_id, event_type, actor, payload: self._append(
+                scope, event_id, event_type, actor, payload
+            ),
+        )
+
     # --- internals ----------------------------------------------------------
+
+    def _tool(self, fixture: str) -> TerminalTool:
+        # ponytail: the spec names no tool, so the fixture's adapter must have exactly one.
+        split = self.adapters.split_item_id(fixture)
+        tools = self.adapters.adapter(split[0]).tools if split else {}
+        if len(tools) != 1:
+            raise _invalid(f"adapter of {fixture!r} must register exactly one terminal tool")
+        return next(iter(tools.values()))
 
     def _run_lab(self, run: Callable[[LabSpec], LabInfo], artifact: LabArtifact) -> LabInfo:
         environment = artifact.environment

@@ -9,7 +9,11 @@
 # Artifact: observations. Base type for anything operable/displayable; core defines only the base type, subclasses (LabArtifact, DiagramArtifact) live in the domain adapter layer.
 #
 # Lab artifacts (#62). Every POST takes an optional `Idempotency-Key` (UUID) header:
-# it becomes the event id, and a resend returns the stored result.
+# it becomes the event id, and a resend returns the stored result. The terminal is a WebSocket at
+# `/artifacts/{artifact_id}/terminal` speaking contracts/schemas/websocket/
+# (lab.status, terminal.input/resize/output/exit, ping/pong, error); OpenAPI
+# has no WebSocket operation. Commands and output are recorded as
+# artifact.input / artifact.output events labelled io:command / io:output.
 /ws/{ws_id}/artifacts:
   parameters:
     - &ws_id {name: ws_id, in: path, required: true, schema: {type: string, pattern: '^ws_[0-9A-Za-z]{1,64}$'}}

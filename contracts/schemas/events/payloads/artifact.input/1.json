@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/artifact.input/1.json",
+  "title": "artifact.input payload v1",
+  "description": "The learner gave the artifact input, e.g. a completed terminal command (io:command). 'attrs' holds string facts about it (e.g. cwd).",
+  "x-envelope": 2,
+  "x-actors": [
+    "learner"
+  ],
+  "type": "object",
+  "required": [
+    "artifact_id",
+    "labels",
+    "sequence",
+    "data",
+    "encoding"
+  ],
+  "properties": {
+    "artifact_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/artifact_id"
+    },
+    "labels": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "What the data is, as 'io:<kind>' labels (e.g. io:command, io:output) instead of per-tool event types.",
+      "items": {
+        "type": "string",
+        "pattern": "^io:[a-z0-9][a-z0-9._-]{0,63}$"
+      }
+    },
+    "sequence": {
+      "description": "Display order within one artifact session, shared by input and output.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "data": {
+      "type": "string"
+    },
+    "encoding": {
+      "enum": [
+        "utf-8",
+        "base64"
+      ]
+    },
+    "attrs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

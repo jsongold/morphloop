@@ -18,6 +18,7 @@ from harness.testing.fakes import (
     FakeDomainAdapter,
     FakeFixtureProvider,
     FakeLabRuntime,
+    FakeTerminalBridge,
     FakeTerminalTool,
 )
 from harness.testing.fakes_v2 import InMemoryEventStoreV2, contract_schemas_with_probe
@@ -80,6 +81,7 @@ class LabFixture:
     service: LabArtifactService
     store: InMemoryEventStoreV2
     labs: FakeLabRuntime
+    terminals: FakeTerminalBridge
     clock: Clock
 
 
@@ -115,14 +117,15 @@ def build(tmp_path: Path) -> LabFixture:
             tools={"terminal": FakeTerminalTool()},
         )
     )
-    labs = FakeLabRuntime()
+    labs, terminals = FakeLabRuntime(), FakeTerminalBridge()
     service = LabArtifactService(
         store=store,
         labs=labs,
+        terminals=terminals,
         adapters=adapters,
         now=clock,
     )
-    return LabFixture(service, store, labs, clock)
+    return LabFixture(service, store, labs, terminals, clock)
 
 
 def start(f: LabFixture) -> str:
