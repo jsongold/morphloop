@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "jsonschema>=4.26.0",
     "litellm>=1.83.0",
+    "markdown-it-py>=4.2.0",
     "psycopg[binary]>=3",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
@@ -41,6 +42,11 @@ packages = ["harness", "domains"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# importlib: same-named test files in different dirs (tests/core/<r>/test_<r>.py,
+# tests/api/v2/test_<r>.py) do not collide.
+addopts = ["--import-mode=importlib"]
+# Dirs whose shared test helpers are imported as top-level modules.
+pythonpath = ["tests/api", "tests/cli", "tests/core", "tests/domains/dns"]
 
 [dependency-groups]
 dev = [
