@@ -124,6 +124,21 @@ def _edit(path: Path, **changes: Any) -> None:
     path.write_text(json.dumps(doc), encoding="utf-8")
 
 
+def test_generated_item_takes_required_checks_from_the_pack_artifact() -> None:
+    # #124 review: when the generator keeps the referenced pack artifact (it made
+    # no lab variant), the item's checks must resolve against the pack's artifacts
+    # too, or an incomplete check set is judged.
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    body: JsonObject = {
+        **GENERATED,
+        "id": "gen-lab",
+        "answer_mode": "artifact",
+        "artifact_ref": "dns-broken-resolver-lab",
+    }
+    item = generated_items([_generated(body)], pack=pack)[0]
+    assert item.required_checks == ("dns.name_resolves", "dns.command_exit")
+
+
 def test_validator_checks_choices_and_artifact_ref(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     shutil.copytree(PACK, pack)

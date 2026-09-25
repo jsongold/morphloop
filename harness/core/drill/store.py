@@ -50,15 +50,25 @@ def pack_items(pack: PackV2) -> list[DrillItem]:
 
 
 def generated_items(
-    documents: Iterable[GeneratedDocument], artifacts: Iterable[GeneratedDocument] = ()
+    documents: Iterable[GeneratedDocument],
+    artifacts: Iterable[GeneratedDocument] = (),
+    *,
+    pack: PackV2 | None = None,
 ) -> list[DrillItem]:
     """Generated items (``resource = 'drill'``, drill-item shaped bodies).
 
     ``artifacts`` are the generated artifact specs an ``artifact`` item may
     reference; their ``allowed_checks`` become the item's required checks (#124).
+    ``pack`` supplies the pack artifacts a generated item still points at (the
+    generator keeps the pack artifact when it makes no lab variant, #124 review),
+    so those checks are required too.
     One labelled ``sys:holdout`` is never served: holdout is pack-only.
     """
-    required = _artifact_checks(artifact.body for artifact in artifacts)
+    specs: list[Mapping[str, object]] = (
+        [*pack.documents.get("artifacts", {}).values()] if pack is not None else []
+    )
+    specs += [artifact.body for artifact in artifacts]
+    required = _artifact_checks(specs)
     return [
         DrillItem.from_document(
             doc.body, origin="generated", required_checks=_required(doc.body, required)

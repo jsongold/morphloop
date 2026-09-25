@@ -51,7 +51,7 @@ def drill_service_of(pack: PackV2Dep, generated: GeneratedDocumentsDep) -> Drill
     return DrillService(
         [
             *pack_items(pack),
-            *generated_items(generated.list("drill"), generated.list("artifact")),
+            *generated_items(generated.list("drill"), generated.list("artifact"), pack=pack),
         ]
     )
 
