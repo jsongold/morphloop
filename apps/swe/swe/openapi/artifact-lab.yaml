@@ -1,0 +1,65 @@
+# The SWE app's lab-specific part of the artifact HTTP contract (#62, #95).
+#
+# The SDK's contracts/openapi/v0.2/paths/artifact.yaml declares the type-neutral
+# artifact operations (start / get / reset / stop) and leaves type-specific
+# state open. For a `lab` artifact this file fixes that state (`lab` below,
+# present on every artifact document of type `lab`) and adds the lab-only
+# operation `/check`. The terminal is a WebSocket at
+# `/artifacts/{artifact_id}/terminal` speaking the SDK's
+# contracts/schemas/websocket/ messages (lab.status, terminal.input/resize/
+# output/exit, ping/pong, error); commands and output are recorded as
+# artifact.input / artifact.output events labelled io:command / io:output.
+# A lab also stops when its ws has had no learner activity for the spec's
+# idle_seconds.
+#
+# Schemas are JSON Schema (draft 2020-12), as OpenAPI 3.1 uses; the app's tests
+# validate real responses against them.
+schemas:
+  lab:
+    description: The running lab of a `lab` artifact; `runtime_ref` is opaque.
+    type: [object, 'null']
+    required: [lab_instance_id, runtime_ref, image_digest, fixture_id]
+    properties:
+      lab_instance_id: {type: string}
+      runtime_ref: {type: string}
+      image_digest: {type: string}
+      fixture_id: {type: string}
+    additionalProperties: false
+  check_request:
+    type: object
+    required: [check_id]
+    properties:
+      check_id: {type: string, minLength: 1}
+      params: {type: object}
+    additionalProperties: false
+  check_response:
+    description: The observation, as recorded in artifact.checked.
+    type: object
+    required: [artifact_id, check_id, passed, observed]
+    properties:
+      artifact_id: {type: string}
+      check_id: {type: string}
+      passed: {type: boolean}
+      observed: {type: object}
+    additionalProperties: false
+paths:
+  /ws/{ws_id}/artifacts/{artifact_id}/check:
+    parameters:
+      - {name: ws_id, in: path, required: true, schema: {type: string, pattern: '^ws_[0-9A-Za-z]{1,64}$'}}
+      - {name: artifact_id, in: path, required: true, schema: {type: string, pattern: '^art_[0-9A-Za-z]{1,64}$'}}
+    post:
+      tags: [artifact]
+      operationId: checkArtifact
+      parameters: [{name: Idempotency-Key, in: header, required: false, schema: {type: string, format: uuid}}]
+      summary: Run one of the spec's allowed_checks against the lab (records artifact.checked).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/schemas/check_request'}
+      responses:
+        '200':
+          description: The observation, as recorded in artifact.checked.
+          content:
+            application/json:
+              schema: {$ref: '#/schemas/check_response'}

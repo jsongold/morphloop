@@ -1,14 +1,23 @@
-"""Start, reset, stop, check and attach to lab artifacts (#62).
+"""Start, reset, stop, check and attach to lab artifacts (#62, #95).
 
-Uses only the Ports (:class:`LabRuntime`, :class:`TerminalBridge`) and the
+Uses only the SDK Ports (:class:`LabRuntime`, :class:`TerminalBridge`) and the
 domain adapter registry; never an adapter. Every change is one v2 event appended
 with its view update in one transaction (ADR-0008). The ws is an opaque id.
+
+The request-scoped methods (``get`` / ``start`` / ``reset`` / ``stop`` / ``check``)
+take the request's own :class:`EventTransactionV2`: replay checks, view reads and
+the append all happen on that one connection, and the route resolves the ws
+through the ``ws`` view on it first (#103). A resent event id returns the stored
+result instead of acting twice -- only for the same learner and ws: a stored
+event with another owner, type or subject is a reused key (409), never a
+replay, so one learner's key can not read another's artifact (#105 review).
+The store is kept for the two callers without a request transaction: the
+terminal recording and the idle reaper.
 
 A lab lives until an explicit stop or, when its spec declares ``idle_seconds``,
 until its ws has had no non-system event for that long
 (:meth:`LabArtifactService.reap_idle`); the runtime's ``lifetime_seconds`` stays
-the backstop. The ws's session comes from its ``ws.created`` event. A resent
-event id returns the stored result instead of acting twice.
+the backstop.
 """
 
 from __future__ import annotations
@@ -18,26 +27,34 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from harness.core.artifact_lab.lab import ArtifactView, LabArtifact
-from harness.core.artifact_lab.terminal import LabTerminal
-from harness.core.domain_adapter import (
+from harness.sdk import (
+    ActorV2,
     AdapterParamsError,
     DomainAdapterError,
     DomainAdapterRegistry,
-    TerminalTool,
-    run_check,
-)
-from harness.core.ports.events_v2 import (
-    ActorV2,
     EventIdConflictError,
     EventStoreV2,
+    EventTransactionV2,
     EventV2,
+    ImageRef,
+    JsonObject,
+    LabInfo,
+    LabRuntime,
+    LabRuntimeError,
+    LabSpec,
+    PlainJson,
     StoredEventV2,
+    TerminalBridge,
+    TerminalOpenRequest,
+    TerminalSize,
+    TerminalTool,
+    dispatch,
+    run_check,
+    to_plain_json,
+    to_plain_object,
 )
-from harness.core.ports.json_types import JsonObject, PlainJson, to_plain_json, to_plain_object
-from harness.core.ports.lab_runtime import ImageRef, LabInfo, LabRuntime, LabRuntimeError, LabSpec
-from harness.core.ports.terminal_bridge import TerminalBridge, TerminalOpenRequest, TerminalSize
-from harness.core.view import dispatch
+from swe.artifacts.lab.lab import ArtifactView, LabArtifact
+from swe.artifacts.lab.terminal import LabTerminal
 
 
 class ArtifactError(Exception):
@@ -76,6 +93,10 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
+type Scope = tuple[str, str | None, str]
+"""``(user_id, session_id, ws_id)`` of the events an artifact records."""
+
+
 @dataclass(slots=True, kw_only=True)
 class LabArtifactService:
     """The runtime parts; the pack's artifact specs (``pack/v2/artifact-spec.json``
@@ -91,11 +112,15 @@ class LabArtifactService:
     # --- reads --------------------------------------------------------------
 
     def get(
-        self, artifact_id: str, *, user_id: str | None = None, ws_id: str | None = None
+        self,
+        tx: EventTransactionV2,
+        artifact_id: str,
+        *,
+        user_id: str | None = None,
+        ws_id: str | None = None,
     ) -> JsonObject:
         """The ``artifact`` view document; 404 if unknown or not the user's / the ws's."""
-        with self.store.transaction() as tx:
-            document = ArtifactView.get(tx, artifact_id)
+        document = ArtifactView.get(tx, artifact_id)
         if (
             document is None
             or (user_id is not None and document["user_id"] != user_id)
@@ -104,8 +129,10 @@ class LabArtifactService:
             raise _not_found(f"artifact {artifact_id!r} not found")
         return document
 
-    def _running(self, artifact_id: str, user_id: str | None, ws_id: str | None) -> JsonObject:
-        document = self.get(artifact_id, user_id=user_id, ws_id=ws_id)
+    def _running(
+        self, tx: EventTransactionV2, artifact_id: str, user_id: str | None, ws_id: str | None
+    ) -> JsonObject:
+        document = self.get(tx, artifact_id, user_id=user_id, ws_id=ws_id)
         if document["status"] != "running":
             raise ArtifactError(409, "state-conflict", f"artifact {artifact_id!r} is stopped")
         return document
@@ -123,19 +150,26 @@ class LabArtifactService:
 
     def start(
         self,
+        tx: EventTransactionV2,
         specs: Mapping[str, JsonObject],
         *,
         user_id: str,
+        session_id: str | None,
         ws_id: str,
         spec_id: str,
         event_id: str,
         actor: ActorV2 = "learner",
     ) -> JsonObject:
-        """Start a lab from ``spec_id`` in ``ws_id`` (``artifact.started``)."""
-        replay = self._replay(ws_id, event_id, "artifact.started", {"spec_id": spec_id})
+        """Start a lab from ``spec_id`` in ``ws_id`` (``artifact.started``).
+
+        ``session_id`` is the ws's session, resolved by the caller (``ws_or_404``).
+        The lab is destroyed again if its event cannot be appended.
+        """
+        scope: Scope = (user_id, session_id, ws_id)
+        owner = (user_id, ws_id)
+        replay = self._replay(tx, event_id, "artifact.started", owner, {"spec_id": spec_id})
         if replay is not None:
-            return self.get(str(replay.payload["artifact_id"]))
-        scope = (user_id, self._session_of(user_id, ws_id), ws_id)
+            return self.get(tx, str(replay.payload["artifact_id"]), user_id=user_id, ws_id=ws_id)
         spec = specs.get(spec_id)
         if spec is None:
             raise _not_found(f"artifact spec {spec_id!r} not found")
@@ -153,25 +187,27 @@ class LabArtifactService:
             "lab": self._lab_payload(info, artifact),
         }
         try:
-            self._append(scope, event_id, "artifact.started", actor, payload)
+            self._append(tx, scope, event_id, "artifact.started", actor, payload)
         except Exception:
             self.labs.destroy(lab_instance_id)
             raise
-        return self.get(artifact_id)
+        return self.get(tx, artifact_id)
 
     def reset(
         self,
+        tx: EventTransactionV2,
         specs: Mapping[str, JsonObject],
         artifact_id: str,
         *,
         event_id: str,
-        user_id: str | None = None,
-        ws_id: str | None = None,
+        user_id: str,
+        ws_id: str,
     ) -> JsonObject:
         """Replace the lab with a fresh one from the same spec (``artifact.reset``)."""
-        if self._replay(ws_id, event_id, "artifact.reset", {"artifact_id": artifact_id}):
-            return self.get(artifact_id)
-        document = self._running(artifact_id, user_id, ws_id)
+        expect = {"artifact_id": artifact_id}
+        if self._replay(tx, event_id, "artifact.reset", (user_id, ws_id), expect):
+            return self.get(tx, artifact_id, user_id=user_id, ws_id=ws_id)
+        document = self._running(tx, artifact_id, user_id, ws_id)
         artifact, old = self._lab(document, specs)
         new = self.new_id("lab")
         info = self._run_lab(
@@ -182,51 +218,54 @@ class LabArtifactService:
             "replaces_lab_instance_id": old,
             "lab": self._lab_payload(info, artifact),
         }
-        self._append(_scope_of(document), event_id, "artifact.reset", "learner", payload)
-        return self.get(artifact_id)
+        self._append(tx, _scope_of(document), event_id, "artifact.reset", "learner", payload)
+        return self.get(tx, artifact_id, user_id=user_id, ws_id=ws_id)
 
     def stop(
         self,
+        tx: EventTransactionV2,
         artifact_id: str,
         *,
         event_id: str,
-        user_id: str | None = None,
-        ws_id: str | None = None,
+        user_id: str,
+        ws_id: str,
         reason: str = "requested",
         actor: ActorV2 = "learner",
     ) -> JsonObject:
         """Record ``artifact.stopped``, then destroy the lab (best effort; lifetime backstops)."""
-        if self._replay(ws_id, event_id, "artifact.stopped", {"artifact_id": artifact_id}):
-            return self.get(artifact_id)
-        document = self._running(artifact_id, user_id, ws_id)
+        expect = {"artifact_id": artifact_id, "reason": reason}
+        if self._replay(tx, event_id, "artifact.stopped", (user_id, ws_id), expect):
+            return self.get(tx, artifact_id, user_id=user_id, ws_id=ws_id)
+        document = self._running(tx, artifact_id, user_id, ws_id)
         lab = document["lab"]
         assert isinstance(lab, Mapping)
         payload = {"artifact_id": artifact_id, "reason": reason}
-        self._append(_scope_of(document), event_id, "artifact.stopped", actor, payload)
+        self._append(tx, _scope_of(document), event_id, "artifact.stopped", actor, payload)
         try:
             self.labs.destroy(str(lab["lab_instance_id"]))
         except LabRuntimeError:
             pass
-        return self.get(artifact_id)
+        return self.get(tx, artifact_id, user_id=user_id, ws_id=ws_id)
 
     def check(
         self,
+        tx: EventTransactionV2,
         specs: Mapping[str, JsonObject],
         artifact_id: str,
         check_id: str,
         params: JsonObject,
         *,
         event_id: str,
-        user_id: str | None = None,
-        ws_id: str | None = None,
+        user_id: str,
+        ws_id: str,
         actor: ActorV2 = "learner",
     ) -> JsonObject:
         """Run one of the spec's ``allowed_checks`` against the lab (``artifact.checked``)."""
         expect = {"artifact_id": artifact_id, "check_id": check_id}
-        replay = self._replay(ws_id, event_id, "artifact.checked", expect)
+        replay = self._replay(tx, event_id, "artifact.checked", (user_id, ws_id), expect)
         if replay is not None:
             return replay.payload
-        document = self._running(artifact_id, user_id, ws_id)
+        document = self._running(tx, artifact_id, user_id, ws_id)
         artifact, lab_instance_id = self._lab(document, specs)
         if check_id not in artifact.allowed_checks:
             raise _invalid(f"check {check_id!r} is not in the spec's allowed_checks")
@@ -241,12 +280,18 @@ class LabArtifactService:
             raise _unavailable(f"check {check_id!r} could not run: {exc}") from exc
         payload = {"artifact_id": artifact_id, **result.to_dict()}
         return self._append(
-            _scope_of(document), event_id, "artifact.checked", actor, payload
+            tx, _scope_of(document), event_id, "artifact.checked", actor, payload
         ).payload
 
     def reap_idle(self, specs: Mapping[str, JsonObject]) -> list[str]:
         """Stop every running lab whose ws had no non-system event for its spec's
-        ``idle_seconds``; a spec without it only stops on request."""
+        ``idle_seconds``; a spec without it only stops on request.
+
+        Runs outside any request, so it opens its own transactions. Safe to run
+        from several API workers at once: the idle stop's event id is derived
+        from the artifact id (an artifact is idle-stopped at most once), so a
+        second worker's stop is a replay or a state conflict, both skipped.
+        """
         with self.store.transaction() as tx:
             running = [d for _, d in ArtifactView.list(tx) if d["status"] == "running"]
         stopped: list[str] = []
@@ -262,7 +307,20 @@ class LabArtifactService:
             last = max((e.created_at for e in events if e.actor != "system"), default=None)
             if last is None or last < self.now() - timedelta(seconds=idle):
                 artifact_id = str(document["artifact_id"])
-                self.stop(artifact_id, event_id=str(uuid.uuid4()), reason="idle", actor="system")
+                event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{artifact_id}:idle-stop"))
+                try:
+                    with self.store.transaction() as tx:
+                        self.stop(
+                            tx,
+                            artifact_id,
+                            event_id=event_id,
+                            user_id=str(document["user_id"]),
+                            ws_id=str(document["ws_id"]),
+                            reason="idle",
+                            actor="system",
+                        )
+                except ArtifactError:
+                    continue  # another worker stopped it first
                 stopped.append(artifact_id)
         return stopped
 
@@ -271,8 +329,10 @@ class LabArtifactService:
     async def open_terminal(
         self, artifact_id: str, size: TerminalSize, *, user_id: str | None = None
     ) -> LabTerminal:
-        """Open a PTY in the running lab; its traffic is recorded as artifact.input/output."""
-        document = self._running(artifact_id, user_id, None)
+        """Open a PTY in the running lab; its traffic is recorded as artifact.input/output,
+        each chunk in a transaction of its own (a WebSocket has no request transaction)."""
+        with self.store.transaction() as tx:
+            document = self._running(tx, artifact_id, user_id, None)
         lab = document["lab"]
         assert isinstance(lab, Mapping)
         lab_instance_id = str(lab["lab_instance_id"])
@@ -293,14 +353,19 @@ class LabArtifactService:
         except Exception as exc:  # adapter failures are lab failures to the learner
             raise _unavailable(f"could not open a terminal: {exc}") from exc
         scope = _scope_of(document)
+
+        def record(
+            event_id: str, event_type: str, actor: ActorV2, payload: JsonObject
+        ) -> StoredEventV2:
+            with self.store.transaction() as tx:
+                return self._append(tx, scope, event_id, event_type, actor, payload)
+
         return LabTerminal(
             artifact_id=artifact_id,
             lab_instance_id=lab_instance_id,
             session=session,
             detector=tool.new_command_detector(),
-            append=lambda event_id, event_type, actor, payload: self._append(
-                scope, event_id, event_type, actor, payload
-            ),
+            append=record,
         )
 
     # --- internals ----------------------------------------------------------
@@ -338,32 +403,37 @@ class LabArtifactService:
             "fixture_id": str(artifact.environment["fixture"]),
         }
 
-    def _session_of(self, user_id: str, ws_id: str) -> str | None:
-        """The ws's session, from its ``ws.created`` event; 404 if the user has no such ws."""
-        for event in self.store.read(user_id=user_id, ws_id=ws_id):
-            if event.type == "ws.created":
-                return event.session_id
-        raise _not_found(f"ws {ws_id!r} not found")
-
+    @staticmethod
     def _replay(
-        self, ws_id: str | None, event_id: str, event_type: str, expect: Mapping[str, str]
+        tx: EventTransactionV2,
+        event_id: str,
+        event_type: str,
+        owner: tuple[str, str],
+        expect: Mapping[str, str],
     ) -> StoredEventV2 | None:
-        """The stored event for a resent ``event_id`` (idempotency), or ``None``."""
-        if ws_id is None:
-            return None
-        # ponytail: scans the ws log; the store has no read-by-id yet.
-        for event in self.store.read(ws_id=ws_id):
-            if event.id == event_id:
-                if event.type != event_type or any(
-                    event.payload.get(k) != v for k, v in expect.items()
-                ):
-                    raise _key_reused(event_id)
-                return event
-        return None
+        """The stored event for a resent ``event_id`` (idempotency), or ``None``.
 
+        A resend is the same learner and ws (``owner`` = ``(user_id, ws_id)``),
+        event type and subject (``expect``); anything else stored
+        under the id is a reused key (409). The full candidate can not be
+        compared here (``replay_or_conflict``): the payload holds what acting
+        produces (a new artifact or lab id, a check's observation).
+        """
+        event = tx.get(event_id)
+        if event is None:
+            return None
+        if (
+            (event.user_id, event.ws_id) != owner
+            or event.type != event_type
+            or any(event.payload.get(k) != v for k, v in expect.items())
+        ):
+            raise _key_reused(event_id)
+        return event
+
+    @staticmethod
     def _append(
-        self,
-        scope: tuple[str, str | None, str],
+        tx: EventTransactionV2,
+        scope: Scope,
         event_id: str,
         event_type: str,
         actor: ActorV2,
@@ -380,16 +450,15 @@ class LabArtifactService:
             payload=to_plain_object(payload),
         )
         try:
-            with self.store.transaction() as tx:
-                result = tx.append(event)
-                if result.created:
-                    dispatch(result.event, tx)
+            result = tx.append(event)
         except EventIdConflictError as exc:
             raise _key_reused(event_id) from exc
+        if result.created:
+            dispatch(result.event, tx)
         return result.event
 
 
-def _scope_of(document: JsonObject) -> tuple[str, str | None, str]:
+def _scope_of(document: JsonObject) -> Scope:
     session_id = to_plain_json(document["session_id"])
     return (
         str(document["user_id"]),

@@ -1,18 +1,22 @@
-"""A LabArtifactService over in-memory fakes, shared with ``tests/api/v2/test_artifact.py``."""
+"""A LabArtifactService over the SDK's in-memory fakes, shared by the lab tests.
+
+The store is a :class:`SingleConnectionStore`: the SDK's tracking store (a
+``.read()`` while a transaction is open is a second pooled connection, #103)
+plus this app's stricter rule that a request never opens a second transaction
+either -- every lab route does its reads, replay check and append on the one
+request transaction.
+"""
 
 from __future__ import annotations
 
-import json
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from typing import Any
 
-from harness.core.artifact_lab import LabArtifactService
-from harness.core.contract_schemas import ContractSchemas
-from harness.core.domain_adapter import DomainAdapterRegistry
-from harness.core.ports.events_v2 import EventV2
-from harness.core.ports.lab_runtime import ResourceLimits
+from harness.sdk import ContractSchemas, DomainAdapterRegistry, EventTransactionV2, ResourceLimits
 from harness.testing.fakes import (
     FakeCommandExitCheck,
     FakeDomainAdapter,
@@ -21,11 +25,24 @@ from harness.testing.fakes import (
     FakeTerminalBridge,
     FakeTerminalTool,
 )
-from harness.testing.fakes_v2 import InMemoryEventStoreV2, contract_schemas_with_probe
+from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
+from swe.artifacts.lab import LabArtifactService
+
+
+class SingleConnectionStore(ConnectionTrackingStore):
+    """Also fails when a transaction opens while another is open."""
+
+    @contextmanager
+    def transaction(self) -> Iterator[EventTransactionV2]:
+        assert not self.tx_open, "store.transaction() must not nest inside an open transaction"
+        with super().transaction() as tx:
+            yield tx
+
 
 WS_ID = "ws_1"
+SESSION_ID = "ses_1"
 SPEC_ID = "lab-1"
-SPEC = {
+SPEC: dict[str, Any] = {
     "id": SPEC_ID,
     "type": "lab",
     "labels": ["troubleshooting"],
@@ -41,28 +58,8 @@ SPEC = {
         "idle_seconds": 60,
     },
 }
-SPECS = {SPEC_ID: SPEC}
+SPECS: dict[str, Any] = {SPEC_ID: SPEC}
 USER_ID = "usr_1"
-
-
-def _schemas_with_ws_created(directory: Path) -> ContractSchemas:
-    """Contracts plus a stand-in ``ws.created`` (the ws resource owns the real one)."""
-    contracts = contract_schemas_with_probe(directory).contracts_dir
-    path = contracts / "schemas/events/payloads/ws.created/1.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "$id": "https://morphloop.dev/contracts/schemas/events/payloads/ws.created/1.json",
-                "x-envelope": 2,
-                "x-actors": ["learner"],
-                "type": "object",
-            }
-        ),
-        encoding="utf-8",
-    )
-    return ContractSchemas(contracts)
 
 
 class Clock:
@@ -79,27 +76,25 @@ class Clock:
 @dataclass
 class LabFixture:
     service: LabArtifactService
-    store: InMemoryEventStoreV2
+    store: SingleConnectionStore
     labs: FakeLabRuntime
     terminals: FakeTerminalBridge
     clock: Clock
 
+    @contextmanager
+    def tx(self) -> Iterator[EventTransactionV2]:
+        """A request-like transaction for one service call."""
+        with self.store.transaction() as tx:
+            yield tx
 
-def build(tmp_path: Path) -> LabFixture:
+    def types(self) -> list[str]:
+        return [e.type for e in self.store.read(ws_id=WS_ID)]
+
+
+def build() -> LabFixture:
     clock = Clock()
-    store = InMemoryEventStoreV2(_schemas_with_ws_created(tmp_path), now=clock)
-    with store.transaction() as tx:
-        tx.append(
-            EventV2(
-                id=str(uuid.uuid4()),
-                type="ws.created",
-                actor="learner",
-                user_id=USER_ID,
-                session_id="ses_1",
-                ws_id=WS_ID,
-                payload={},
-            )
-        )
+    store = SingleConnectionStore(InMemoryEventStoreV2(ContractSchemas.load(), now=clock))
+    seed_ws(store, WS_ID, user_id=USER_ID, session_id=SESSION_ID)
     adapters = DomainAdapterRegistry()
     adapters.register(
         FakeDomainAdapter(
@@ -130,9 +125,16 @@ def build(tmp_path: Path) -> LabFixture:
 
 def start(f: LabFixture) -> str:
     """Start the test lab; return its artifact id."""
-    started = f.service.start(
-        SPECS, user_id=USER_ID, ws_id=WS_ID, spec_id=SPEC_ID, event_id=str(uuid.uuid4())
-    )
+    with f.tx() as tx:
+        started = f.service.start(
+            tx,
+            SPECS,
+            user_id=USER_ID,
+            session_id=SESSION_ID,
+            ws_id=WS_ID,
+            spec_id=SPEC_ID,
+            event_id=new_key(),
+        )
     return str(started["artifact_id"])
 
 

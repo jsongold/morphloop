@@ -1,6 +1,6 @@
 """A PTY inside a lab artifact, recorded as ``artifact.input`` / ``artifact.output`` (#62).
 
-Same job as the v0.1 ``harness.core.loop.terminal`` but with generic event types
+Same job as the SDK's v0.1 loop terminal but with generic event types
 labelled ``io:command`` / ``io:output``: output chunks are recorded one event
 each (``utf-8`` when clean, else ``base64``); input bytes go to the PTY and to
 the tool's command detector, and each completed command is one event.
@@ -15,10 +15,15 @@ import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Literal
 
-from harness.core.domain_adapter import CommandDetector, DetectedCommand
-from harness.core.ports.events_v2 import StoredEventV2
-from harness.core.ports.json_types import JsonObject, PlainJson
-from harness.core.ports.terminal_bridge import TerminalSession, TerminalSize
+from harness.sdk import (
+    CommandDetector,
+    DetectedCommand,
+    JsonObject,
+    PlainJson,
+    StoredEventV2,
+    TerminalSession,
+    TerminalSize,
+)
 
 type Append = Callable[[str, str, Literal["learner", "system"], JsonObject], StoredEventV2]
 """``(event_id, type, actor, payload) -> stored event``, scoped by the caller."""

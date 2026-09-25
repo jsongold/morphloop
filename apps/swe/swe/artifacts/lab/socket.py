@@ -1,10 +1,11 @@
-"""`/v2/artifacts/{artifact_id}/terminal` (#62): the lab artifact's terminal WebSocket.
+"""`/v2/artifacts/{artifact_id}/terminal` (#62, #95): the lab artifact's terminal WebSocket.
 
-Speaks the existing `contracts/schemas/websocket/` messages: client
+Speaks the SDK's `contracts/schemas/websocket/` messages: client
 `terminal.input` / `terminal.resize` / `ping`; server `lab.status` (ready or
 error), `terminal.output`, `terminal.exit`, `error`, `pong`. Recording is done by
-:class:`~harness.core.artifact_lab.LabTerminal` (`artifact.input` /
-`artifact.output`); this module only frames and pumps messages.
+:class:`~swe.artifacts.lab.LabTerminal` (`artifact.input` / `artifact.output`);
+this module only frames and pumps messages. The learner comes from `UserIdDep`,
+like every HTTP route.
 """
 
 from __future__ import annotations
@@ -15,11 +16,10 @@ import anyio
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-from harness.api.v2.deps import user_id_of
-from harness.api.v2.routes.artifact import artifact_service_of
-from harness.core.artifact_lab import ArtifactError, LabTerminal
-from harness.core.ports.json_types import PlainJson
-from harness.core.ports.terminal_bridge import TerminalBridgeError, TerminalSize
+from harness.sdk import PlainJson, TerminalBridgeError, TerminalSize, UserIdDep
+from swe.artifacts.lab.routes import artifact_service_of
+from swe.artifacts.lab.service import ArtifactError
+from swe.artifacts.lab.terminal import LabTerminal
 
 PROTOCOL_VERSION = 1
 INITIAL_SIZE = TerminalSize(cols=80, rows=24)
@@ -52,12 +52,12 @@ class _Channel:
 
 
 @router.websocket("/artifacts/{artifact_id}/terminal")
-async def artifact_terminal(websocket: WebSocket, artifact_id: str) -> None:
+async def artifact_terminal(websocket: WebSocket, artifact_id: str, user_id: UserIdDep) -> None:
     await websocket.accept()
     channel = _Channel(websocket)
     try:
         service = artifact_service_of(websocket)
-        terminal = await service.open_terminal(artifact_id, INITIAL_SIZE, user_id=user_id_of())
+        terminal = await service.open_terminal(artifact_id, INITIAL_SIZE, user_id=user_id)
     except ArtifactError as error:
         await channel.send("error", {"code": error.code, "message": error.detail})
         await websocket.close()
