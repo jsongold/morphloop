@@ -141,7 +141,27 @@ The standard UI is optional; any UI that follows the API contract in `contracts/
 
 The SDK owns the `Artifact` base and the extension points; concrete artifact
 types (lab, diagram, ...) belong to an app (`apps/<app>/`, ADR-0018 §19). An app
-imports `harness.sdk` only:
+is its own package that depends on the installed SDK package (`morphloop`) and
+imports `harness.sdk` only; nothing else in `harness` is public API.
+
+```sh
+uv build                                    # dist/morphloop-*.whl, contracts included
+uv pip install dist/morphloop-*.whl         # in the app's own environment, or
+uv add morphloop                            # once the SDK is published
+scripts/check-sdk-wheel.sh                  # proves an installed wheel loads its contracts
+```
+
+The wheel ships `contracts/` as package data (`harness/contracts/`), so
+`ContractSchemas.load()` and `harness.testing` need no repository checkout;
+`MORPHLOOP_CONTRACTS_DIR` still overrides it. Inside this repository the root
+`pyproject.toml` is a uv workspace whose members are `apps/*`: an app under
+`apps/<app>/` with its own `pyproject.toml` (depending on `morphloop`) and tests
+is picked up by `uv sync`, and later moves out to its own repository unchanged.
+The SDK's own tests use only the minimal fixture pack under
+`tests/contracts/fixtures/pack-v2/valid/dns-pack/`; a real pack and its tests
+belong to the app.
+
+An app imports `harness.sdk` only:
 
 ```python
 from harness.sdk import AppExtension, Artifact, create_app

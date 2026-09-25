@@ -13,15 +13,23 @@ from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.textbook.service import Textbook, TextbookNotFoundError
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 
-SE_PACK = Path(__file__).resolve().parents[3] / "contents" / "v2" / "software-engineering"
-TOPIC = "network.dns.lookup-path"
+PACK = (
+    Path(__file__).resolve().parents[2]
+    / "contracts"
+    / "fixtures"
+    / "pack-v2"
+    / "valid"
+    / "dns-pack"
+)
+TOPIC = "network.dns.resolution"
+DOC = "dns-resolution"  # the one pack doc under TOPIC
 GENERATED: JsonObject = {
     "id": "gen-lookup-path-001",
     "title": "More on lookups",
     "labels": ["troubleshooting"],
     "blocks": [{"id": "b1", "body": "Use **getent**.", "labels": []}],
 }
-SHADOW: JsonObject = {**GENERATED, "id": TOPIC, "title": "Shadow"}
+SHADOW: JsonObject = {**GENERATED, "id": DOC, "title": "Shadow"}
 # Store key "gen-keyed" differs from the body id; it also tries to spoof its origin.
 KEYED: JsonObject = {**GENERATED, "id": "body-id", "labels": ["origin:pack"]}
 
@@ -29,7 +37,7 @@ KEYED: JsonObject = {**GENERATED, "id": "body-id", "labels": ["origin:pack"]}
 @pytest.fixture(scope="module")
 def textbook() -> Textbook:
     store = InMemoryGeneratedDocumentStore()
-    for key, body in ((GENERATED["id"], GENERATED), (TOPIC, SHADOW), ("gen-keyed", KEYED)):
+    for key, body in ((GENERATED["id"], GENERATED), (DOC, SHADOW), ("gen-keyed", KEYED)):
         store.add(
             GeneratedDocument(
                 resource="textbook",
@@ -39,12 +47,12 @@ def textbook() -> Textbook:
                 provenance={},
             )
         )
-    return Textbook(import_pack_v2(SE_PACK, artifact_types=PACK_ARTIFACT_TYPES), store)
+    return Textbook(import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES), store)
 
 
 def test_reading_list_is_topic_docs_then_generated(textbook: Textbook) -> None:
     docs = textbook.reading_list(TOPIC)
-    assert [d["id"] for d in docs] == [TOPIC, "gen-keyed", "gen-lookup-path-001"]
+    assert [d["id"] for d in docs] == [DOC, "gen-keyed", "gen-lookup-path-001"]
     assert "origin:pack" in docs[0]["labels"]  # type: ignore[operator]
     assert "origin:generated" in docs[2]["labels"]  # type: ignore[operator]
     assert set(docs[0]) == {"id", "title", "labels"}
@@ -57,12 +65,12 @@ def test_topic_without_docs_and_unknown_topic(textbook: Textbook) -> None:
 
 
 def test_doc_has_block_plaintext(textbook: Textbook) -> None:
-    doc = textbook.doc(TOPIC)
-    assert doc["title"] == "How an application looks up a name"  # pack wins over SHADOW
+    doc = textbook.doc(DOC)
+    assert doc["title"] == "How a name is resolved"  # pack wins over SHADOW
     blocks = {b["id"]: b for b in doc["blocks"]}  # type: ignore[index, union-attr]
-    assert blocks["diagram"]["plaintext"] == ""
-    assert blocks["summary"]["plaintext"].startswith(
-        "Applications do not speak DNS. They call getaddrinfo(),"
+    assert blocks["b2"]["plaintext"] == ""  # an artifact directive has no text
+    assert blocks["b1"]["plaintext"] == (
+        "A stub resolver reads /etc/resolv.conf and asks the listed nameserver."
     )
 
 

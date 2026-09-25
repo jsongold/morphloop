@@ -19,16 +19,17 @@ Locating ``contracts/`` at runtime (:func:`locate_contracts_dir`), first match w
 
 1. the ``contracts_dir`` argument (wiring or tests pass it explicitly);
 2. the ``MORPHLOOP_CONTRACTS_DIR`` environment variable;
-3. walking up from this file to the first ancestor holding
+3. the copy shipped inside the installed package (``harness/contracts/``, see
+   ``[tool.hatch.build.targets.wheel]`` in ``pyproject.toml``);
+4. walking up from this file to the first ancestor holding
    ``contracts/schemas/`` (the repository checkout; an editable install).
-
-A packaged deployment that does not ship the repository must use 1 or 2.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +82,9 @@ def locate_contracts_dir(contracts_dir: Path | str | None = None) -> Path:
         candidate = Path(env_contracts_dir)
         source = CONTRACTS_DIR_ENV
     else:
+        packaged = files("harness") / "contracts"
+        if isinstance(packaged, Path) and (packaged / "schemas").is_dir():
+            return packaged
         for parent in Path(__file__).resolve().parents:
             if (parent / "contracts" / "schemas").is_dir():
                 return parent / "contracts"
