@@ -14,6 +14,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 from lab_fixture import SESSION_ID, SPEC, SPEC_ID, USER_ID, WS_ID, LabFixture, build
+from openapi_lab import assert_check_response, assert_lab_document
 
 from harness.sdk import PackV2, create_app
 from harness.testing.contracts import validate
@@ -55,6 +56,7 @@ def client(lab: LabFixture, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestCli
 def _start(client: TestClient, ws_id: str = WS_ID) -> str:
     response = client.post(f"/v2/ws/{ws_id}/artifacts", json={"spec_id": SPEC_ID})
     assert response.status_code == 201, response.text
+    assert_lab_document(response.json())
     return str(response.json()["artifact_id"])
 
 
@@ -62,6 +64,7 @@ def test_lifecycle_and_check(client: TestClient, lab: LabFixture) -> None:
     artifact_id = _start(client)
     base = f"/v2/ws/{WS_ID}/artifacts/{artifact_id}"
     body = client.get(base).json()
+    assert_lab_document(body)
     assert body["status"] == "running" and body["session_id"] == SESSION_ID
     assert client.post(f"{base}/reset").status_code == 200
     key = {"Idempotency-Key": str(uuid.uuid4())}
@@ -74,7 +77,10 @@ def test_lifecycle_and_check(client: TestClient, lab: LabFixture) -> None:
         json={"check_id": "fake.exit", "params": {"argv": ["true"], "expected_exit_code": 0}},
     )
     assert checked.status_code == 200 and checked.json()["passed"] is True
-    assert client.post(f"{base}/stop").json()["status"] == "stopped"
+    assert_check_response(checked.json())
+    stopped = client.post(f"{base}/stop").json()
+    assert_lab_document(stopped)
+    assert stopped["status"] == "stopped"
     conflict = client.post(f"{base}/stop")
     assert conflict.status_code == 409 and conflict.json()["code"] == "state-conflict"
     assert lab.labs.labs == {}
