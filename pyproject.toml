@@ -26,8 +26,19 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# The wheel ships contracts/ as package data (harness/contracts/), so an installed SDK
+# resolves them without the repository checkout (ADR-0018 s19). The repo top-level
+# contracts/ stays the single source: `sources` only rewrites the path inside the wheel
+# (an editable install keeps reading the checkout).
 [tool.hatch.build.targets.wheel]
-packages = ["harness", "domains"]
+only-include = ["harness", "domains", "contracts"]
+sources = { "contracts" = "harness/contracts" }
+
+# Apps built on the SDK (apps/<app>/, ADR-0018 s19) are workspace members with their own
+# pyproject.toml and tests; they depend on this package by name. No app exists yet, so
+# the glob matches nothing, which uv accepts.
+[tool.uv.workspace]
+members = ["apps/*"]
 
 [tool.ruff]
 line-length = 100

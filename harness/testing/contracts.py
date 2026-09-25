@@ -7,6 +7,10 @@ against these schemas with `validate()` below.
 
 Schemas are Draft 2020-12 and may reference each other with a local `$ref`
 resolved by `$id`, as long as they live under the same contracts directory.
+
+`CONTRACTS_DIR` is the directory `harness.core.contract_schemas.locate_contracts_dir`
+finds (`MORPHLOOP_CONTRACTS_DIR`, else the copy shipped in the installed package, else
+the repository checkout).
 """
 
 from __future__ import annotations
@@ -19,22 +23,14 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 from referencing import Registry, Resource
 
+from harness.core.contract_schemas import locate_contracts_dir
+
 
 class ContractViolation(AssertionError):
     """Raised when an instance fails to validate against a contract schema."""
 
 
-def _find_repo_root(start: Path) -> Path:
-    """Walk up from `start` looking for the repo root (marked by pyproject.toml)."""
-    for candidate in (start, *start.parents):
-        if (candidate / "pyproject.toml").is_file():
-            return candidate
-    raise ContractViolation(
-        f"could not locate repo root (no pyproject.toml found) walking up from {start}"
-    )
-
-
-CONTRACTS_DIR: Path = _find_repo_root(Path(__file__).resolve().parent) / "contracts"
+CONTRACTS_DIR: Path = locate_contracts_dir()
 
 
 def _resolve_contracts_dir(contracts_dir: Path | None) -> Path:

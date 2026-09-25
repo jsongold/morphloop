@@ -1,4 +1,4 @@
-"""Pack v2 Importer (#53): the SE pack imports; bad packs list every problem."""
+"""Pack v2 Importer (#53): the fixture pack imports; bad packs list every problem."""
 
 from __future__ import annotations
 
@@ -18,13 +18,20 @@ from harness.core.artifact_lab import LabArtifact
 from harness.core.pack.v2 import PackV2, PackV2ImportError, import_pack_v2, validators
 from harness.core.ports.json_types import JsonObject
 
-SE_PACK = Path(__file__).resolve().parents[3] / "contents" / "v2" / "software-engineering"
+PACK = (
+    Path(__file__).resolve().parents[2]
+    / "contracts"
+    / "fixtures"
+    / "pack-v2"
+    / "valid"
+    / "dns-pack"
+)
 
 
 @pytest.fixture
 def pack(tmp_path: Path) -> Path:
     dest = tmp_path / "pack"
-    shutil.copytree(SE_PACK, dest)
+    shutil.copytree(PACK, dest)
     return dest
 
 
@@ -44,11 +51,11 @@ def _problems(path: Path) -> str:
     return "\n".join(info.value.problems)
 
 
-def test_se_pack_imports() -> None:
-    pack = _import(SE_PACK)
+def test_pack_imports() -> None:
+    pack = _import(PACK)
     assert pack.pack_id == "software-engineering"
     assert pack.pack_hash.startswith("sha256:")
-    assert "network.dns.resolver" in pack.topic_ids
+    assert "network.dns.resolution" in pack.topic_ids
     assert set(pack.documents) == {
         "labels",
         "topics",
@@ -57,15 +64,15 @@ def test_se_pack_imports() -> None:
         "artifacts",
         "llm_roles",
     }
-    assert set(pack.llm_roles) == {"assistant", "generator", "judge", "schedule"}
+    assert set(pack.llm_roles) == {"assistant"}
     assert pack.llm_roles["assistant"].prompt_text.startswith("# assistant")
     with pytest.raises(TypeError):
         pack.topics[0]["id"] = "x"  # type: ignore[index]
 
 
 def test_hash_is_stable_and_content_bound(pack: Path) -> None:
-    first = _import(SE_PACK).pack_hash
-    assert _import(SE_PACK).pack_hash == first == _import(pack).pack_hash
+    first = _import(PACK).pack_hash
+    assert _import(PACK).pack_hash == first == _import(pack).pack_hash
     _edit(pack / "topics" / "network.json", lambda d: d.update(title="Networks"))
     assert _import(pack).pack_hash != first
 
@@ -83,7 +90,8 @@ def test_llm_role_missing_prompt_file_is_rejected(pack: Path) -> None:
 
 
 def test_duplicate_llm_role_name_is_rejected(pack: Path) -> None:
-    _edit(pack / "llm" / "generator.json", lambda d: d.update(role="assistant"))
+    shutil.copy(pack / "llm" / "assistant.json", pack / "llm" / "second.json")
+    _edit(pack / "manifest.json", lambda d: d["llm_roles"].append("llm/second.json"))
     assert "[llm_roles] llm role 'assistant' is declared 2 times" in _problems(pack)
 
 
@@ -93,14 +101,14 @@ def test_schema_error_names_the_file(pack: Path) -> None:
 
 
 def test_bad_label_and_duplicate_topic_are_reported_together(pack: Path) -> None:
-    drill = pack / "drills" / "dns-answer-nxdomain.json"
+    drill = pack / "drills" / "dns-record-choice.json"
     _edit(drill, lambda d: d["labels"].extend(["nope:unknown", "topic:missing"]))
     _edit(
         pack / "topics" / "network.json",
         lambda d: d["topics"].append({"id": "network.dns", "title": "Again"}),
     )
     problems = _problems(pack)
-    where = "[labels] drills/dns-answer-nxdomain.json"
+    where = "[labels] drills/dns-record-choice.json"
     assert f"{where}: label 'nope:unknown' not in the pack vocabulary" in problems
     assert "label 'topic:missing' topic id not in the topic tree" in problems
     assert "[topics] topic id 'network.dns' appears 2 times" in problems
@@ -134,12 +142,12 @@ def test_new_validator_module_is_registered(
     monkeypatch.setattr(validators, "__path__", [*validators.__path__, str(plugin_dir)])
     name = f"{validators.__name__}.zz_always_fails"
     try:
-        assert "[zz_always_fails] software-engineering rejected" in _problems(SE_PACK)
+        assert "[zz_always_fails] software-engineering rejected" in _problems(PACK)
     finally:
         sys.modules.pop(name, None)
 
 
-LAB = "artifacts/diagnose-dns-resolver-misconfiguration-lab.json"
+LAB = "artifacts/dns-broken-resolver-lab.json"
 
 
 def test_artifact_types_are_what_the_caller_passes(pack: Path) -> None:
@@ -163,7 +171,9 @@ def test_artifact_spec_is_validated_by_its_type_schema(pack: Path) -> None:
 def test_artifact_spec_is_validated_by_its_type_validator(pack: Path) -> None:
     _edit(pack / LAB, lambda d: d["spec"].update(allowed_fixtures=["dns.other"]))
     problems = _problems(pack)
-    assert f"{LAB}: environment fixture 'dns.resolver_lab' is not in allowed_fixtures" in problems
+    assert (
+        f"{LAB}: environment fixture 'dns.broken-resolver' is not in allowed_fixtures" in problems
+    )
 
 
 def test_validator_runs_only_on_a_schema_valid_spec_and_sees_the_pack(
@@ -174,22 +184,19 @@ def test_validator_runs_only_on_a_schema_valid_spec_and_sees_the_pack(
 
     class Picky(Artifact):
         type: ClassVar[str] = "diagram"
-        spec_schema: ClassVar[JsonObject] = {"type": "object", "required": ["title"]}
+        spec_schema: ClassVar[JsonObject] = {"type": "object", "required": ["actors"]}
 
         @classmethod
         def validate_spec(cls, spec: JsonObject, pack: PackV2) -> Iterable[str]:
             seen.append(pack.pack_id)
-            return [f"title {spec['title']!r} rejected"]
+            return [f"{len(spec['actors'])} actors rejected"]
 
     with pytest.raises(PackV2ImportError) as info:
         import_pack_v2(pack, artifact_types=[LabArtifact, Picky])
-    assert info.value.problems == (
-        "artifacts/dns-resolution-flow.json: title 'How ledger.corp.internal becomes an address'"
-        " rejected",
-    )
+    assert info.value.problems == ("artifacts/dns-resolution-flow.json: 3 actors rejected",)
     assert seen == ["software-engineering"]
-    _edit(pack / "artifacts" / "dns-resolution-flow.json", lambda d: d["spec"].pop("title"))
+    _edit(pack / "artifacts" / "dns-resolution-flow.json", lambda d: d["spec"].pop("actors"))
     seen.clear()
     with pytest.raises(PackV2ImportError) as info:
         import_pack_v2(pack, artifact_types=[LabArtifact, Picky])
-    assert "$.spec: 'title' is a required property" in info.value.problems[0] and not seen
+    assert "$.spec: 'actors' is a required property" in info.value.problems[0] and not seen

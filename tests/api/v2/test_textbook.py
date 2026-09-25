@@ -1,4 +1,4 @@
-"""`/v2/textbook` over the SE v2 pack, checked against contracts/openapi/v0.2 (#55)."""
+"""`/v2/textbook` over the fixture v2 pack, checked against contracts/openapi/v0.2 (#55)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api_harness import build_app  # noqa: E402
 
-SE_PACK = Path(__file__).resolve().parents[3] / "contents" / "v2" / "software-engineering"
+PACK = (
+    Path(__file__).resolve().parents[2]
+    / "contracts"
+    / "fixtures"
+    / "pack-v2"
+    / "valid"
+    / "dns-pack"
+)
 PATHS = load_merged_openapi_v2_spec()["paths"]
 
 
@@ -31,21 +38,21 @@ def _check(body: Any, url: str) -> None:
 @pytest.fixture(scope="module")
 def client() -> Any:
     app, _ = build_app()
-    app.state.pack_v2 = import_pack_v2(SE_PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    app.state.pack_v2 = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
     app.state.generated_documents = InMemoryGeneratedDocumentStore()
     with TestClient(app) as c:
         yield c
 
 
 def test_reading_list(client: TestClient) -> None:
-    res = client.get("/v2/textbook/docs", params={"topic_id": "network.dns.resolver"})
+    res = client.get("/v2/textbook/docs", params={"topic_id": "network.dns.resolution"})
     assert res.status_code == 200
     _check(res.json(), "/textbook/docs")
-    assert [d["id"] for d in res.json()["docs"]] == ["network.dns.resolver"]
+    assert [d["id"] for d in res.json()["docs"]] == ["dns-resolution"]
 
 
 def test_doc(client: TestClient) -> None:
-    res = client.get("/v2/textbook/docs/network.dns.lookup-path")
+    res = client.get("/v2/textbook/docs/dns-resolution")
     assert res.status_code == 200
     _check(res.json(), "/textbook/docs/{doc_id}")
     assert "origin:pack" in res.json()["labels"]

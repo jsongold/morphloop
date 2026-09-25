@@ -29,13 +29,20 @@ from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.ports.json_types import JsonObject
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
 
-SE_PACK = Path(__file__).resolve().parents[3] / "contents" / "v2" / "software-engineering"
+PACK = (
+    Path(__file__).resolve().parents[2]
+    / "contracts"
+    / "fixtures"
+    / "pack-v2"
+    / "valid"
+    / "dns-pack"
+)
 GENERATED: dict[str, Any] = {
     "id": "0b6f9a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
     "question": "What does `dig` print?",
     "expected": "The answer section.",
     "answer_mode": "text",
-    "labels": ["topic:network.dns.answers"],
+    "labels": ["topic:network.dns.records"],
 }
 
 
@@ -47,7 +54,7 @@ def _generated(body: JsonObject, labels: tuple[str, ...] = ()) -> GeneratedDocum
 
 @pytest.fixture
 def service() -> DrillService:
-    pack = import_pack_v2(SE_PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
     holdout = {**GENERATED, "id": "gen-holdout", "labels": ["sys:holdout"]}
     column_holdout = _generated({**GENERATED, "id": "gen-holdout-2"}, ("sys:holdout",))
     generated = [_generated(GENERATED), _generated(holdout), column_holdout]
@@ -63,17 +70,17 @@ def _answer(service: DrillService, store: InMemoryEventStoreV2, **kw: Any) -> An
 
 def test_pack_and_generated_items_are_peers_told_apart_by_label(service: DrillService) -> None:
     by_origin = {o: service.list_items([f"origin:{o}"]) for o in ("pack", "generated")}
-    assert len(by_origin["pack"]) == 5
+    assert len(by_origin["pack"]) == 3  # pack holdout items are served
     assert [i.id for i in by_origin["generated"]] == [GENERATED["id"]]
-    dns_answers = service.list_items(["topic:network.dns.answers"])
-    assert GENERATED["id"] in {i.id for i in dns_answers}
+    records = service.list_items(["topic:network.dns.records"])
+    assert GENERATED["id"] in {i.id for i in records}
     assert not {"gen-holdout", "gen-holdout-2"} & {i.id for i in service.list_items()}
 
 
 def test_learner_view_never_has_expected(service: DrillService) -> None:
     for item in service.list_items():
         assert "expected" not in item.for_learner()
-    assert service.get_item("dns-answer-nxdomain").for_learner()["choices"]
+    assert service.get_item("dns-record-choice").for_learner()["choices"]
     with pytest.raises(DrillItemNotFoundError):
         service.get_item("nope")
 
@@ -82,27 +89,25 @@ def test_answer_appends_event_and_view_once(service: DrillService) -> None:
     store = InMemoryEventStoreV2(ContractSchemas.load())
     event_id = str(uuid.uuid4())
     for _ in range(2):
-        event = _answer(
-            service, store, event_id=event_id, item_id="dns-answer-nxdomain", actual="`NXDOMAIN`"
-        )
+        event = _answer(service, store, event_id=event_id, item_id="dns-record-choice", actual="A")
     assert event.type == "drill.answered" and event.ws_id == "ws_1"
     assert event.payload == {
-        "item_id": "dns-answer-nxdomain",
+        "item_id": "dns-record-choice",
         "answer_mode": "choice",
-        "actual": "`NXDOMAIN`",
+        "actual": "A",
     }
     assert len(store.read(ws_id="ws_1")) == 1
     with store.transaction() as tx:
-        docs = DrillAnswersView.list(tx, key_prefix="ws_1/dns-answer-nxdomain/")
-    assert [d["actual"] for _, d in docs] == ["`NXDOMAIN`"]
+        docs = DrillAnswersView.list(tx, key_prefix="ws_1/dns-record-choice/")
+    assert [d["actual"] for _, d in docs] == ["A"]
 
 
 def test_answer_must_fit_the_answer_mode(service: DrillService) -> None:
     store = InMemoryEventStoreV2(ContractSchemas.load())
-    lab = "gen-diagnose-dns-resolver-misconfiguration-001"
+    lab = "dns-fix-resolver-lab"
     for kw in (
-        {"item_id": "dns-answer-nxdomain", "actual": "`FOO`"},
-        {"item_id": "dns-answer-nxdomain", "artifact_id": "art_1"},
+        {"item_id": "dns-record-choice", "actual": "FOO"},
+        {"item_id": "dns-record-choice", "artifact_id": "art_1"},
         {"item_id": lab, "actual": "fixed it"},
     ):
         with pytest.raises(AnswerMismatchError):
@@ -120,16 +125,13 @@ def _edit(path: Path, **changes: Any) -> None:
 
 def test_validator_checks_choices_and_artifact_ref(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
-    shutil.copytree(SE_PACK, pack)
-    _edit(pack / "drills" / "dns-answer-nxdomain.json", expected="`NOTAUTH`")
-    _edit(
-        pack / "drills" / "gen-diagnose-dns-resolver-misconfiguration-001.json",
-        artifact_ref="no-such-lab",
-    )
+    shutil.copytree(PACK, pack)
+    _edit(pack / "drills" / "dns-record-choice.json", expected="TXT")
+    _edit(pack / "drills" / "dns-fix-resolver-lab.json", artifact_ref="no-such-lab")
     with pytest.raises(PackV2ImportError) as info:
         import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
     problems = "\n".join(info.value.problems)
-    assert "[drill] drills/dns-answer-nxdomain.json: expected is not one of the choices" in problems
+    assert "[drill] drills/dns-record-choice.json: expected is not one of the choices" in problems
     assert "artifact_ref 'no-such-lab' is not an artifact of the pack" in problems
 
 
