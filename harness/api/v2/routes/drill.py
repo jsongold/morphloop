@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from harness.api.v2.deps import (
     EventIdDep,
@@ -42,8 +42,10 @@ DrillServiceDep = Annotated[DrillService, Depends(drill_service_of)]
 class AnswerRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    actual: str | None = None
-    artifact_id: str | None = None
+    # Mirrors the drill.answered payload schema so bad input is a 4xx here,
+    # not a contract failure (500) inside tx.append.
+    actual: Annotated[str, Field(min_length=1, max_length=20000)] | None = None
+    artifact_id: Annotated[str, Field(pattern=r"^art_[0-9A-Za-z]{1,64}$")] | None = None
 
 
 @router.get("/drills")

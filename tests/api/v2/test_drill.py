@@ -120,3 +120,13 @@ def test_answer_errors(client: Any) -> None:
     missing_ws = client.post(URL.replace("ws_1", "ws_2"), json={"actual": "`NXDOMAIN`"})
     assert missing_ws.status_code == 404
     assert client.post(URL, json={"actual": "`NXDOMAIN`", "user_id": "usr_x"}).status_code == 422
+
+
+def test_answer_values_outside_the_payload_schema_are_client_errors(client: Any) -> None:
+    # Regression (PR #82 review): these used to pass the route and fail the
+    # drill.answered contract inside tx.append, surfacing as 500.
+    assert client.post(URL, json={"actual": ""}).status_code == 422
+    assert client.post(URL, json={"actual": "x" * 20001}).status_code == 422
+    assert client.post(URL, json={"artifact_id": ""}).status_code == 422
+    assert client.post(URL, json={"artifact_id": "lab-1"}).status_code == 422
+    assert len(client.store.read(ws_id="ws_1")) == 1  # only ws.created
