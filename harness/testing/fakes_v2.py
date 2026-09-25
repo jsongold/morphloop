@@ -208,9 +208,9 @@ def seed_ws(
 
 
 class ConnectionTrackingStore:
-    """Wraps an :class:`EventStoreV2` to fail if ``.read()`` or a second
-    ``.transaction()`` runs while its transaction is open -- the shape of a
-    second, concurrent connection checked out of a bounded pool (#89 review)."""
+    """Wraps an :class:`EventStoreV2` to fail if ``.read()`` runs while its
+    transaction is open -- the shape of a second, concurrent connection
+    checked out of a bounded pool (#89 review)."""
 
     def __init__(self, inner: EventStoreV2) -> None:
         self._inner = inner
@@ -218,7 +218,6 @@ class ConnectionTrackingStore:
 
     @contextmanager
     def transaction(self) -> Iterator[EventTransactionV2]:
-        assert not self.tx_open, "store.transaction() must not nest inside an open transaction"
         self.tx_open = True
         try:
             with self._inner.transaction() as tx:

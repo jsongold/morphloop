@@ -1,7 +1,10 @@
 """A LabArtifactService over the SDK's in-memory fakes, shared by the lab tests.
 
-The store is a :class:`ConnectionTrackingStore`, so any test that reads or opens
-a second transaction while one is open fails (#103).
+The store is a :class:`SingleConnectionStore`: the SDK's tracking store (a
+``.read()`` while a transaction is open is a second pooled connection, #103)
+plus this app's stricter rule that a request never opens a second transaction
+either -- every lab route does its reads, replay check and append on the one
+request transaction.
 """
 
 from __future__ import annotations
@@ -24,6 +27,17 @@ from harness.testing.fakes import (
 )
 from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
 from swe.artifacts.lab import LabArtifactService
+
+
+class SingleConnectionStore(ConnectionTrackingStore):
+    """Also fails when a transaction opens while another is open."""
+
+    @contextmanager
+    def transaction(self) -> Iterator[EventTransactionV2]:
+        assert not self.tx_open, "store.transaction() must not nest inside an open transaction"
+        with super().transaction() as tx:
+            yield tx
+
 
 WS_ID = "ws_1"
 SESSION_ID = "ses_1"
@@ -62,7 +76,7 @@ class Clock:
 @dataclass
 class LabFixture:
     service: LabArtifactService
-    store: ConnectionTrackingStore
+    store: SingleConnectionStore
     labs: FakeLabRuntime
     terminals: FakeTerminalBridge
     clock: Clock
@@ -79,7 +93,7 @@ class LabFixture:
 
 def build() -> LabFixture:
     clock = Clock()
-    store = ConnectionTrackingStore(InMemoryEventStoreV2(ContractSchemas.load(), now=clock))
+    store = SingleConnectionStore(InMemoryEventStoreV2(ContractSchemas.load(), now=clock))
     seed_ws(store, WS_ID, user_id=USER_ID, session_id=SESSION_ID)
     adapters = DomainAdapterRegistry()
     adapters.register(

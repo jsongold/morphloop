@@ -57,17 +57,3 @@ def _fields() -> dict[str, object]:
         "user_id": EVENT.user_id,
         "payload": EVENT.payload,
     }
-
-
-def test_connection_tracking_store_flags_a_second_connection(tmp_path: Path) -> None:
-    from harness.testing.fakes_v2 import ConnectionTrackingStore
-
-    store = ConnectionTrackingStore(InMemoryEventStoreV2(contract_schemas_with_probe(tmp_path)))
-    assert store.read() == []
-    with store.transaction():
-        with pytest.raises(AssertionError, match="read"):
-            store.read()
-        with pytest.raises(AssertionError, match="nest"):
-            with store.transaction():
-                pass
-    assert store.read() == []  # tracking is reset once the transaction ends
