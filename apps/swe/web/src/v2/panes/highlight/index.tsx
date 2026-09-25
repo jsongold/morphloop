@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { del, get, newIdempotencyKey, post } from "@/v2/api";
 import { useWorkspace } from "@/v2/state";
 import type { StoredEvent } from "@/v2/types";
 import { anchorFor, chars, type Anchor } from "./anchor";
+import { highlightKey, keepsDraft, nearBottom, popupTop, threadTarget, type PendingHighlight } from "./behavior";
 
 type Highlight = { highlight_id: string; anchor: Anchor };
 type Message = { message_id: string; role: "learner" | "assistant"; text: string };
@@ -77,21 +78,29 @@ export default function HighlightPane() {
   const [popup, setPopup] = useState<Popup | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ranges = useRef(new Map<string, Range>());
   const highlightsRef = useRef(highlights);
+  const openRequest = useRef(0);
+  const activeThread = useRef<string | null>(null);
+  const pendingHighlight = useRef<PendingHighlight | null>(null);
   const pendingMessage = useRef<{ threadId: string; text: string; key: string } | null>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  const followMessages = useRef(true);
 
   useEffect(() => { highlightsRef.current = highlights; }, [highlights]);
 
   useEffect(() => {
     if (!wsId) return;
     let cancelled = false;
+    const requests = openRequest;
     get<{ highlights: Highlight[] }>(`/ws/${wsId}/highlights`).then(
       ({ highlights }) => { if (!cancelled) setHighlights(highlights); },
       (error: unknown) => { if (!cancelled) setError(errorText(error)); },
     );
-    return () => { cancelled = true; setHighlights([]); setSelection(null); setPopup(null); };
+    return () => { cancelled = true; requests.current++; activeThread.current = null; setOpening(false); setHighlights([]); setSelection(null); setPopup(null); };
   }, [wsId]);
 
   useEffect(() => {
@@ -110,24 +119,43 @@ export default function HighlightPane() {
 
   async function open(highlight: Highlight, x: number, y: number) {
     if (!wsId) return;
+    const request = ++openRequest.current;
     setSelection(null);
     window.getSelection()?.removeAllRanges();
     setError(null);
-    setBusy(true);
+    setOpening(true);
     try {
       // No v2 thread-list endpoint: retain the creation key so POST replays on reopen.
       const storageKey = `morphloop:v2:thread:${wsId}:${highlight.highlight_id}`;
       const key = localStorage.getItem(storageKey) ?? newIdempotencyKey();
       localStorage.setItem(storageKey, key);
       const { body } = await post<StoredEvent<{ thread_id: string }>>(`/ws/${wsId}/threads`, {
-        target: { kind: "textbook_block", doc_id: highlight.anchor.doc_id, block_id: highlight.anchor.block_id, highlight_id: highlight.highlight_id },
+        target: threadTarget(highlight.highlight_id, highlight.anchor),
       }, key);
       const threadId = body.payload.thread_id;
       const { messages } = await get<{ messages: Message[] }>(`/ws/${wsId}/threads/${threadId}/messages`);
+      if (request !== openRequest.current) return;
+      if (!keepsDraft(popup?.threadId ?? null, threadId)) setDraft("");
+      followMessages.current = true;
+      activeThread.current = threadId;
       setPopup({ highlight, x, y, threadId, messages });
-    } catch (error) { setError(errorText(error)); }
-    finally { setBusy(false); }
+    } catch (error) { if (request === openRequest.current) setError(errorText(error)); }
+    finally { if (request === openRequest.current) setOpening(false); }
   }
+
+  useLayoutEffect(() => {
+    if (!popup) return;
+    const place = () => {
+      if (popupRef.current) popupRef.current.style.top = `${popupTop(popup.y, window.innerHeight, popupRef.current.offsetHeight)}px`;
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [popup]);
+
+  useLayoutEffect(() => {
+    if (popup && followMessages.current && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [popup]);
 
   useEffect(() => {
     const onSelection = () => setSelection(readSelection());
@@ -157,11 +185,14 @@ export default function HighlightPane() {
     setBusy(true);
     setError(null);
     try {
-      const { body } = await post<Highlight>(`/ws/${wsId}/highlights`, { anchor: selected.anchor });
+      const pending = highlightKey(pendingHighlight.current, wsId, selected.anchor, newIdempotencyKey);
+      pendingHighlight.current = pending;
+      const { body } = await post<Highlight>(`/ws/${wsId}/highlights`, { anchor: selected.anchor }, pending.key);
+      pendingHighlight.current = null;
       setHighlights((items) => [...items, body]);
       setSelection(null);
       window.getSelection()?.removeAllRanges();
-      if (ask) await open(body, selected.x, selected.y);
+      if (ask) void open(body, selected.x, selected.y);
     } catch (error) { setError(errorText(error)); }
     finally { setBusy(false); }
   }
@@ -192,7 +223,7 @@ export default function HighlightPane() {
       pendingMessage.current = null;
       setPopup((current) => current && current.threadId === popup.threadId
         ? { ...current, messages: [...current.messages, body.sent, body.reply] } : current);
-      setDraft("");
+      if (activeThread.current === popup.threadId) setDraft("");
     } catch (error) { setError(errorText(error)); }
     finally { setBusy(false); }
   }
@@ -212,10 +243,11 @@ export default function HighlightPane() {
           <button className="link" disabled={busy} aria-label={`Delete highlight: ${highlight.anchor.selector[0].exact}`} onClick={() => void remove(highlight)}>Delete</button>
         </li>)}</ul>
       </section>}
+      {opening && <p className="muted" role="status">Opening chat…</p>}
       {error && <p className="error" role="alert">{error}</p>}
-      {popup && <div className="popup-chat" role="dialog" aria-label="Chat about this highlight" style={{ left: Math.min(Math.max(8, popup.x), Math.max(8, window.innerWidth - 328)), top: Math.min(Math.max(8, popup.y), Math.max(8, window.innerHeight - 100)) }}>
+      {popup && <div ref={popupRef} className="popup-chat" role="dialog" aria-label="Chat about this highlight" style={{ left: Math.min(Math.max(8, popup.x), Math.max(8, window.innerWidth - 328)), top: 8, overflowY: "auto" }}>
         <div className="popup-chat-head"><blockquote>{popup.highlight.anchor.selector[0].exact}</blockquote><button className="popup-chat-close" aria-label="Close" onClick={() => setPopup(null)}>×</button></div>
-        <div className="chat-log">{popup.messages.map((message) => <p className={`chat-msg ${message.role}`} key={message.message_id}>{message.text}</p>)}</div>
+        <div ref={logRef} className="chat-log" onScroll={(event) => { const el = event.currentTarget; followMessages.current = nearBottom(el.scrollTop, el.clientHeight, el.scrollHeight); }}>{popup.messages.map((message) => <p className={`chat-msg ${message.role}`} key={message.message_id}>{message.text}</p>)}</div>
         <form className="chat-form" onSubmit={(event) => void send(event)}><textarea autoFocus aria-label="Message" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setPopup(null); }} /><button disabled={busy || !draft.trim()}>Send</button></form>
       </div>}
     </>
