@@ -1,5 +1,5 @@
 .venv
-web/
+apps/swe/web/
 node_modules
 .git
 docs
