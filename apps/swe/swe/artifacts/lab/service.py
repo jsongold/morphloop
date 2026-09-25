@@ -8,8 +8,11 @@ The request-scoped methods (``get`` / ``start`` / ``reset`` / ``stop`` / ``check
 take the request's own :class:`EventTransactionV2`: replay checks, view reads and
 the append all happen on that one connection, and the route resolves the ws
 through the ``ws`` view on it first (#103). A resent event id returns the stored
-result instead of acting twice. The store is kept for the two callers without a
-request transaction: the terminal recording and the idle reaper.
+result instead of acting twice -- only for the same learner and ws: a stored
+event with another owner, type or subject is a reused key (409), never a
+replay, so one learner's key can not read another's artifact (#105 review).
+The store is kept for the two callers without a request transaction: the
+terminal recording and the idle reaper.
 
 A lab lives until an explicit stop or, when its spec declares ``idle_seconds``,
 until its ws has had no non-system event for that long
@@ -162,9 +165,11 @@ class LabArtifactService:
         ``session_id`` is the ws's session, resolved by the caller (``ws_or_404``).
         The lab is destroyed again if its event cannot be appended.
         """
-        replay = self._replay(tx, event_id, "artifact.started", {"spec_id": spec_id})
+        scope: Scope = (user_id, session_id, ws_id)
+        owner = (user_id, ws_id)
+        replay = self._replay(tx, event_id, "artifact.started", owner, {"spec_id": spec_id})
         if replay is not None:
-            return self.get(tx, str(replay.payload["artifact_id"]))
+            return self.get(tx, str(replay.payload["artifact_id"]), user_id=user_id, ws_id=ws_id)
         spec = specs.get(spec_id)
         if spec is None:
             raise _not_found(f"artifact spec {spec_id!r} not found")
@@ -181,7 +186,6 @@ class LabArtifactService:
             "spec_id": spec_id,
             "lab": self._lab_payload(info, artifact),
         }
-        scope: Scope = (user_id, session_id, ws_id)
         try:
             self._append(tx, scope, event_id, "artifact.started", actor, payload)
         except Exception:
@@ -196,12 +200,13 @@ class LabArtifactService:
         artifact_id: str,
         *,
         event_id: str,
-        user_id: str | None = None,
-        ws_id: str | None = None,
+        user_id: str,
+        ws_id: str,
     ) -> JsonObject:
         """Replace the lab with a fresh one from the same spec (``artifact.reset``)."""
-        if self._replay(tx, event_id, "artifact.reset", {"artifact_id": artifact_id}):
-            return self.get(tx, artifact_id)
+        expect = {"artifact_id": artifact_id}
+        if self._replay(tx, event_id, "artifact.reset", (user_id, ws_id), expect):
+            return self.get(tx, artifact_id, user_id=user_id, ws_id=ws_id)
         document = self._running(tx, artifact_id, user_id, ws_id)
         artifact, old = self._lab(document, specs)
         new = self.new_id("lab")
@@ -214,7 +219,7 @@ class LabArtifactService:
             "lab": self._lab_payload(info, artifact),
         }
         self._append(tx, _scope_of(document), event_id, "artifact.reset", "learner", payload)
-        return self.get(tx, artifact_id)
+        return self.get(tx, artifact_id, user_id=user_id, ws_id=ws_id)
 
     def stop(
         self,
@@ -222,14 +227,15 @@ class LabArtifactService:
         artifact_id: str,
         *,
         event_id: str,
-        user_id: str | None = None,
-        ws_id: str | None = None,
+        user_id: str,
+        ws_id: str,
         reason: str = "requested",
         actor: ActorV2 = "learner",
     ) -> JsonObject:
         """Record ``artifact.stopped``, then destroy the lab (best effort; lifetime backstops)."""
-        if self._replay(tx, event_id, "artifact.stopped", {"artifact_id": artifact_id}):
-            return self.get(tx, artifact_id)
+        expect = {"artifact_id": artifact_id, "reason": reason}
+        if self._replay(tx, event_id, "artifact.stopped", (user_id, ws_id), expect):
+            return self.get(tx, artifact_id, user_id=user_id, ws_id=ws_id)
         document = self._running(tx, artifact_id, user_id, ws_id)
         lab = document["lab"]
         assert isinstance(lab, Mapping)
@@ -239,7 +245,7 @@ class LabArtifactService:
             self.labs.destroy(str(lab["lab_instance_id"]))
         except LabRuntimeError:
             pass
-        return self.get(tx, artifact_id)
+        return self.get(tx, artifact_id, user_id=user_id, ws_id=ws_id)
 
     def check(
         self,
@@ -250,13 +256,13 @@ class LabArtifactService:
         params: JsonObject,
         *,
         event_id: str,
-        user_id: str | None = None,
-        ws_id: str | None = None,
+        user_id: str,
+        ws_id: str,
         actor: ActorV2 = "learner",
     ) -> JsonObject:
         """Run one of the spec's ``allowed_checks`` against the lab (``artifact.checked``)."""
         expect = {"artifact_id": artifact_id, "check_id": check_id}
-        replay = self._replay(tx, event_id, "artifact.checked", expect)
+        replay = self._replay(tx, event_id, "artifact.checked", (user_id, ws_id), expect)
         if replay is not None:
             return replay.payload
         document = self._running(tx, artifact_id, user_id, ws_id)
@@ -304,7 +310,15 @@ class LabArtifactService:
                 event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{artifact_id}:idle-stop"))
                 try:
                     with self.store.transaction() as tx:
-                        self.stop(tx, artifact_id, event_id=event_id, reason="idle", actor="system")
+                        self.stop(
+                            tx,
+                            artifact_id,
+                            event_id=event_id,
+                            user_id=str(document["user_id"]),
+                            ws_id=str(document["ws_id"]),
+                            reason="idle",
+                            actor="system",
+                        )
                 except ArtifactError:
                     continue  # another worker stopped it first
                 stopped.append(artifact_id)
@@ -391,13 +405,28 @@ class LabArtifactService:
 
     @staticmethod
     def _replay(
-        tx: EventTransactionV2, event_id: str, event_type: str, expect: Mapping[str, str]
+        tx: EventTransactionV2,
+        event_id: str,
+        event_type: str,
+        owner: tuple[str, str],
+        expect: Mapping[str, str],
     ) -> StoredEventV2 | None:
-        """The stored event for a resent ``event_id`` (idempotency), or ``None``."""
+        """The stored event for a resent ``event_id`` (idempotency), or ``None``.
+
+        A resend is the same learner and ws (``owner`` = ``(user_id, ws_id)``),
+        event type and subject (``expect``); anything else stored
+        under the id is a reused key (409). The full candidate can not be
+        compared here (``replay_or_conflict``): the payload holds what acting
+        produces (a new artifact or lab id, a check's observation).
+        """
         event = tx.get(event_id)
         if event is None:
             return None
-        if event.type != event_type or any(event.payload.get(k) != v for k, v in expect.items()):
+        if (
+            (event.user_id, event.ws_id) != owner
+            or event.type != event_type
+            or any(event.payload.get(k) != v for k, v in expect.items())
+        ):
             raise _key_reused(event_id)
         return event
 

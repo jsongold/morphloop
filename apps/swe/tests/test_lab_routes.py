@@ -152,3 +152,48 @@ def test_terminal_socket_is_scoped_to_the_learner(
             error = socket.receive_json()
             validate(error, WS_MESSAGE_SCHEMA)
             assert error["type"] == "error" and error["payload"]["code"] == "not-found"
+
+
+def _as_other_learner(client: TestClient, lab: LabFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    seed_ws(lab.store, "ws_other", user_id="usr_other", session_id="ses_other")
+    monkeypatch.setenv("MORPHLOOP_USER_ID", "usr_other")
+
+
+def _assert_conflict_without_leak(response: object, artifact_id: str) -> None:
+    assert response.status_code == 409, response.text  # type: ignore[attr-defined]
+    body = response.json()  # type: ignore[attr-defined]
+    assert body["code"] == "idempotency-key-reused"
+    assert artifact_id not in response.text and "lab_instance_id" not in response.text  # type: ignore[attr-defined]
+
+
+def test_another_learner_reusing_the_start_key_gets_409_and_nothing_of_the_artifact(
+    client: TestClient, lab: LabFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = {"Idempotency-Key": str(uuid.uuid4())}
+    mine = client.post(f"/v2/ws/{WS_ID}/artifacts", json={"spec_id": SPEC_ID}, headers=key)
+    artifact_id = str(mine.json()["artifact_id"])
+    _as_other_learner(client, lab, monkeypatch)
+    # Own ws: the key is another learner's -> 409. The first learner's ws -> 404
+    # (ws_or_404 runs before anything else). Neither leaks the artifact.
+    theirs = client.post("/v2/ws/ws_other/artifacts", json={"spec_id": SPEC_ID}, headers=key)
+    _assert_conflict_without_leak(theirs, artifact_id)
+    on_mine = client.post(f"/v2/ws/{WS_ID}/artifacts", json={"spec_id": SPEC_ID}, headers=key)
+    assert on_mine.status_code == 404 and artifact_id not in on_mine.text
+    assert len(lab.labs.labs) == 1
+
+
+@pytest.mark.parametrize("action", ["stop", "reset", "check"])
+def test_another_learner_reusing_a_lifecycle_key_gets_409(
+    client: TestClient, lab: LabFixture, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    artifact_id = _start(client)
+    key = {"Idempotency-Key": str(uuid.uuid4())}
+    body = {"check_id": "fake.exit", "params": {"argv": ["true"], "expected_exit_code": 0}}
+    mine = client.post(f"/v2/ws/{WS_ID}/artifacts/{artifact_id}/{action}", json=body, headers=key)
+    assert mine.status_code == 200, mine.text
+    _as_other_learner(client, lab, monkeypatch)
+    for ws_id in ("ws_other", WS_ID):
+        theirs = client.post(
+            f"/v2/ws/{ws_id}/artifacts/{artifact_id}/{action}", json=body, headers=key
+        )
+        _assert_conflict_without_leak(theirs, artifact_id)

@@ -68,15 +68,25 @@ def test_start_reset_stop() -> None:
     assert started["session_id"] == SESSION_ID
 
     with f.tx() as tx:
-        reset = f.service.reset(tx, SPECS, artifact_id, event_id=new_key(), ws_id=WS_ID)
+        reset = f.service.reset(
+            tx, SPECS, artifact_id, event_id=new_key(), user_id=USER_ID, ws_id=WS_ID
+        )
     second = _lab_instance(reset)
     assert second != first and list(f.labs.labs) == [second]
 
     with f.tx() as tx:
-        stopped = f.service.stop(tx, artifact_id, event_id=new_key(), ws_id=WS_ID)
+        stopped = f.service.stop(tx, artifact_id, event_id=new_key(), user_id=USER_ID, ws_id=WS_ID)
     assert stopped["status"] == "stopped" and f.labs.labs == {}
     assert f.types()[1:] == ["artifact.started", "artifact.reset", "artifact.stopped"]
-    assert _status(f, lambda tx: f.service.reset(tx, SPECS, artifact_id, event_id=new_key())) == 409
+    assert (
+        _status(
+            f,
+            lambda tx: f.service.reset(
+                tx, SPECS, artifact_id, event_id=new_key(), user_id=USER_ID, ws_id=WS_ID
+            ),
+        )
+        == 409
+    )
 
 
 def test_resent_event_id_does_not_act_twice() -> None:
@@ -100,18 +110,24 @@ def test_resent_event_id_does_not_act_twice() -> None:
     artifact_id = str(first["artifact_id"])
     stop_key = new_key()
     with f.tx() as tx:
-        f.service.stop(tx, artifact_id, event_id=stop_key, ws_id=WS_ID)
+        f.service.stop(tx, artifact_id, event_id=stop_key, user_id=USER_ID, ws_id=WS_ID)
     with f.tx() as tx:
-        resent = f.service.stop(tx, artifact_id, event_id=stop_key, ws_id=WS_ID)
+        resent = f.service.stop(tx, artifact_id, event_id=stop_key, user_id=USER_ID, ws_id=WS_ID)
     assert resent["status"] == "stopped"
-    assert _status(f, lambda tx: f.service.stop(tx, artifact_id, event_id=key, ws_id=WS_ID)) == 409
+    assert (
+        _status(
+            f,
+            lambda tx: f.service.stop(tx, artifact_id, event_id=key, user_id=USER_ID, ws_id=WS_ID),
+        )
+        == 409
+    )
 
 
 def test_view_rebuilds_from_events() -> None:
     f = build()
     artifact_id = start(f)
     with f.tx() as tx:
-        f.service.stop(tx, artifact_id, event_id=new_key())
+        f.service.stop(tx, artifact_id, event_id=new_key(), user_id=USER_ID, ws_id=WS_ID)
     events = f.store.read()
     with f.tx() as tx:
         before = ArtifactView.get(tx, artifact_id)
@@ -143,14 +159,32 @@ def test_check_runs_only_allowed_checks_in_the_lab() -> None:
     artifact_id = start(f)
     params: dict[str, Any] = {"argv": ["true"], "expected_exit_code": 0}
     with f.tx() as tx:
-        result = f.service.check(tx, SPECS, artifact_id, "fake.exit", params, event_id=new_key())
+        result = f.service.check(
+            tx,
+            SPECS,
+            artifact_id,
+            "fake.exit",
+            params,
+            event_id=new_key(),
+            user_id=USER_ID,
+            ws_id=WS_ID,
+        )
     assert result["passed"] is True and result["check_id"] == "fake.exit"
     assert f.labs.exec_calls[-1][1].argv == ("true",)
     assert f.types()[-1] == "artifact.checked"
 
     for check_id, bad in (("fake.other", {}), ("fake.exit", {"argv": "true"})):
         with pytest.raises(ArtifactError) as err, f.tx() as tx:
-            f.service.check(tx, SPECS, artifact_id, check_id, bad, event_id=new_key())
+            f.service.check(
+                tx,
+                SPECS,
+                artifact_id,
+                check_id,
+                bad,
+                event_id=new_key(),
+                user_id=USER_ID,
+                ws_id=WS_ID,
+            )
         assert err.value.status == 422
 
 
@@ -171,7 +205,16 @@ def test_failed_check_is_an_observation() -> None:
     artifact_id = start(f)
     params: dict[str, Any] = {"argv": ["false"], "expected_exit_code": 0}
     with f.tx() as tx:
-        checked = f.service.check(tx, SPECS, artifact_id, "fake.exit", params, event_id=new_key())
+        checked = f.service.check(
+            tx,
+            SPECS,
+            artifact_id,
+            "fake.exit",
+            params,
+            event_id=new_key(),
+            user_id=USER_ID,
+            ws_id=WS_ID,
+        )
     assert checked["passed"] is False
 
 

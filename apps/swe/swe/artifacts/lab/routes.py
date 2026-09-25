@@ -127,12 +127,9 @@ def _run(
     return JSONResponse(to_plain_json(result), status_code=status_code)
 
 
-def _session_of(tx: EventTransactionV2, ws_id: str, user_id: str, event_id: str) -> str | None:
-    """The ws's session for a new start; a resend takes it from the stored event, so
-    the ws lookup (404 for another learner's ws) only runs for a new request."""
-    existing = tx.get(event_id)
-    if existing is not None:
-        return existing.session_id
+def _session_of(tx: EventTransactionV2, ws_id: str, user_id: str) -> str | None:
+    """The ws's session; 404 unless the ws is this learner's. Always runs first,
+    resend or not: the learner's ws is the boundary, not the event id."""
     session_id = ws_or_404(tx, ws_id, user_id=user_id)["session_id"]
     return None if session_id is None else str(session_id)
 
@@ -148,7 +145,7 @@ def start_artifact(
     tx: EventTransactionV2Dep,
 ) -> JSONResponse:
     specs = lab_specs(pack)
-    session_id = _session_of(tx, ws_id, user_id, event_id)
+    session_id = _session_of(tx, ws_id, user_id)
     return _run(
         request,
         lambda s: s.start(
