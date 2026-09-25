@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, ClassVar
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
-from harness.core.ports.json_types import JsonObject, to_plain_object
+from harness.core.ports.json_types import JsonObject, PlainJson, to_plain_json, to_plain_object
 
 if TYPE_CHECKING:
     from harness.core.pack.v2.importer import PackV2
@@ -40,6 +40,10 @@ _REGISTRY: dict[str, type[Artifact]] = {}
 
 class UnknownArtifactTypeError(LookupError):
     """No artifact subclass is registered under the requested type name."""
+
+
+class ArtifactSpecNotFoundError(LookupError):
+    """No artifact spec in the loaded pack has the requested id."""
 
 
 # No slots on the base: zero-arg super() in __init_subclass__ breaks on a slots dataclass.
@@ -87,6 +91,34 @@ class Artifact:
     def validate_spec(cls, spec: JsonObject, pack: PackV2) -> Iterable[str]:
         """Problems of a schema-valid ``spec`` that need the whole pack; none by default."""
         return ()
+
+    @classmethod
+    def learner_view(cls, spec: JsonObject) -> JsonObject:
+        """The part of a validated spec safe to show before starting the artifact."""
+        return spec
+
+
+def learner_artifact_spec(
+    pack: PackV2, spec_id: str, artifact_types: Iterable[type[Artifact]]
+) -> dict[str, PlainJson]:
+    """Find a loaded spec and let its registered type select learner-visible fields."""
+    for doc in pack.documents["artifacts"].values():
+        if doc["id"] == spec_id:
+            types = {cls.type: cls for cls in artifact_types}
+            type_name = str(doc["type"])
+            cls = types.get(type_name)
+            if cls is None:
+                raise UnknownArtifactTypeError(f"artifact type {type_name!r} is not registered")
+            spec = doc["spec"]
+            if not isinstance(spec, Mapping):
+                raise TypeError("validated artifact spec must be an object")
+            return {
+                "id": str(doc["id"]),
+                "type": type_name,
+                "labels": to_plain_json(doc["labels"]),
+                "spec": to_plain_object(cls.learner_view(spec)),
+            }
+    raise ArtifactSpecNotFoundError(f"artifact spec {spec_id!r} not found")
 
 
 def registered_artifact_types() -> Mapping[str, type[Artifact]]:
