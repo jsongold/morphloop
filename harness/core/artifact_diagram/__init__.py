@@ -2,7 +2,8 @@
 
 A ``type: "diagram"`` :class:`~harness.core.artifact.Artifact` subclass. Its
 ``spec`` is exactly the pack artifact-spec's ``spec`` object (validated at
-import time by :mod:`harness.core.pack.v2.validators.diagram`): the diagram is
+import time by ``pack/v2/diagram-spec.json`` and
+:mod:`harness.core.pack.v2.validators.diagram`): the diagram is
 teaching content, not a withheld answer, so there is nothing to filter before
 showing it and no client capability is required to render it.
 """
