@@ -86,6 +86,17 @@ def test_lifecycle_and_check(client: TestClient, lab: LabFixture) -> None:
     assert lab.labs.labs == {}
 
 
+def test_lab_spec_hides_fixture_and_check_internals(client: TestClient) -> None:
+    response = client.get(f"/v2/artifact-specs/{SPEC_ID}")
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": SPEC_ID,
+        "type": "lab",
+        "labels": SPEC["labels"],
+        "spec": {},
+    }
+
+
 def test_start_is_idempotent_and_needs_no_ws_lookup_on_resend(
     client: TestClient, lab: LabFixture
 ) -> None:
