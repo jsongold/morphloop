@@ -58,10 +58,10 @@ def _html_text(html: str) -> str:
     return "".join(parser.parts).strip()
 
 
-def _paragraph(token: Token, body: str) -> str | None:
+def _paragraph(token: Token, source_lines: Sequence[str]) -> str | None:
     """Inline text without directive lines; ``None`` if every line is a directive."""
     lines = list(inline_lines(token.children or ()))
-    raws = raw_line_texts(body, token)
+    raws = raw_line_texts(source_lines, token)
     kept = [
         _inline(line)
         for line, raw in zip(lines, raws, strict=True)
@@ -85,9 +85,10 @@ def _inline(children: Sequence[Token]) -> str:
 def block_plaintext(body: str) -> str:
     """The plaintext of one block body (CommonMark)."""
     chunks: list[str] = []
+    source_lines = body.splitlines()
     for token in MD.parse(body):
         if token.type == "inline":
-            if (text := _paragraph(token, body)) is not None:
+            if (text := _paragraph(token, source_lines)) is not None:
                 chunks.append(text)
         elif token.type in ("fence", "code_block"):
             chunks.append(token.content.removesuffix("\n"))

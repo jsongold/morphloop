@@ -51,12 +51,46 @@ def test_se_pack_directives_resolve() -> None:
             "::artifact\\{type=diagram ref=dns-resolution-flow}",
             "malformed directive",
         ),
+        (
+            "> ::artifact{type=diagram ref=missing}",
+            "artifact 'missing' is not in the pack",
+        ),
+        (
+            "- ::artifact{type=diagram ref=missing}",
+            "artifact 'missing' is not in the pack",
+        ),
+        (
+            "# ::artifact{type=diagram ref=missing}",
+            "artifact 'missing' is not in the pack",
+        ),
+        (
+            "Try `\nx\ny` code.\n::artifact{type=diagram ref=missing}",
+            "artifact 'missing' is not in the pack",
+        ),
     ],
 )
 def test_bad_directive_is_refused(tmp_path: Path, body: str, expected: str) -> None:
     problems = _problems_with_body(tmp_path, body)
     assert f"{DOC}#diagram: " in problems
     assert expected in problems
+
+
+def test_text_lines_splits_source_once_per_body() -> None:
+    """``text_lines`` must not re-split the body once per paragraph (#94 perf)."""
+    from harness.core.pack.v2.validators.textbook import text_lines
+
+    calls = 0
+    real_splitlines = str.splitlines
+
+    class _CountingStr(str):
+        def splitlines(self, *args: object, **kwargs: object) -> list[str]:
+            nonlocal calls
+            calls += 1
+            return real_splitlines(self, *args, **kwargs)
+
+    body = _CountingStr("\n\n".join(f"Paragraph {i}." for i in range(20)))
+    assert list(text_lines(body)) == [f"Paragraph {i}." for i in range(20)]
+    assert calls <= 1
 
 
 def test_entity_encoded_lookalike_is_not_a_directive(tmp_path: Path) -> None:

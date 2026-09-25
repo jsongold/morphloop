@@ -11,8 +11,11 @@ Directive-ness is decided from the line's literal source text (found via the inl
 token's ``map`` line range, not from decoded/rendered content): an escaped brace
 (``::artifact\\{...}``) or an HTML entity (``&#58;&#58;artifact{...}``) can decode to
 something that *looks* like a directive, but the raw source never reads
-``::artifact{...}`` there, so it is plain text, not a directive (:func:`raw_line_texts`;
-shared with :mod:`harness.core.textbook.plaintext` so both agree).
+``::artifact{...}`` there, so it is plain text, not a directive. A leading
+blockquote/list/heading marker is stripped from that literal text first, since
+CommonMark always opens (or continues) one of those when a line starts with its
+marker, so removing it is unambiguous (:func:`raw_line_texts`; shared with
+:mod:`harness.core.textbook.plaintext` so both agree).
 Block ids are unique within a doc and doc ids are unique across the pack.
 (Topic coverage of textbook docs is checked by :mod:`.topics`.)
 """
@@ -49,29 +52,57 @@ def inline_lines(children: Sequence[Token]) -> Iterator[list[Token]]:
     yield line
 
 
-def raw_line_texts(body: str, token: Token) -> list[str | None]:
-    """Literal (undecoded) source text of an inline token's split lines, stripped.
+_BLOCK_PREFIX = re.compile(r"^(?:>[ \t]?|[-*+][ \t]+|\d{1,9}[.)][ \t]+|#{1,6}[ \t]+)")
+"""A blockquote/bullet/ordered-list/ATX-heading marker, always at a line's start."""
+
+
+def _strip_block_prefix(text: str) -> str:
+    """Strip leading blockquote/list/heading markers (repeated, for nesting): any of
+    these at a line's start unambiguously opens or continues that construct in
+    CommonMark, so removing it recovers the literal displayed-paragraph text."""
+    while match := _BLOCK_PREFIX.match(text):
+        text = text[match.end() :]
+    return text
+
+
+def raw_line_texts(source_lines: Sequence[str], token: Token) -> list[str | None]:
+    """Literal (undecoded) source text of an inline token's split lines, with any
+    blockquote/list/heading prefix stripped, so ``::artifact`` can be told apart from
+    an escape/entity that merely decodes to look like one.
 
     One entry per line yielded by :func:`inline_lines`, aligned by index; ``None`` for
-    a line that cannot be read 1:1 off the raw source because a multiline token (e.g.
-    a code span whose backticks are on other lines) swallowed a line break inside this
-    paragraph without producing a soft/hard break.
+    a line that cannot be read off the raw source because a multiline token (e.g. a
+    code span whose backticks are on other lines) swallowed one or more line breaks
+    without producing a soft/hard break. Lines strictly before the first such token and
+    strictly after the last are still mapped, each from its own end of the range.
     """
     lines = list(inline_lines(token.children or ()))
     start, end = token.map or (0, 0)
-    if end - start != len(lines):
-        return [None] * len(lines)
-    source = body.splitlines()
-    return [source[start + i].strip() for i in range(len(lines))]
+    n = len(lines)
+    if end - start == n:
+        return [_strip_block_prefix(source_lines[start + i].strip()) for i in range(n)]
+
+    multiline_capable = {"code_inline", "html_inline"}
+    is_complex = [any(t.type in multiline_capable for t in line) for line in lines]
+    if not any(is_complex):
+        return [None] * n  # unreachable (would imply end - start == n), kept for safety
+    first, last = is_complex.index(True), len(is_complex) - 1 - is_complex[::-1].index(True)
+    result: list[str | None] = [None] * n
+    for i in range(first):
+        result[i] = _strip_block_prefix(source_lines[start + i].strip())
+    for i in range(last + 1, n):
+        result[i] = _strip_block_prefix(source_lines[end - n + i].strip())
+    return result
 
 
 def text_lines(body: str) -> Iterator[str]:
-    """Literal source text of each inline line (paragraphs, headings) that maps 1:1 to
-    a raw source line; used only to find literal ``::artifact`` directives, never code.
+    """Literal source text of each inline line (paragraphs, headings) that maps to a
+    raw source line; used only to find literal ``::artifact`` directives, never code.
     """
+    source_lines = body.splitlines()
     for token in MD.parse(body):
         if token.type == "inline":
-            for raw in raw_line_texts(body, token):
+            for raw in raw_line_texts(source_lines, token):
                 if raw is not None:
                     yield raw
 
