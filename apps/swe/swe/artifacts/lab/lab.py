@@ -81,6 +81,11 @@ class LabArtifact(Artifact):
         return ()
 
     @classmethod
+    def learner_view(cls, spec: JsonObject) -> JsonObject:
+        """Runtime fixture, parameters and check ids stay hidden from the learner."""
+        return {}
+
+    @classmethod
     def from_spec(cls, artifact_id: str, spec: JsonObject) -> LabArtifact:
         """Build from a schema-valid artifact spec; raises ``ValueError`` if it is not usable."""
         if spec.get("type") != cls.type:
