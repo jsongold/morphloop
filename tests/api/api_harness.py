@@ -23,7 +23,7 @@ from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
-from harness.api.app import create_app
+from harness.api.app import AppExtension, create_app
 from harness.api.backend import Backend
 from harness.testing.contracts import CONTRACTS_DIR, ContractViolation, load_schema, validate
 
@@ -78,12 +78,15 @@ def assert_ws_message(message: object) -> None:
     validate(message, WS_MESSAGE_SCHEMA)
 
 
-def build_app(fixture: LoopFixture | None = None) -> tuple[Any, LoopFixture]:
+def build_app(
+    fixture: LoopFixture | None = None, *, extensions: Sequence[AppExtension] = ()
+) -> tuple[Any, LoopFixture]:
     """The real FastAPI app over a loop wired to fakes.
 
     Passing the backend explicitly also keeps startup from wiring the real
     adapters, so no test reaches Postgres or the Docker daemon.
     """
     loop_fixture = fixture if fixture is not None else build_loop()
-    app = create_app(Backend(loop=loop_fixture.loop, store=loop_fixture.store))
+    backend = Backend(loop=loop_fixture.loop, store=loop_fixture.store)
+    app = create_app(backend, extensions=extensions)
     return app, loop_fixture

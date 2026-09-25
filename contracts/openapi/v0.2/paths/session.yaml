@@ -1,29 +1,144 @@
 # URL -> Path Item map for the session resource (ADR-0018). Owned by the
-# session resource PR: this file is the only file that PR edits (plus an
-# optional new components/session.yaml for session-specific schemas).
-# Never edit ../root.yaml or another resource's paths/*.yaml — new URLs are
-# just new top-level keys in this file, merged into the document by
-# harness.testing.openapi_v2.load_merged_openapi_v2_spec (duplicate URLs
-# across files are a load-time error). See ../README.md.
+# session resource PR (#54, parent #34): this file is the only file this PR
+# edits under contracts/openapi/ (plus contracts/schemas/events/payloads/
+# session.created/1.json). Never edit ../root.yaml or another resource's
+# paths/*.yaml.
 #
-# Session: topic, tree, sittings. Selecting a topic copies the pack's topic subtree and pins pack_hash; a sitting is derived from event timestamps.
+# Session: topic, tree, sittings. Selecting a topic copies the pack's topic
+# subtree and pins pack_id/pack_version/pack_content_hash; a sitting is
+# derived from event timestamps and never stored, so it is not itself a
+# child of the response below -- it is only added to the detail response
+# when `idle_minutes` is given.
 #
-# `/session/_stub` below is a placeholder with no meaning; replace or
-# extend it with the resource's real paths.
-/session/_stub:
+# The `tree` schema is intentionally loose (`type: object`): its precise,
+# recursive shape is already the contract of
+# `contracts/schemas/pack/v2/topic.json` (enforced by the Importer and by
+# `session.created`'s payload schema); duplicating that recursion here would
+# need a components/session.yaml file, which is out of scope for this PR.
+/sessions:
+  post:
+    tags: [session]
+    operationId: createSession
+    summary: Select a topic and create a session with its subtree pinned.
+    description: |
+      Copies the chosen topic's subtree out of the pack the server has
+      loaded and fixes it on a new session (ADR-0018, issue #34/#54). A
+      `pack_id` that is not the loaded pack, or a `topic_id` outside its
+      topic tree, is a Problem response and no event is stored. Resending
+      the same `Idempotency-Key` with the same body returns the same
+      session; with a different body it is a 409 Problem.
+    parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        description: Client-generated event id (a UUID). Omit to have the server assign one.
+        schema: { type: string, format: uuid }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [pack_id, topic_id]
+            additionalProperties: false
+            properties:
+              pack_id:
+                type: string
+                pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+              topic_id:
+                type: string
+                pattern: '^[a-z0-9][a-z0-9._-]{0,127}$'
+    responses:
+      '201':
+        description: The created session, tree included.
+        content:
+          application/json:
+            schema: &Session
+              type: object
+              required:
+                - id
+                - user_id
+                - pack_id
+                - pack_version
+                - pack_content_hash
+                - topic_id
+                - tree
+                - created_at
+              properties:
+                id:
+                  type: string
+                  pattern: '^ses_[0-9A-Za-z]{1,64}$'
+                user_id:
+                  type: string
+                  pattern: '^usr_[0-9A-Za-z]{1,64}$'
+                pack_id:
+                  type: string
+                  pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+                pack_version:
+                  type: string
+                pack_content_hash:
+                  type: string
+                  pattern: '^sha256:[0-9a-f]{64}$'
+                topic_id:
+                  type: string
+                created_at:
+                  type: string
+                  format: date-time
+                tree:
+                  description: The topic subtree, fixed at session creation. See contracts/schemas/pack/v2/topic.json for its real, recursive shape.
+                  type: object
+                  additionalProperties: true
+                sittings:
+                  description: Present only when `idle_minutes` was given to `GET /sessions/{session_id}`. Derived from events, never stored.
+                  type: array
+                  items:
+                    type: object
+                    required: [started_at, ended_at]
+                    additionalProperties: false
+                    properties:
+                      started_at: { type: string, format: date-time }
+                      ended_at: { type: string, format: date-time }
+              additionalProperties: false
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
   get:
     tags: [session]
-    operationId: getSessionStub
-    summary: Placeholder for the session resource.
-    description: |
-      No behavior yet. Real endpoints for session land in a follow-up PR
-      that edits only this file (ADR-0018, issue #34).
+    operationId: listSessions
+    summary: List every session of the single v0.2.0 learner.
     responses:
       '200':
-        description: Stub response.
+        description: Every session, most recently created last.
         content:
           application/json:
             schema:
-              $ref: '../components/common.yaml#/Stub'
+              type: array
+              items: *Session
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+
+/sessions/{session_id}:
+  get:
+    tags: [session]
+    operationId: getSession
+    summary: Read one session, tree included.
+    parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^ses_[0-9A-Za-z]{1,64}$' }
+      - name: idle_minutes
+        in: query
+        required: false
+        description: When given, the response also carries `sittings` derived from this session's events with this idle gap.
+        # maximum: the largest minute count `timedelta` can represent
+        # (`timedelta.max // timedelta(minutes=1)`); a larger value is a 422,
+        # not a 500 from an OverflowError (#89 review).
+        schema: { type: integer, minimum: 1, maximum: 1439999999999 }
+    responses:
+      '200':
+        description: The session.
+        content:
+          application/json:
+            schema: *Session
       default:
         $ref: '../root.yaml#/components/responses/Problem'

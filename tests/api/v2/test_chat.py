@@ -17,6 +17,7 @@ from chat.chat_fakes import (
     text,
 )
 from fastapi.testclient import TestClient
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.v2.deps import event_store_v2_of
 from harness.api.v2.routes.chat import chat_llm_of
@@ -38,7 +39,7 @@ def client(tmp_path: Path, llm: FakeToolProvider) -> Iterator[TestClient]:
     app, _ = build_app()
     app.dependency_overrides[event_store_v2_of] = lambda: store
     app.dependency_overrides[chat_llm_of] = lambda: llm
-    app.state.pack_v2 = import_pack_v2(PACK_DIR)
+    app.state.pack_v2 = import_pack_v2(PACK_DIR, artifact_types=PACK_ARTIFACT_TYPES)
     with TestClient(app) as test_client:
         yield test_client
 
@@ -53,7 +54,10 @@ def test_send_then_list(client: TestClient, llm: FakeToolProvider) -> None:
     request = llm.requests[0]
     assert request.llm.prompt_id == "assistant"
     assert (
-        request.messages[0].content == import_pack_v2(PACK_DIR).llm_roles["assistant"].prompt_text
+        request.messages[0].content
+        == import_pack_v2(PACK_DIR, artifact_types=PACK_ARTIFACT_TYPES)
+        .llm_roles["assistant"]
+        .prompt_text
     )
     listed = client.get(URL)
     assert listed.json() == {"messages": [body["sent"], body["reply"]]}

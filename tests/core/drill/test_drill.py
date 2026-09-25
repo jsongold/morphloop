@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.core.contract_schemas import ContractSchemas, ContractValidationError
 from harness.core.drill import (
@@ -46,7 +47,7 @@ def _generated(body: JsonObject, labels: tuple[str, ...] = ()) -> GeneratedDocum
 
 @pytest.fixture
 def service() -> DrillService:
-    pack = import_pack_v2(SE_PACK)
+    pack = import_pack_v2(SE_PACK, artifact_types=PACK_ARTIFACT_TYPES)
     holdout = {**GENERATED, "id": "gen-holdout", "labels": ["sys:holdout"]}
     column_holdout = _generated({**GENERATED, "id": "gen-holdout-2"}, ("sys:holdout",))
     generated = [_generated(GENERATED), _generated(holdout), column_holdout]
@@ -126,7 +127,7 @@ def test_validator_checks_choices_and_artifact_ref(tmp_path: Path) -> None:
         artifact_ref="no-such-lab",
     )
     with pytest.raises(PackV2ImportError) as info:
-        import_pack_v2(pack)
+        import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
     problems = "\n".join(info.value.problems)
     assert "[drill] drills/dns-answer-nxdomain.json: expected is not one of the choices" in problems
     assert "artifact_ref 'no-such-lab' is not an artifact of the pack" in problems

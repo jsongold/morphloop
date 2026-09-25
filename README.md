@@ -137,6 +137,33 @@ pnpm typecheck && pnpm lint && pnpm build
 
 The standard UI is optional; any UI that follows the API contract in `contracts/` can replace it.
 
+### Building an app on the SDK
+
+The SDK owns the `Artifact` base and the extension points; concrete artifact
+types (lab, diagram, ...) belong to an app (`apps/<app>/`, ADR-0018 §19). An app
+imports `harness.sdk` only:
+
+```python
+from harness.sdk import AppExtension, Artifact, create_app
+
+
+class LabArtifact(Artifact):
+    type = "lab"  # what a pack artifact's `type` names
+    spec_schema = {...}  # JSON Schema (draft 2020-12) of its `spec`
+
+    @classmethod
+    def validate_spec(cls, spec, pack):  # optional cross-file rules
+        return []  # one message per problem
+
+
+app = create_app(extensions=[AppExtension(routers=(router,), artifact_types=(LabArtifact,))])
+```
+
+Routers mount under `/v2`. The pack importer accepts only the registered types and
+validates every artifact `spec` with the type's schema and validator; a pack that
+names another type is refused. `harness must not import apps` is enforced by
+`lint-imports`.
+
 ## Core idea
 
 ```text

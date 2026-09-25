@@ -19,6 +19,7 @@ from artifact_lab.lab_fixture import (
 
 from harness.core.artifact import artifact_class
 from harness.core.artifact_lab import ArtifactError, ArtifactView, LabArtifact
+from harness.core.contract_schemas import ContractSchemas
 from harness.core.ports.lab_runtime import ExecRequest, ExecResult
 
 
@@ -43,6 +44,18 @@ def test_spec_whose_fixture_is_not_allowed_is_refused() -> None:
     bad = {**SPEC, "spec": {**SPEC["spec"], "allowed_fixtures": ["fake.other"]}}  # type: ignore[dict-item]
     with pytest.raises(ValueError, match="allowed_fixtures"):
         LabArtifact.from_spec("art_1", bad)
+    problems = list(LabArtifact.validate_spec(bad["spec"], pack=None))  # type: ignore[arg-type]
+    assert problems == ["environment fixture 'fake.lab' is not in allowed_fixtures"]
+
+
+def test_lab_spec_schema_bounds_the_generator() -> None:
+    schemas = ContractSchemas.load()
+    assert schemas.errors_against(SPEC["spec"], LabArtifact.spec_schema) == []
+    unbounded = {"environment": SPEC["spec"]["environment"]}  # type: ignore[index]
+    assert schemas.errors_against(unbounded, LabArtifact.spec_schema) == [
+        "$: 'allowed_fixtures' is a required property",
+        "$: 'allowed_checks' is a required property",
+    ]
 
 
 def test_start_reset_stop(tmp_path: Path) -> None:

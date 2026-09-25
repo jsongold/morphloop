@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.v2.deps import event_store_v2_of
 from harness.core.contract_schemas import ContractSchemas
@@ -73,7 +74,7 @@ def client(tmp_path: Path) -> Any:
     }
     generated.add(GeneratedDocument(resource="drill", id=GEN_ID, body=body, provenance={}))
     app, _ = build_app()
-    app.state.pack_v2 = import_pack_v2(SE_PACK)
+    app.state.pack_v2 = import_pack_v2(SE_PACK, artifact_types=PACK_ARTIFACT_TYPES)
     app.state.generated_documents = generated
     app.dependency_overrides[event_store_v2_of] = lambda: store
     with TestClient(app) as c:

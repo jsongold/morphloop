@@ -15,7 +15,7 @@ the v1 schemas in `../`, which stay unchanged until v1 is removed. Conventions
 | `topic.json` | `topics` | one topic tree per file (`id`, `title`, `description`, `docs[]`, `topics[]`) |
 | `textbook-doc.json` | `textbooks` | teaching text: `blocks[]` of `{id, body, labels}` |
 | `drill-item.json` | `drills` | question + expected answer, `answer_mode` text / choice / artifact |
-| `artifact-spec.json` | `artifacts` | `{id, type, labels, spec}`; `type: lab` fixes the spec shape |
+| `artifact-spec.json` | `artifacts` | `{id, type, labels, spec}`; `spec` is any object, shaped by the app's type |
 | `llm-role.json` | `llm_roles` | `{role, model, temperature?, max_tokens?, prompt, output_schema?}`; one LLM call the pack configures |
 | `defs.json` | none | label shapes |
 
@@ -44,10 +44,11 @@ that change SDK behavior (`answer_mode`, the `sys:` labels).
 - **Drill items**: `choices` is required for `choice` and forbidden otherwise;
   `artifact_ref` is required for `artifact` and forbidden otherwise. Pack and
   generated items share the shape and differ by label.
-- **Artifact type** names a subclass registered in the domain adapter layer.
-  It is not an enum. `spec` is validated by that subclass, except `lab`: its
-  spec is `{environment, allowed_fixtures[], allowed_checks[]}`, where the
-  generator may compose only the listed adapter items (ADR-0014).
+- **Artifact type** names an `Artifact` subclass the app built on the SDK
+  registers (ADR-0018 section 19). It is not an enum, and no type's `spec`
+  shape lives in the contracts: the subclass declares a JSON Schema
+  (`spec_schema`) and an optional validator (`validate_spec`), and the Importer
+  applies both. Lab and diagram are types of the SWE app, not of the SDK.
 - **LLM roles** configure the LLM calls a pack uses (chat assistant, generation,
   gap judgment, scheduling, ...). `role` is a name the pack chooses; the
   harness holds no role enum (ADR-0002, ADR-0018) and does not interpret it.
@@ -63,9 +64,9 @@ that change SDK behavior (`answer_mode`, the `sys:` labels).
 - every label is `sys:holdout`, `topic:<existing topic id>` or in the vocabulary;
 - a `choice` item's `expected` is one of its `choices`;
 - `artifact_ref` and `::artifact{...}` refs name an artifact spec of that type;
-- artifact `type` is registered, and a lab's fixtures and checks are registered
-  by an adapter in `domain_adapters`; the lab environment's `fixture` is in
-  `allowed_fixtures`;
+- artifact `type` is one of the types passed to the Importer, and `spec`
+  passes that type's `spec_schema` and `validate_spec` (a lab's environment
+  `fixture` is in its `allowed_fixtures`, for instance);
 - every id in a topic's `docs` names an existing textbook doc, and every
   textbook doc is listed under exactly one topic's `docs`;
 - each llm role's `prompt` file exists; role names are unique across a pack's

@@ -38,6 +38,7 @@ from referencing import Registry, Resource
 from referencing.exceptions import Unresolvable
 
 from harness.core.ports import PlainJson, to_plain_json
+from harness.core.ports.json_types import to_plain_object
 from harness.core.settings import Settings
 
 CONTRACTS_DIR_ENV = "MORPHLOOP_CONTRACTS_DIR"
@@ -93,6 +94,15 @@ def locate_contracts_dir(contracts_dir: Path | str | None = None) -> Path:
 
 def _json_path(path: Any) -> str:
     return "$" + "".join(f"[{p}]" if isinstance(p, int) else f".{p}" for p in path)
+
+
+def _errors(validator: Draft202012Validator, instance: object) -> list[str]:
+    if isinstance(instance, Mapping | list | tuple):
+        instance = to_plain_json(instance)
+    found: list[ValidationError] = sorted(
+        validator.iter_errors(instance), key=lambda e: list(e.path)
+    )
+    return [f"{_json_path(e.absolute_path)}: {e.message}" for e in found]
 
 
 _SCOPES: tuple[list[str], ...] = ([], ["session_id"], ["session_id", "ws_id"])
@@ -190,12 +200,16 @@ class ContractSchemas:
         ``Mapping`` / ``Sequence`` JSON values are copied to plain ``dict`` /
         ``list`` first, since jsonschema only treats ``dict`` as an object.
         """
-        if isinstance(instance, Mapping | list | tuple):
-            instance = to_plain_json(instance)
-        found: list[ValidationError] = sorted(
-            self._validator(schema_id).iter_errors(instance), key=lambda e: list(e.path)
-        )
-        return [f"{_json_path(e.absolute_path)}: {e.message}" for e in found]
+        return _errors(self._validator(schema_id), instance)
+
+    def errors_against(self, instance: object, schema: Mapping[str, Any]) -> list[str]:
+        """Like :meth:`errors`, against a schema that is not a contract file.
+
+        ``$ref``s in ``schema`` resolve against the loaded contracts, so an app's
+        artifact ``spec_schema`` can reuse contract definitions (#95).
+        """
+        validator = Draft202012Validator(to_plain_object(schema), registry=self._registry)
+        return _errors(validator, instance)
 
     def validate(self, instance: object, schema_id: str) -> None:
         """Raise :class:`ContractValidationError` unless ``instance`` is valid."""

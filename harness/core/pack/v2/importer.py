@@ -9,7 +9,11 @@ Steps (every problem of a step is reported together in :class:`PackV2ImportError
 5. resolve each ``llm_roles`` file's ``prompt`` Markdown path (checked for
    existence here, since it is a plain-text path referenced from inside a
    JSON document rather than listed directly under a manifest key);
-6. run every registered validator (:mod:`harness.core.pack.v2.validators`).
+6. validate each artifact's ``spec`` with its type's ``spec_schema`` and
+   ``validate_spec`` (:mod:`harness.core.artifact`); an unregistered ``type``
+   is a problem. The types come from the caller (an app passes the ones it
+   registers); the process-wide subclass registry is only the default (#95);
+7. run every registered validator (:mod:`harness.core.pack.v2.validators`).
 
 The pack hash is the v1 pack content hash (ADR-0010) over every file. Nothing is
 stored here; the result is a value.
@@ -17,11 +21,12 @@ stored here; the result is a value.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 
+from harness.core.artifact import Artifact, registered_artifact_types
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.canonical_json import pack_content_hash
 from harness.core.pack.model import MANIFEST_NAMES
@@ -157,12 +162,49 @@ def _listed(manifest: dict[str, PlainJson]) -> dict[str, list[str]]:
     return out
 
 
-def import_pack_v2(path: Path | str, *, schemas: ContractSchemas | None = None) -> PackV2:
-    """Read, validate and hash the v2 pack at ``path``. Raises :class:`PackV2ImportError`."""
+def _artifact_types(types: Iterable[type[Artifact]] | None) -> Mapping[str, type[Artifact]]:
+    return registered_artifact_types() if types is None else {cls.type: cls for cls in types}
+
+
+def _artifact_problems(
+    pack: PackV2, types: Mapping[str, type[Artifact]], schemas: ContractSchemas
+) -> list[str]:
+    """Each artifact's ``spec`` against its type's schema, then its validator."""
+    problems: list[str] = []
+    for path, doc in pack.documents["artifacts"].items():
+        type_name = str(doc["type"])
+        cls = types.get(type_name)
+        if cls is None:
+            known = ", ".join(sorted(types)) or "none"
+            problems.append(f"{path}: artifact type {type_name!r} is not registered ({known})")
+            continue
+        spec = doc["spec"]
+        assert isinstance(spec, Mapping)
+        errors = schemas.errors_against(spec, cls.spec_schema)
+        if errors:
+            problems.extend(f"{path}: $.spec{e[1:]}" for e in errors)
+        else:
+            problems.extend(f"{path}: {p}" for p in cls.validate_spec(spec, pack))
+    return problems
+
+
+def import_pack_v2(
+    path: Path | str,
+    *,
+    schemas: ContractSchemas | None = None,
+    artifact_types: Iterable[type[Artifact]] | None = None,
+) -> PackV2:
+    """Read, validate and hash the v2 pack at ``path``. Raises :class:`PackV2ImportError`.
+
+    ``artifact_types`` are the :class:`Artifact` subclasses the pack may use; an
+    artifact of any other ``type`` is a problem. ``None`` means every subclass
+    defined in this process (:func:`registered_artifact_types`).
+    """
     root = Path(path)
     if not root.is_dir():
         raise PackV2ImportError([f"{root}: not a pack directory"])
     schemas = schemas or ContractSchemas.load()
+    types = _artifact_types(artifact_types)
     problems: list[str] = []
     raw = _read(root, problems)
 
@@ -236,6 +278,7 @@ def import_pack_v2(path: Path | str, *, schemas: ContractSchemas | None = None) 
         documents=MappingProxyType({k: MappingProxyType(v) for k, v in documents.items()}),
         llm_roles=MappingProxyType(llm_roles),
     )
+    problems.extend(_artifact_problems(pack, types, schemas))
     for name, validate in validators.registered().items():
         problems.extend(f"[{name}] {problem}" for problem in validate(pack))
     if problems:

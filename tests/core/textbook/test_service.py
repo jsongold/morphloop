@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports import JsonObject
@@ -38,7 +39,7 @@ def textbook() -> Textbook:
                 provenance={},
             )
         )
-    return Textbook(import_pack_v2(SE_PACK), store)
+    return Textbook(import_pack_v2(SE_PACK, artifact_types=PACK_ARTIFACT_TYPES), store)
 
 
 def test_reading_list_is_topic_docs_then_generated(textbook: Textbook) -> None:
