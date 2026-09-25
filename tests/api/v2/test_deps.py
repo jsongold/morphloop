@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.problems import install_handlers
 from harness.api.v2.deps import EventIdDep, GeneratedDocumentsDep, PackV2Dep, UserIdDep
@@ -32,6 +33,7 @@ def _app() -> FastAPI:
         return {"id": id(pack)}
 
     app.state.generated_documents = InMemoryGeneratedDocumentStore()
+    app.state.artifact_types = PACK_ARTIFACT_TYPES
     return app
 
 

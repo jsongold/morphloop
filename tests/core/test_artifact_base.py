@@ -1,4 +1,4 @@
-"""Artifact base: registration by type name, capabilities, lookup errors."""
+"""Artifact base: registration by type name, capabilities, spec hooks, lookup errors."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from harness.core.artifact import (
     artifact_class,
     registered_artifact_types,
 )
+from harness.core.ports.json_types import JsonObject
 
 
 @pytest.fixture(autouse=True)
@@ -73,3 +74,22 @@ def test_base_is_not_instantiable_and_id_is_required() -> None:
 
     with pytest.raises(ValueError, match="id"):
         Plain(id="")
+
+
+def test_spec_schema_is_open_by_default_and_checked_when_declared() -> None:
+    class Plain(Artifact):
+        type: ClassVar[str] = "test_open"
+
+    assert Plain.spec_schema == {"type": "object"}
+    assert list(Plain.validate_spec({"anything": 1}, pack=None)) == []  # type: ignore[arg-type]
+
+    class Bounded(Artifact):
+        type: ClassVar[str] = "test_bounded"
+        spec_schema: ClassVar[JsonObject] = {"type": "object", "required": ["image"]}
+
+    assert Bounded.spec_schema["required"] == ["image"]
+    with pytest.raises(TypeError, match="'test_bad_schema' spec_schema is invalid"):
+
+        class _BadSchema(Artifact):
+            type: ClassVar[str] = "test_bad_schema"
+            spec_schema: ClassVar[JsonObject] = {"type": "not-a-json-type"}

@@ -5,12 +5,18 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
-from harness.core.pack.v2 import PackV2ImportError, import_pack_v2, validators
+from harness.core import artifact as artifact_module
+from harness.core.artifact import Artifact
+from harness.core.artifact_lab import LabArtifact
+from harness.core.pack.v2 import PackV2, PackV2ImportError, import_pack_v2, validators
+from harness.core.ports.json_types import JsonObject
 
 SE_PACK = Path(__file__).resolve().parents[3] / "contents" / "v2" / "software-engineering"
 
@@ -28,14 +34,18 @@ def _edit(path: Path, edit: object) -> None:
     path.write_text(json.dumps(doc), encoding="utf-8")
 
 
+def _import(path: Path) -> PackV2:
+    return import_pack_v2(path, artifact_types=PACK_ARTIFACT_TYPES)
+
+
 def _problems(path: Path) -> str:
     with pytest.raises(PackV2ImportError) as info:
-        import_pack_v2(path)
+        _import(path)
     return "\n".join(info.value.problems)
 
 
 def test_se_pack_imports() -> None:
-    pack = import_pack_v2(SE_PACK)
+    pack = _import(SE_PACK)
     assert pack.pack_id == "software-engineering"
     assert pack.pack_hash.startswith("sha256:")
     assert "network.dns.resolver" in pack.topic_ids
@@ -54,10 +64,10 @@ def test_se_pack_imports() -> None:
 
 
 def test_hash_is_stable_and_content_bound(pack: Path) -> None:
-    first = import_pack_v2(SE_PACK).pack_hash
-    assert import_pack_v2(SE_PACK).pack_hash == first == import_pack_v2(pack).pack_hash
+    first = _import(SE_PACK).pack_hash
+    assert _import(SE_PACK).pack_hash == first == _import(pack).pack_hash
     _edit(pack / "topics" / "network.json", lambda d: d.update(title="Networks"))
-    assert import_pack_v2(pack).pack_hash != first
+    assert _import(pack).pack_hash != first
 
 
 def test_unlisted_file_is_rejected(pack: Path) -> None:
@@ -127,3 +137,59 @@ def test_new_validator_module_is_registered(
         assert "[zz_always_fails] software-engineering rejected" in _problems(SE_PACK)
     finally:
         sys.modules.pop(name, None)
+
+
+LAB = "artifacts/diagnose-dns-resolver-misconfiguration-lab.json"
+
+
+def test_artifact_types_are_what_the_caller_passes(pack: Path) -> None:
+    with pytest.raises(PackV2ImportError) as info:
+        import_pack_v2(pack, artifact_types=[LabArtifact])
+    problems = "\n".join(info.value.problems)
+    assert (
+        "artifacts/dns-resolution-flow.json: artifact type 'diagram' is not registered (lab)"
+        in (problems)
+    )
+    assert LAB not in problems
+
+
+def test_artifact_spec_is_validated_by_its_type_schema(pack: Path) -> None:
+    _edit(pack / LAB, lambda d: d["spec"].pop("allowed_checks"))
+    assert f"{LAB}: $.spec: 'allowed_checks' is a required property" in _problems(pack)
+    _edit(pack / LAB, lambda d: d["spec"].update(allowed_checks=["dns.exit"], idle_seconds=0))
+    assert f"{LAB}: $.spec.idle_seconds: 0 is less than the minimum of 1" in _problems(pack)
+
+
+def test_artifact_spec_is_validated_by_its_type_validator(pack: Path) -> None:
+    _edit(pack / LAB, lambda d: d["spec"].update(allowed_fixtures=["dns.other"]))
+    problems = _problems(pack)
+    assert f"{LAB}: environment fixture 'dns.resolver_lab' is not in allowed_fixtures" in problems
+
+
+def test_validator_runs_only_on_a_schema_valid_spec_and_sees_the_pack(
+    pack: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str] = []
+    monkeypatch.delitem(artifact_module._REGISTRY, "diagram")  # let Picky take the name
+
+    class Picky(Artifact):
+        type: ClassVar[str] = "diagram"
+        spec_schema: ClassVar[JsonObject] = {"type": "object", "required": ["title"]}
+
+        @classmethod
+        def validate_spec(cls, spec: JsonObject, pack: PackV2) -> Iterable[str]:
+            seen.append(pack.pack_id)
+            return [f"title {spec['title']!r} rejected"]
+
+    with pytest.raises(PackV2ImportError) as info:
+        import_pack_v2(pack, artifact_types=[LabArtifact, Picky])
+    assert info.value.problems == (
+        "artifacts/dns-resolution-flow.json: title 'How ledger.corp.internal becomes an address'"
+        " rejected",
+    )
+    assert seen == ["software-engineering"]
+    _edit(pack / "artifacts" / "dns-resolution-flow.json", lambda d: d["spec"].pop("title"))
+    seen.clear()
+    with pytest.raises(PackV2ImportError) as info:
+        import_pack_v2(pack, artifact_types=[LabArtifact, Picky])
+    assert "$.spec: 'title' is a required property" in info.value.problems[0] and not seen

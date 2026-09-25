@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.v2.routes.notebook_generate import router
 from harness.core.contract_schemas import ContractSchemas
@@ -38,7 +39,8 @@ from harness.testing.fakes import (
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 
 _PACK = import_pack_v2(
-    Path(__file__).resolve().parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
+    Path(__file__).resolve().parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack",
+    artifact_types=PACK_ARTIFACT_TYPES,
 )
 ROLE = LLMRole(
     role="generator",

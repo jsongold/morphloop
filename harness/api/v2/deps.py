@@ -14,8 +14,10 @@ Tests: inject an `InMemoryEventStoreV2` either by setting
 Shared per-request inputs every resource route uses (#77) -- a resource
 never adds its own env var or loader:
 
-- `PackV2Dep`: the v2 pack from `MORPHLOOP_PACK_V2_DIR`, imported once and
-  cached on `app.state.pack_v2` (tests set `app.state.pack_v2`).
+- `PackV2Dep`: the v2 pack from `MORPHLOOP_PACK_V2_DIR`, imported once with
+  the artifact types the app registered (`app.state.artifact_types`, set by
+  `create_app(extensions=...)`; none for a bare app) and cached on
+  `app.state.pack_v2` (tests set `app.state.pack_v2`).
 - `GeneratedDocumentsDep`: runtime-generated content, Postgres by default,
   cached on `app.state.generated_documents`.
 - `UserIdDep`: v0.2.0 has one learner, `MORPHLOOP_USER_ID`. A POST body never
@@ -87,7 +89,8 @@ def pack_v2_of(request: Request) -> PackV2:
         pack_dir = Settings().morphloop_pack_v2_dir
         if pack_dir is None:
             raise RuntimeError("MORPHLOOP_PACK_V2_DIR is not set")
-        pack = import_pack_v2(pack_dir)
+        types = getattr(request.app.state, "artifact_types", ())
+        pack = import_pack_v2(pack_dir, artifact_types=types)
         request.app.state.pack_v2 = pack
     return pack
 

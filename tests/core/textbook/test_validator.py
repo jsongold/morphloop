@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.core.pack.v2 import PackV2ImportError, import_pack_v2
 
@@ -21,12 +22,12 @@ def _problems_with_body(tmp_path: Path, body: str) -> str:
     doc["blocks"][2]["body"] = body
     (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
     with pytest.raises(PackV2ImportError) as info:
-        import_pack_v2(pack)
+        import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
     return "\n".join(p for p in info.value.problems if p.startswith("[textbook]"))
 
 
 def test_se_pack_directives_resolve() -> None:
-    import_pack_v2(SE_PACK)
+    import_pack_v2(SE_PACK, artifact_types=PACK_ARTIFACT_TYPES)
 
 
 @pytest.mark.parametrize(
@@ -56,4 +57,4 @@ def test_directive_in_code_block_is_ignored(tmp_path: Path, body: str) -> None:
     doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
     doc["blocks"][2]["body"] = body
     (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
-    import_pack_v2(pack)
+    import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
