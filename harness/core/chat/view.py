@@ -1,4 +1,4 @@
-"""``chat.messages`` view: the messages of one thread, in order (#63)."""
+"""``chat.messages`` / ``chat.thread`` views (#63, #104)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from harness.core.view import View
 
 SENT = "chat.sent"
 REPLIED = "chat.replied"
+THREAD_CREATED = "thread.created"
 
 
 def _key(ws_id: str, thread_id: str) -> str:
@@ -54,3 +55,33 @@ class ChatMessagesView(View):
         doc = cls.get(tx, key)
         messages = doc.get("messages") if doc else None
         return messages if isinstance(messages, list) else []
+
+
+class ChatThreadView(View):
+    """``chat.thread`` view, keyed by ``thread_id`` (#104).
+
+    Lets chat resolve a thread's ``ws_id``/``user_id``/``session_id``/``target``/
+    ``labels`` by a direct key lookup on the request's transaction, instead of
+    scanning the ws's log with ``EventStoreV2.read()`` -- a second pooled
+    connection while another request holds a transaction on the same store
+    (pool exhaustion under concurrency). Chat's own view: ``ws``'s ``WsView``
+    only tracks the ws's *main* (targetless) thread, and chat never imports
+    the ``ws`` package (ADR-0009).
+    """
+
+    name = "chat.thread"
+    handles: ClassVar[frozenset[str]] = frozenset({THREAD_CREATED})
+
+    @classmethod
+    def apply(cls, event: StoredEventV2, tx: ViewDocumentStore) -> None:
+        p = event.payload
+        target = p.get("target")
+        labels = p.get("labels")
+        doc: JsonObject = {
+            "ws_id": event.ws_id,
+            "user_id": event.user_id,
+            "session_id": event.session_id,
+            "target": to_plain_json(target) if isinstance(target, Mapping) else None,
+            "labels": [str(x) for x in labels] if isinstance(labels, list) else [],
+        }
+        tx.put_view(cls.name, str(p["thread_id"]), doc)

@@ -71,7 +71,7 @@ def test_send_runs_a_tool_then_replies_and_records_both(tmp_path: Path) -> None:
     assert isinstance(tool_result, LLMToolResult)
     assert json.loads(tool_result.content)["target"] == {"kind": "memo_entry", "entry_id": "e1"}
     types = [e.type for e in store.read(ws_id=WS)]
-    assert types == ["thread.created", "chat.sent", "chat.replied"]
+    assert types == ["ws.created", "thread.created", "chat.sent", "chat.replied"]
     assert list_messages(store, USER, WS, THREAD) == [result.sent, result.reply]
 
 
