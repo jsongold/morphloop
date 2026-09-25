@@ -14,17 +14,27 @@ Appending and updating the ``ws`` view happen in the same transaction
 (ADR-0008); a resent ``event_id`` (Idempotency-Key) is made to create the
 identical ws/thread instead of a new one by deriving the new id from it, the
 same trick chat (#63) uses for a reply's event id.
+
+A ws has at most one main (targetless) thread: a second targetless request
+(a different Idempotency-Key, since a same-key resend is already handled by
+``tx.append``) returns the existing main thread instead of creating another
+one (Codex finding on #90).
 """
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from typing import Literal
 
 from harness.core.ports.events_v2 import ActorV2, EventTransactionV2, EventV2, StoredEventV2
 from harness.core.ports.json_types import JsonObject, PlainJson, to_plain_object
 from harness.core.view import dispatch
 from harness.core.ws.view import THREAD_CREATED, WS_CREATED, WsView
+
+WsActor = Literal["learner", "system"]
+"""Actors the ``ws.created`` contract allows (narrower than ``ActorV2``:
+``thread.created`` also allows ``"assistant"``, ``ws.created`` does not)."""
 
 
 class WsError(Exception):
@@ -55,7 +65,7 @@ def create_ws(
     user_id: str,
     session_id: str,
     labels: Sequence[str] = (),
-    actor: ActorV2 = "learner",
+    actor: WsActor = "learner",
 ) -> StoredEventV2:
     """Append ``ws.created`` (idempotent on ``event_id``) and update the ``ws`` view.
 
@@ -94,12 +104,18 @@ def get_ws(tx: EventTransactionV2, ws_id: str, *, user_id: str) -> JsonObject:
 def list_ws(
     tx: EventTransactionV2, *, user_id: str, session_id: str | None = None
 ) -> list[JsonObject]:
-    """The learner's workspaces, optionally restricted to one session."""
-    return [
+    """The learner's workspaces, most recently created first.
+
+    ``WsView.list`` sorts by the opaque ``ws_id`` key, not creation order, so
+    this sorts by the stored ``position`` instead (Codex finding on #90).
+    """
+    matches = [
         doc
         for _, doc in WsView.list(tx)
         if doc["user_id"] == user_id and (session_id is None or doc["session_id"] == session_id)
     ]
+    matches.sort(key=lambda doc: int(doc["position"]), reverse=True)  # type: ignore[arg-type]
+    return matches
 
 
 def create_thread(
@@ -115,9 +131,16 @@ def create_thread(
     """Append ``thread.created`` in ``ws_id`` (idempotent on ``event_id``).
 
     Raises :class:`WsNotFoundError` (404) when the ws does not exist (or
-    belongs to another learner).
+    belongs to another learner). A targetless request when the ws already has
+    a main thread returns that thread's event instead of creating another one.
     """
     ws = get_ws(tx, ws_id, user_id=user_id)
+    if target is None:
+        main_thread_event_id = ws["main_thread_event_id"]
+        if main_thread_event_id is not None:
+            existing = tx.get(str(main_thread_event_id))
+            assert existing is not None, "main_thread_event_id in the ws view must be stored"
+            return existing
     thread_id = _derived_id("thr", THREAD_CREATED, event_id)
     payload: dict[str, PlainJson] = {"thread_id": thread_id, "labels": list(labels)}
     if target is not None:

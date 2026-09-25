@@ -5,6 +5,7 @@
   "description": "A workspace (ws) was created. The ws's session lives on the envelope's session_id, not here (the envelope's ws_id is the new ws's id). labels always include an origin label: origin:learner when the learner created it directly, origin:app when the app created it on the learner's behalf (e.g. the first ws of a session).",
   "x-envelope": 2,
   "x-actors": ["learner", "system"],
+  "x-scope": ["session_id", "ws_id"],
   "type": "object",
   "properties": {
     "labels": {

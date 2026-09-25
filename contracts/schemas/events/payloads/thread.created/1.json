@@ -5,6 +5,7 @@
   "description": "A thread (topic-of-conversation unit, the LLM context split unit used by chat) was created in a ws. No target means the ws's main thread. target.kind says what the thread discusses; the other fields it carries (an id, a selector, ...) are that named resource's business, not validated here -- this schema only fixes the shape (kind plus free-form extra fields). Ordinary labels such as mode:hint go in labels.",
   "x-envelope": 2,
   "x-actors": ["learner", "assistant", "system"],
+  "x-scope": ["session_id", "ws_id"],
   "type": "object",
   "required": ["thread_id"],
   "properties": {

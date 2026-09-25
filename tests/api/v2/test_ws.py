@@ -63,10 +63,11 @@ def test_create_ws_invalid_session_id_is_a_client_error(client: Any) -> None:
 
 def test_list_and_get_ws(client: Any) -> None:
     a = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()
-    client.post("/v2/ws", json={"session_id": "ses_2"}, headers=_key())
+    b = client.post("/v2/ws", json={"session_id": "ses_2"}, headers=_key()).json()
 
     everyone = client.get("/v2/ws").json()["items"]
-    assert len(everyone) == 2
+    # most recently created first (Codex finding on #90)
+    assert [w["ws_id"] for w in everyone] == [b["ws_id"], a["ws_id"]]
 
     scoped = client.get("/v2/ws", params={"session_id": "ses_1"}).json()["items"]
     assert [w["ws_id"] for w in scoped] == [a["ws_id"]]
@@ -79,10 +80,19 @@ def test_list_and_get_ws(client: Any) -> None:
         "session_id": "ses_1",
         "labels": ["origin:learner"],
         "created_at": a["created_at"],
+        "position": a["position"],
+        "main_thread_event_id": None,
     }
 
     missing = client.get("/v2/ws/ws_nope")
     assert missing.status_code == 404
+
+
+def test_list_ws_invalid_session_id_is_a_client_error(client: Any) -> None:
+    # a bad query parameter is 400 (`invalid-request`), not 422 (`harness/api/problems.py`)
+    resp = client.get("/v2/ws", params={"session_id": "not-a-session-id"})
+    assert resp.status_code == 400
+    assert len(client.store.read()) == 0
 
 
 def test_create_thread(client: Any) -> None:
@@ -128,3 +138,21 @@ def test_create_thread_invalid_target_kind_is_a_client_error(client: Any) -> Non
     resp = client.post(f"/v2/ws/{ws['ws_id']}/threads", json={"target": {"kind": "not-a-kind"}})
     assert resp.status_code == 422
     assert len(client.store.read(ws_id=ws["ws_id"])) == 1  # only ws.created
+
+
+def test_create_thread_null_target_is_a_client_error(client: Any) -> None:
+    ws = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()
+    resp = client.post(f"/v2/ws/{ws['ws_id']}/threads", json={"target": None})
+    assert resp.status_code == 422
+    assert len(client.store.read(ws_id=ws["ws_id"])) == 1  # only ws.created
+
+
+def test_a_second_targetless_thread_returns_the_existing_main_thread(client: Any) -> None:
+    ws = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()
+    first = client.post(f"/v2/ws/{ws['ws_id']}/threads", headers=_key())
+    assert first.status_code == 201
+    # a different Idempotency-Key, still no target
+    second = client.post(f"/v2/ws/{ws['ws_id']}/threads", headers=_key())
+    assert second.status_code == 201
+    assert second.json() == first.json()
+    assert len(client.store.read(ws_id=ws["ws_id"])) == 2  # ws.created + one thread.created

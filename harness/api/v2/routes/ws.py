@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from harness.api.v2.deps import EventIdDep, EventTransactionV2Dep, UserIdDep
+from harness.api.v2.models import Text, V2Model
 from harness.core.ports.events_v2 import EventIdConflictError
 from harness.core.ports.json_types import JsonObject, PlainJson
 from harness.core.ws import WsError, create_thread, create_ws, get_ws, list_ws
@@ -17,11 +18,11 @@ router = APIRouter(tags=["ws"])
 # Mirrors the ws.created / thread.created payload schemas so a bad label is a
 # 4xx here, not a contract failure (500) inside tx.append.
 _LABEL_PATTERN = r"^[a-z0-9][a-z0-9._-]{0,63}(:[a-z0-9][a-z0-9._-]{0,127})?$"
-Label = Annotated[str, Field(pattern=_LABEL_PATTERN)]
-SessionId = Annotated[str, Field(pattern=r"^ses_[0-9A-Za-z]{1,64}$")]
+Label = Annotated[Text, Field(pattern=_LABEL_PATTERN)]
+SessionId = Annotated[Text, Field(pattern=r"^ses_[0-9A-Za-z]{1,64}$")]
 
 
-class TargetRequest(BaseModel):
+class TargetRequest(V2Model):
     # Only `kind` is this resource's business; a named kind's own fields
     # (doc_id, entry_id, ...) are validated by that resource, not here.
     model_config = ConfigDict(extra="allow")
@@ -29,18 +30,24 @@ class TargetRequest(BaseModel):
     kind: Literal["textbook_block", "memo_entry", "drill_item", "artifact"]
 
 
-class CreateWsRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CreateWsRequest(V2Model):
     session_id: SessionId
     labels: list[Label] = Field(default_factory=list)
 
 
-class CreateThreadRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CreateThreadRequest(V2Model):
+    # `target` is non-nullable: omit it for the main thread, `null` is a 422
+    # (the OpenAPI and thread.created schemas allow only omission or an
+    # object, Codex finding on #90).
     target: TargetRequest | None = None
     labels: list[Label] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _target_not_null(cls, data: object) -> object:
+        if isinstance(data, dict) and "target" in data and data["target"] is None:
+            raise ValueError("target must not be null; omit it for the main thread")
+        return data
 
 
 @router.post("/ws", status_code=201)
@@ -63,7 +70,7 @@ def post_ws(
 def get_ws_list(
     tx: EventTransactionV2Dep,
     user_id: UserIdDep,
-    session_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[SessionId | None, Query()] = None,
 ) -> JsonObject:
     return {"items": list_ws(tx, user_id=user_id, session_id=session_id)}
 

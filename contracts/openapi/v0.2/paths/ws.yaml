@@ -38,9 +38,10 @@
               session_id:
                 type: string
                 pattern: '^ses_[0-9A-Za-z]{1,64}$'
-              labels:
+              labels: &labels
                 type: array
-                items: {type: string}
+                uniqueItems: true
+                items: {type: string, pattern: '^[a-z0-9][a-z0-9._-]{0,63}(:[a-z0-9][a-z0-9._-]{0,127})?$'}
             additionalProperties: false
     responses:
       '201':
@@ -88,13 +89,31 @@
                   type: array
                   items: &ws_object
                     type: object
-                    required: [ws_id, user_id, session_id, labels, created_at]
+                    required:
+                      [
+                        ws_id,
+                        user_id,
+                        session_id,
+                        labels,
+                        created_at,
+                        position,
+                        main_thread_event_id,
+                      ]
                     properties:
                       ws_id: {type: string}
                       user_id: {type: string}
                       session_id: {type: string}
                       labels: {type: array, items: {type: string}}
                       created_at: {type: string, format: date-time}
+                      position:
+                        type: integer
+                        minimum: 1
+                        description: The creating event's position; used to sort by creation order.
+                      main_thread_event_id:
+                        type: [string, "null"]
+                        description: |
+                          The id of the event that created this ws's main
+                          (targetless) thread, or null before one exists.
                     additionalProperties: false
               additionalProperties: false
       default:
@@ -124,10 +143,13 @@
     description: |
       A thread is the topic-of-conversation unit inside a ws and the LLM
       context split unit (chat, issue #63). `target` says what it discusses;
-      omit it for the ws's main thread. `target.kind` is one of
-      `textbook_block`, `memo_entry`, `drill_item`, `artifact`; validating
-      the id(s) it carries is that named resource's job, not this one's.
-      `mode:hint` and similar are ordinary labels. The ws must exist (404).
+      omit it for the ws's main thread (a `null` target is a client error).
+      `target.kind` is one of `textbook_block`, `memo_entry`, `drill_item`,
+      `artifact`; validating the id(s) it carries is that named resource's
+      job, not this one's. `mode:hint` and similar are ordinary labels. The
+      ws must exist (404). A ws has at most one main thread: a targetless
+      request when one already exists returns that thread's stored event
+      instead of creating another one.
     parameters:
       - {name: ws_id, in: path, required: true, schema: {type: string}}
       - name: Idempotency-Key
@@ -151,9 +173,7 @@
                 properties:
                   kind:
                     enum: [textbook_block, memo_entry, drill_item, artifact]
-              labels:
-                type: array
-                items: {type: string}
+              labels: *labels
             additionalProperties: false
     responses:
       '201':
