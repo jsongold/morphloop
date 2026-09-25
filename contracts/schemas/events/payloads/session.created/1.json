@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/session.created/1.json",
+  "title": "session.created payload v1",
+  "description": "The learner picked a topic; the session pins a copy of that topic's subtree, fixed at creation, together with the identity of the pack it was chosen from (ADR-0018, issue #34/#54).",
+  "x-envelope": 2,
+  "x-actors": ["learner"],
+  "type": "object",
+  "required": ["pack_id", "pack_version", "pack_content_hash", "topic_id", "tree"],
+  "properties": {
+    "pack_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/pack_id"
+    },
+    "pack_version": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"
+    },
+    "pack_content_hash": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/content-hash.json"
+    },
+    "topic_id": {
+      "description": "Id of the chosen topic within the pack's topic tree.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "tree": {
+      "description": "Copy of the chosen topic's subtree, as it was at creation time. Never updated when the pack changes.",
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/v2/topic.json"
+    }
+  },
+  "additionalProperties": false
+}
