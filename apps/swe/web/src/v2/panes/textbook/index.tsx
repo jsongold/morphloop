@@ -8,9 +8,9 @@ import { get } from "@/v2/api";
 import { useWorkspace } from "@/v2/state";
 import { ArtifactSlot } from "../artifact";
 import type { ArtifactDirective } from "../types";
+import { tocSections, topicIds, type TocDoc, type TocSection } from "./toc";
 
-type Summary = { id: string; title: string; labels: string[] };
-type Doc = Summary & { blocks: { id: string; body: string; labels: string[]; plaintext: string }[] };
+type Doc = TocDoc & { blocks: { id: string; body: string; labels: string[]; plaintext: string }[] };
 const md = new MarkdownIt("commonmark");
 const directive = /^::artifact\{type=([^\s{}]+) ref=([^\s{}]+)\}$/;
 const prefix = /^(?:>[ \t]?|#{1,6}[ \t]+)/;
@@ -19,24 +19,32 @@ const message = (e: unknown) => e instanceof Error ? e.message : String(e);
 
 export function TextbookToc() {
   const { session, docId, setDoc } = useWorkspace();
-  const topicId = session?.topic_id;
-  const [loaded, setLoaded] = useState<{ topicId: string; docs: Summary[] } | null>(null);
+  const sessionId = session?.id;
+  const tree = session?.tree;
+  const [loaded, setLoaded] = useState<{ sessionId: string; sections: TocSection[] } | null>(null);
   const [error, setError] = useState<{ id: string; message: string } | null>(null);
   useEffect(() => {
-    if (!topicId) return;
+    if (!sessionId || !tree) return;
     let active = true;
-    get<{ docs: Summary[] }>("/textbook/docs", { topic_id: topicId }).then(
-      ({ docs }) => { if (active) { setLoaded({ topicId, docs }); setError(null); } },
-      (e: unknown) => { if (active) setError({ id: topicId, message: message(e) }); },
+    const lists = topicIds(tree).map((id) =>
+      get<{ docs: TocDoc[] }>("/textbook/docs", { topic_id: id }).then(({ docs }) => [id, docs] as const));
+    Promise.all(lists).then(
+      (entries) => { if (active) { setLoaded({ sessionId, sections: tocSections(tree, new Map(entries)) }); setError(null); } },
+      (e: unknown) => { if (active) setError({ id: sessionId, message: message(e) }); },
     );
     return () => { active = false; };
-  }, [topicId]);
-  const docs = loaded && loaded.topicId === topicId ? loaded.docs : null;
+  }, [sessionId, tree]);
+  const sections = loaded && loaded.sessionId === sessionId ? loaded.sections : null;
+  const doc = (item: TocDoc) =>
+    <li key={item.id}><button className="link" aria-current={docId === item.id ? "true" : undefined} onClick={() => setDoc(item.id)}>{item.title}</button></li>;
   return <details className="toc" open>
     <summary>Contents</summary>
-    {error && error.id === topicId && <p className="error" role="alert">{error.message}</p>}
-    {!docs ? <p className="muted">Loading textbook…</p> : docs.length === 0 ? <p className="muted">No textbook docs.</p> :
-      <ol>{docs.map((doc) => <li key={doc.id}><button className="link" aria-current={docId === doc.id ? "true" : undefined} onClick={() => setDoc(doc.id)}>{doc.title}</button></li>)}</ol>}
+    {error && error.id === sessionId && <p className="error" role="alert">{error.message}</p>}
+    {!sections ? <p className="muted">Loading textbook…</p> : sections.length === 0 ? <p className="muted">No textbook docs.</p> :
+      <ol>{sections.map((section) => <li key={section.id}>
+        {section.depth > 0 && <strong>{section.title}</strong>}
+        <ul>{section.docs.map(doc)}</ul>
+      </li>)}</ol>}
   </details>;
 }
 
