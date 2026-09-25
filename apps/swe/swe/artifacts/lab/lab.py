@@ -105,23 +105,11 @@ class LabArtifact(Artifact):
         )
 
 
-def _position(document: JsonObject) -> int:
-    """The started event's DB-assigned order (ADR-0008), for creation-order sorting.
-
-    View documents written before ``position`` was stored carry no such field;
-    ``0`` puts them before every real position (``>= 1``), which is where they
-    belong: they were created before the upgrade that added it. A rebuild from
-    the log backfills the exact order.
-    """
-    position = document.get("position")
-    return position if isinstance(position, int) else 0
-
-
 class ArtifactView(View):
     """``artifact`` view: ``{artifact_id, type, spec_id, user_id, session_id, ws_id,
     status: running|stopped, position, lab}``. ``position`` (the started event's
-    DB-assigned order, ADR-0008) is internal storage metadata, kept only to list in
-    creation order; :meth:`LabArtifactService.get` drops it from responses."""
+    DB-assigned order, ADR-0008) is always written by ``artifact.started`` and kept
+    only to list in creation order."""
 
     name = "artifact"
     handles = frozenset({"artifact.started", "artifact.reset", "artifact.stopped"})
@@ -172,7 +160,7 @@ class ArtifactView(View):
             and document["user_id"] == user_id
             and (spec_id is None or document["spec_id"] == spec_id)
         ]
-        matches.sort(key=_position)
+        matches.sort(key=lambda document: int(document["position"]))  # type: ignore[arg-type]
         return [
             {
                 "artifact_id": document["artifact_id"],

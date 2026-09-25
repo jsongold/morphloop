@@ -119,11 +119,7 @@ class LabArtifactService:
         user_id: str | None = None,
         ws_id: str | None = None,
     ) -> JsonObject:
-        """The public ``artifact`` document; 404 if unknown or not the user's / the ws's.
-
-        Drops ``position``: it orders :meth:`list_artifacts` but is storage
-        metadata, not part of the artifact resource (ADR-0018 s19).
-        """
+        """The ``artifact`` view document; 404 if unknown or not the user's / the ws's."""
         document = ArtifactView.get(tx, artifact_id)
         if (
             document is None
@@ -131,9 +127,7 @@ class LabArtifactService:
             or (ws_id is not None and document["ws_id"] != ws_id)
         ):
             raise _not_found(f"artifact {artifact_id!r} not found")
-        public = dict(document)
-        public.pop("position", None)
-        return public
+        return document
 
     def list_artifacts(
         self,
