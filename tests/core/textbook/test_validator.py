@@ -35,12 +35,39 @@ def test_se_pack_directives_resolve() -> None:
         ("::artifact{type=diagram ref=missing}", "artifact 'missing' is not in the pack"),
         ("::artifact{type=lab ref=dns-resolution-flow}", "is 'diagram', not 'lab'"),
         ("Text.\n::artifact{ref=dns-resolution-flow}", "malformed directive"),
+        (
+            "::artifact{type=diagram ref=dns-resolution-flow} **bold**",
+            "malformed directive",
+        ),
+        (
+            "::artifact{type=diagram ref=dns-resolution-flow} `code`",
+            "malformed directive",
+        ),
+        (
+            "::artifact{type=diagram ref=dns-resolution-flow} <b>html</b>",
+            "malformed directive",
+        ),
+        (
+            "::artifact\\{type=diagram ref=dns-resolution-flow}",
+            "malformed directive",
+        ),
     ],
 )
 def test_bad_directive_is_refused(tmp_path: Path, body: str, expected: str) -> None:
     problems = _problems_with_body(tmp_path, body)
     assert f"{DOC}#diagram: " in problems
     assert expected in problems
+
+
+def test_entity_encoded_lookalike_is_not_a_directive(tmp_path: Path) -> None:
+    """``&#58;&#58;artifact{...}`` decodes to look like a directive but never is one:
+    directive-ness is decided from the literal source line, not decoded content."""
+    pack = tmp_path / "pack"
+    shutil.copytree(SE_PACK, pack)
+    doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
+    doc["blocks"][2]["body"] = "&#58;&#58;artifact{type=lab ref=missing}"
+    (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
+    import_pack_v2(pack)
 
 
 @pytest.mark.parametrize(

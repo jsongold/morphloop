@@ -4,7 +4,15 @@ The directive is a whole line of paragraph text in a block body (CommonMark; lin
 inside code blocks or inline code spans are not directives), exactly
 ``::artifact{type=T ref=R}``.
 ``ref`` must be an artifact id of the pack and ``type`` that artifact's type. A line
-that starts with ``::artifact`` but is not this form is a problem too.
+whose literal source starts with ``::artifact`` but is not exactly this form is a
+problem too.
+
+Directive-ness is decided from the line's literal source text (found via the inline
+token's ``map`` line range, not from decoded/rendered content): an escaped brace
+(``::artifact\\{...}``) or an HTML entity (``&#58;&#58;artifact{...}``) can decode to
+something that *looks* like a directive, but the raw source never reads
+``::artifact{...}`` there, so it is plain text, not a directive (:func:`raw_line_texts`;
+shared with :mod:`harness.core.textbook.plaintext` so both agree).
 Block ids are unique within a doc and doc ids are unique across the pack.
 (Topic coverage of textbook docs is checked by :mod:`.topics`.)
 """
@@ -41,20 +49,31 @@ def inline_lines(children: Sequence[Token]) -> Iterator[list[Token]]:
     yield line
 
 
-def line_text(line: Sequence[Token]) -> str | None:
-    """The stripped text of a line made only of plain text, else ``None`` (never a directive)."""
-    if any(token.type != "text" for token in line):
-        return None
-    return "".join(token.content for token in line).strip()
+def raw_line_texts(body: str, token: Token) -> list[str | None]:
+    """Literal (undecoded) source text of an inline token's split lines, stripped.
+
+    One entry per line yielded by :func:`inline_lines`, aligned by index; ``None`` for
+    a line that cannot be read 1:1 off the raw source because a multiline token (e.g.
+    a code span whose backticks are on other lines) swallowed a line break inside this
+    paragraph without producing a soft/hard break.
+    """
+    lines = list(inline_lines(token.children or ()))
+    start, end = token.map or (0, 0)
+    if end - start != len(lines):
+        return [None] * len(lines)
+    source = body.splitlines()
+    return [source[start + i].strip() for i in range(len(lines))]
 
 
 def text_lines(body: str) -> Iterator[str]:
-    """Plain-text lines of the body's inline text (paragraphs, headings), not code."""
+    """Literal source text of each inline line (paragraphs, headings) that maps 1:1 to
+    a raw source line; used only to find literal ``::artifact`` directives, never code.
+    """
     for token in MD.parse(body):
         if token.type == "inline":
-            for line in inline_lines(token.children or ()):
-                if (text := line_text(line)) is not None:
-                    yield text
+            for raw in raw_line_texts(body, token):
+                if raw is not None:
+                    yield raw
 
 
 def validate(pack: PackV2) -> Iterable[str]:

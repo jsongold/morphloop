@@ -1,0 +1,4 @@
+{
+  "markdown": "&#58;&#58;artifact{type=lab ref=x}",
+  "plaintext": "::artifact{type=lab ref=x}"
+}
