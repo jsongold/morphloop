@@ -32,12 +32,15 @@ services:
       - path: .env.local
         required: false
     environment:
-      # DOCKER_HOST is passed through from the host only when it is set there
-      # (the Docker endpoint is not the mounted socket below). LLM keys come
-      # from env_file above: a bare name here would override it with nothing.
+      # DOCKER_HOST and MORPHLOOP_LLM_PROVIDER are passed through from the host
+      # only when set there (the Docker endpoint is not the mounted socket
+      # below; MORPHLOOP_LLM_PROVIDER=fake is dev-stack.sh's --fake-llm, #130).
+      # LLM keys come from env_file above: a bare name here would override it
+      # with nothing.
       - DATABASE_URL=postgresql+psycopg://morphloop:morphloop@db:5432/morphloop
       - WEB_ORIGIN=http://localhost:${WEB_PORT:-3000}
       - DOCKER_HOST
+      - MORPHLOOP_LLM_PROVIDER
     # The lab runtime starts learner containers as siblings, so the api needs
     # the host's Docker endpoint. This grants the api container host-root
     # equivalent power; it is a local-development stack. Learner containers
