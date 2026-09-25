@@ -9,14 +9,23 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
 
-from harness.api.v2.deps import event_store_v2_of
+from harness.api.v2.deps import event_store_v2_of, user_id_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
+from harness.testing.openapi_v2 import load_merged_openapi_v2_spec
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from api_harness import build_app  # noqa: E402
+
+PATHS = load_merged_openapi_v2_spec()["paths"]
+
+
+def _check(body: Any, url: str, method: str, status: str) -> None:
+    schema = PATHS[url][method]["responses"][status]["content"]["application/json"]["schema"]
+    Draft202012Validator(schema).validate(body)
 
 
 @pytest.fixture
@@ -26,6 +35,7 @@ def client() -> Any:
     app.dependency_overrides[event_store_v2_of] = lambda: store
     with TestClient(app) as c:
         c.store = store  # type: ignore[attr-defined]
+        c.app = app  # type: ignore[attr-defined]
         yield c
 
 
@@ -168,3 +178,62 @@ def test_a_second_targetless_thread_returns_the_existing_main_thread(client: Any
     assert second.status_code == 201
     assert second.json() == first.json()
     assert len(client.store.read(ws_id=ws["ws_id"])) == 2  # ws.created + one thread.created
+
+
+def test_list_threads(client: Any) -> None:
+    ws = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()
+    main = client.post(f"/v2/ws/{ws['ws_id']}/threads", headers=_key()).json()
+    target = {"kind": "textbook_block", "doc_id": "d", "block_id": "b", "highlight_id": "hl_1"}
+    targeted = client.post(
+        f"/v2/ws/{ws['ws_id']}/threads",
+        json={"target": target, "labels": ["mode:hint"]},
+        headers=_key(),
+    ).json()
+
+    listed = client.get(f"/v2/ws/{ws['ws_id']}/threads")
+    assert listed.status_code == 200
+    _check(listed.json(), "/ws/{ws_id}/threads", "get", "200")
+    assert listed.json() == {
+        "items": [
+            {
+                "thread_id": main["payload"]["thread_id"],
+                "target": None,
+                "labels": [],
+                "created_at": main["created_at"],
+            },
+            {
+                "thread_id": targeted["payload"]["thread_id"],
+                "target": target,
+                "labels": ["mode:hint"],
+                "created_at": targeted["created_at"],
+            },
+        ]
+    }
+
+    filtered = client.get(f"/v2/ws/{ws['ws_id']}/threads", params={"target_highlight_id": "hl_1"})
+    assert filtered.json()["items"] == [listed.json()["items"][1]]
+
+    no_match = client.get(
+        f"/v2/ws/{ws['ws_id']}/threads", params={"target_highlight_id": "hl_missing"}
+    )
+    assert no_match.json() == {"items": []}
+
+
+def test_list_threads_on_missing_or_other_users_ws_is_404(client: Any) -> None:
+    assert client.get("/v2/ws/ws_nope/threads").status_code == 404
+
+    ws = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()
+    client.app.dependency_overrides[user_id_of] = lambda: "usr_other"
+    try:
+        other_user = client.get(f"/v2/ws/{ws['ws_id']}/threads")
+    finally:
+        del client.app.dependency_overrides[user_id_of]
+    assert other_user.status_code == 404
+
+
+def test_list_threads_invalid_target_highlight_id_is_a_client_error(client: Any) -> None:
+    ws = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()
+    resp = client.get(
+        f"/v2/ws/{ws['ws_id']}/threads", params={"target_highlight_id": "not-a-highlight-id"}
+    )
+    assert resp.status_code == 400

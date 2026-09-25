@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.v2.deps import event_store_v2_of, user_id_of
@@ -17,6 +18,7 @@ from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.generated_documents import GeneratedDocument
 from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
+from harness.testing.openapi_v2 import load_merged_openapi_v2_spec
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -32,6 +34,14 @@ PACK = (
 )
 GEN_ID = "0b6f9a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b"
 URL = "/v2/ws/ws_1/drills/dns-record-choice/answers"
+ANSWERS_URL = "/v2/ws/ws_1/drills/answers"
+
+PATHS = load_merged_openapi_v2_spec()["paths"]
+
+
+def _check(body: Any, url: str, method: str, status: str) -> None:
+    schema = PATHS[url][method]["responses"][status]["content"]["application/json"]["schema"]
+    Draft202012Validator(schema).validate(body)
 
 
 @pytest.fixture
@@ -124,6 +134,36 @@ def test_answer_rejects_nul_and_explicit_null(client: Any) -> None:
     assert client.post(URL, json={"actual": None}).status_code == 422
     assert client.post(URL, json={"artifact_id": None}).status_code == 422
     assert len(client.store.read(ws_id="ws_1")) == 1  # only ws.created
+
+
+def test_list_answers_never_includes_actual_or_expected(client: Any) -> None:
+    first = client.post(URL, json={"actual": "A"}, headers={"Idempotency-Key": str(uuid.uuid4())})
+    assert first.status_code == 201
+
+    listed = client.get(ANSWERS_URL)
+    assert listed.status_code == 200
+    _check(listed.json(), "/ws/{ws_id}/drills/answers", "get", "200")
+    assert listed.json() == {
+        "items": [
+            {
+                "item_id": "dns-record-choice",
+                "answer_event_id": first.json()["id"],
+                "judgment_status": "unjudged",
+                "gap": None,
+            }
+        ]
+    }
+    assert "actual" not in listed.text and "expected" not in listed.text
+
+
+def test_list_answers_on_missing_or_other_users_ws_is_404(client: Any) -> None:
+    assert client.get("/v2/ws/ws_2/drills/answers").status_code == 404
+    client.app.dependency_overrides[user_id_of] = lambda: "usr_other"
+    try:
+        other_user = client.get(ANSWERS_URL)
+    finally:
+        del client.app.dependency_overrides[user_id_of]
+    assert other_user.status_code == 404
 
 
 def test_answer_resend_after_pack_change_returns_stored_result(client: Any) -> None:
