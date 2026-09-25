@@ -39,3 +39,26 @@ def test_lint_imports_passes() -> None:
         "lint-imports reported a dependency-direction violation "
         f"(exit {result.returncode}):\n{result.stdout}\n{result.stderr}"
     )
+
+
+def test_sdk_imports_no_app() -> None:
+    """``harness`` and ``domains`` never name an app package (ADR-0018 s19)."""
+    import ast
+
+    offending: list[str] = []
+    for root in ("harness", "domains"):
+        for path in (REPO_ROOT / root).rglob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                names = (
+                    [a.name for a in node.names]
+                    if isinstance(node, ast.Import)
+                    else [node.module or ""]
+                    if isinstance(node, ast.ImportFrom)
+                    else []
+                )
+                offending += [
+                    f"{path.relative_to(REPO_ROOT)}: {n}"
+                    for n in names
+                    if n.split(".")[0] in {"apps", "swe"}
+                ]
+    assert not offending, offending
