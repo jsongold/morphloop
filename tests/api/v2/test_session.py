@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import sys
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +19,7 @@ from fastapi.testclient import TestClient
 from harness.api.v2.deps import user_id_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import import_pack_v2
-from harness.testing.fakes_v2 import InMemoryEventStoreV2
+from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2
 
 # api_harness owns the app-under-fakes builder (see tests/api/v2/test_router_autoinclude.py).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -39,29 +37,6 @@ def _client(*, user_id: str | None = None, store: InMemoryEventStoreV2 | Any = N
     if user_id is not None:
         app.dependency_overrides[user_id_of] = lambda: user_id
     return TestClient(app)
-
-
-class _ConnectionTrackingStore:
-    """Wraps `InMemoryEventStoreV2` to fail if `.read()` runs while its
-    transaction is open -- the shape of a second, concurrent connection
-    checked out of a bounded pool (#89 review)."""
-
-    def __init__(self, inner: InMemoryEventStoreV2) -> None:
-        self._inner = inner
-        self.tx_open = False
-
-    @contextmanager
-    def transaction(self) -> Iterator[Any]:
-        self.tx_open = True
-        try:
-            with self._inner.transaction() as tx:
-                yield tx
-        finally:
-            self.tx_open = False
-
-    def read(self, **kwargs: Any) -> Any:
-        assert not self.tx_open, "store.read() must not run while a transaction is open"
-        return self._inner.read(**kwargs)
 
 
 def _create(client: TestClient, topic_id: str, *, key: str | None = None) -> Any:
@@ -192,7 +167,7 @@ def test_list_and_get_are_scoped_to_the_configured_user() -> None:
 
 
 def test_get_session_with_idle_minutes_never_reads_events_inside_an_open_transaction() -> None:
-    tracking_store = _ConnectionTrackingStore(InMemoryEventStoreV2(ContractSchemas.load()))
+    tracking_store = ConnectionTrackingStore(InMemoryEventStoreV2(ContractSchemas.load()))
     client = _client(store=tracking_store)
     created = _create(client, "network").json()
     response = client.get(f"/v2/sessions/{created['id']}", params={"idle_minutes": 30})

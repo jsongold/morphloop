@@ -72,6 +72,7 @@ def create_highlight(
     *,
     event_id: str,
     user_id: str,
+    session_id: str,
     ws_id: str,
     anchor: JsonObject,
     labels: Sequence[str],
@@ -85,7 +86,9 @@ def create_highlight(
     :class:`~harness.core.labels.LabelError` for a label outside the pack's
     vocabulary on a genuinely new request. The anchor's shape and
     ``start < end`` are trusted here (checked by the caller's pydantic model
-    via :mod:`harness.core.highlight.anchor`).
+    via :mod:`harness.core.highlight.anchor`), as is ``session_id`` -- the
+    ws's session, resolved by the caller through the ``ws`` view (this
+    package does not import the ws package; ids are opaque, ADR-0009).
     """
     highlight_id = new_highlight_id(event_id)
     payload: dict[str, JsonValue] = {
@@ -94,7 +97,13 @@ def create_highlight(
         "labels": list(labels),
     }
     candidate = EventV2(
-        id=event_id, type=CREATED, actor="learner", user_id=user_id, ws_id=ws_id, payload=payload
+        id=event_id,
+        type=CREATED,
+        actor="learner",
+        user_id=user_id,
+        session_id=session_id,
+        ws_id=ws_id,
+        payload=payload,
     )
     if _replay_or_conflict(tx, candidate) is None:
         check_labels(labels, vocabulary=label_vocabulary, topic_ids=topic_ids)
@@ -107,7 +116,13 @@ def create_highlight(
 
 
 def remove_highlight(
-    tx: EventTransactionV2, *, event_id: str, user_id: str, ws_id: str, highlight_id: str
+    tx: EventTransactionV2,
+    *,
+    event_id: str,
+    user_id: str,
+    session_id: str,
+    ws_id: str,
+    highlight_id: str,
 ) -> None:
     """Append ``highlight.removed``. Raises :class:`HighlightNotFoundError` unless
     an active highlight with this id exists in this ws.
@@ -122,6 +137,7 @@ def remove_highlight(
         type=REMOVED,
         actor="learner",
         user_id=user_id,
+        session_id=session_id,
         ws_id=ws_id,
         payload={"highlight_id": highlight_id},
     )

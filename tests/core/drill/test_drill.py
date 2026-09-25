@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,13 +17,10 @@ from harness.core.drill import (
     DrillAnswersView,
     DrillItemNotFoundError,
     DrillService,
-    WsNotFoundError,
     generated_items,
     pack_items,
-    ws_session_id,
 )
 from harness.core.pack.v2 import PackV2ImportError, import_pack_v2
-from harness.core.ports.events_v2 import StoredEventV2
 from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.ports.json_types import JsonObject
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
@@ -138,20 +134,3 @@ def test_validator_checks_choices_and_artifact_ref(tmp_path: Path) -> None:
     problems = "\n".join(info.value.problems)
     assert "[drill] drills/dns-record-choice.json: expected is not one of the choices" in problems
     assert "artifact_ref 'no-such-lab' is not an artifact of the pack" in problems
-
-
-def test_ws_session_comes_from_ws_created() -> None:
-    created = StoredEventV2(
-        id=str(uuid.uuid4()),
-        type="ws.created",
-        actor="learner",
-        user_id="usr_1",
-        session_id="ses_1",
-        ws_id="ws_1",
-        payload={},
-        position=1,
-        created_at=datetime.now(UTC),
-    )
-    assert ws_session_id("ws_1", [created]) == "ses_1"
-    with pytest.raises(WsNotFoundError):
-        ws_session_id("ws_2", [])

@@ -6,7 +6,7 @@ same transaction (ADR-0008). Judging the gap is a separate step (#65).
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable
 
 from harness.core.drill.model import ANSWERED, DrillItem
 from harness.core.ports.events_v2 import EventTransactionV2, EventV2, StoredEventV2
@@ -24,26 +24,8 @@ class DrillItemNotFoundError(DrillError):
     status = 404
 
 
-class WsNotFoundError(DrillError):
-    status = 404
-
-
 class AnswerMismatchError(DrillError):
     """The answer does not fit the item's ``answer_mode`` (or is not one of its choices)."""
-
-
-WS_CREATED = "ws.created"
-
-
-def ws_session_id(ws_id: str, events: Sequence[StoredEventV2]) -> str | None:
-    """The session of ``ws_id``, from its ``ws.created`` event (among the ws's ``events``).
-
-    Raises :class:`WsNotFoundError` when the ws was never created.
-    """
-    for event in events:
-        if event.type == WS_CREATED and event.ws_id == ws_id:
-            return event.session_id
-    raise WsNotFoundError(f"no ws {ws_id!r}")
 
 
 class DrillService:

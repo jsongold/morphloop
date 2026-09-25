@@ -10,12 +10,13 @@ from __future__ import annotations
 import json
 import shutil
 import threading
+import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from harness.core.contract_schemas import EVENT_V2_APPEND_ID, ContractSchemas
 from harness.core.ports.events_v2 import (
@@ -177,3 +178,53 @@ if TYPE_CHECKING:
 
     def _conforms(schemas: ContractSchemas) -> EventStoreV2:
         return InMemoryEventStoreV2(schemas)
+
+
+def seed_ws(
+    store: EventStoreV2,
+    ws_id: str,
+    *,
+    user_id: str = "usr_local",
+    session_id: str = "ses_01",
+) -> None:
+    """Append a ``ws.created`` for ``ws_id`` and populate the ``ws`` view, so a
+    test can use a fixed ws id (``create_ws`` derives its id from the event id)."""
+    from harness.core.view import dispatch
+    from harness.core.ws import WS_CREATED  # importing it registers WsView
+
+    with store.transaction() as tx:
+        result = tx.append(
+            EventV2(
+                id=str(uuid.uuid4()),
+                type=WS_CREATED,
+                actor="learner",
+                user_id=user_id,
+                session_id=session_id,
+                ws_id=ws_id,
+                payload={"labels": ["origin:learner"]},
+            )
+        )
+        dispatch(result.event, tx)
+
+
+class ConnectionTrackingStore:
+    """Wraps an :class:`EventStoreV2` to fail if ``.read()`` runs while its
+    transaction is open -- the shape of a second, concurrent connection
+    checked out of a bounded pool (#89 review)."""
+
+    def __init__(self, inner: EventStoreV2) -> None:
+        self._inner = inner
+        self.tx_open = False
+
+    @contextmanager
+    def transaction(self) -> Iterator[EventTransactionV2]:
+        self.tx_open = True
+        try:
+            with self._inner.transaction() as tx:
+                yield tx
+        finally:
+            self.tx_open = False
+
+    def read(self, **kwargs: Any) -> Sequence[StoredEventV2]:
+        assert not self.tx_open, "store.read() must not run while a transaction is open"
+        return self._inner.read(**kwargs)

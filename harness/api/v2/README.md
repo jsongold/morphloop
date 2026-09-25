@@ -25,6 +25,11 @@ They exist so each route does not re-discover the same input bugs (#87, #92).
   (UUID, else 400; generated when absent). Use it as the event `id`.
 - `EventTransactionV2Dep`, `PackV2Dep`, `GeneratedDocumentsDep`, `UserIdDep`.
   Do not add route-local env vars or loaders.
+- `ws_or_404(tx, ws_id, user_id=...)`: a ws-scoped route resolves `ws_id` to
+  the ws's session/owner through the `ws` view on the request transaction.
+  Never `store.read(...)` while the transaction is open (a second pooled
+  connection per request), and never answer for a ws that is missing or
+  belongs to another learner -- both are 404.
 
 ## Idempotency
 

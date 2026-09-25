@@ -9,8 +9,6 @@ and never reaches `tx.append` (no event stored).
 
 from __future__ import annotations
 
-import json
-import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -21,70 +19,44 @@ from fastapi.testclient import TestClient
 
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
-from harness.api.v2.deps import event_store_v2_of, pack_v2_of
+from harness.api.v2.deps import event_store_v2_of, pack_v2_of, user_id_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import import_pack_v2
-from harness.core.ports.events_v2 import EventV2
-from harness.testing.contracts import CONTRACTS_DIR
-from harness.testing.fakes_v2 import InMemoryEventStoreV2
+from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
 
 PACK_DIR = Path(__file__).parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
 
 
-def _schemas_with_ws_created(directory: Path) -> ContractSchemas:
-    """Real contracts plus a permissive ``ws.created`` until the ws resource (#57) ships it."""
-    contracts = directory / "contracts"
-    shutil.copytree(CONTRACTS_DIR, contracts)
-    path = contracts / "schemas/events/payloads/ws.created/1.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    schema = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://morphloop.dev/contracts/schemas/events/payloads/ws.created/1.json",
-        "x-envelope": 2,
-        "x-actors": ["learner"],
-        "type": "object",
-    }
-    path.write_text(json.dumps(schema), encoding="utf-8")
-    return ContractSchemas(contracts)
-
-
-def _create_ws(store: InMemoryEventStoreV2, ws_id: str, session_id: str = "ses_01") -> None:
-    with store.transaction() as tx:
-        tx.append(
-            EventV2(
-                id=str(uuid.uuid4()),
-                type="ws.created",
-                actor="learner",
-                user_id="usr_01",
-                session_id=session_id,
-                ws_id=ws_id,
-                payload={},
-            )
-        )
-
-
 @pytest.fixture
-def store(tmp_path: Path) -> InMemoryEventStoreV2:
-    store = InMemoryEventStoreV2(_schemas_with_ws_created(tmp_path))
-    _create_ws(store, "ws_01")
+def store() -> ConnectionTrackingStore:
+    # The tracker fails the test if the route opens a second connection
+    # (`store.read`) while the request transaction is open (#89 review).
+    store = ConnectionTrackingStore(InMemoryEventStoreV2(ContractSchemas.load()))
+    seed_ws(store, "ws_01")
     return store
 
 
-@pytest.fixture
-def client(store: InMemoryEventStoreV2) -> TestClient:
+def _client(store: ConnectionTrackingStore, *, user_id: str | None = None) -> TestClient:
     app = FastAPI()
     install_handlers(app)
     app.include_router(build_v2_router())
     app.dependency_overrides[event_store_v2_of] = lambda: store
     app.dependency_overrides[pack_v2_of] = lambda: import_pack_v2(PACK_DIR)
+    if user_id is not None:
+        app.dependency_overrides[user_id_of] = lambda: user_id
     return TestClient(app)
+
+
+@pytest.fixture
+def client(store: ConnectionTrackingStore) -> TestClient:
+    return _client(store)
 
 
 def _post(client: TestClient, ws_id: str, body: dict[str, Any], **kwargs: Any) -> Any:
     return client.post(f"/v2/ws/{ws_id}/memo/entries", json=body, **kwargs)
 
 
-def _memo_events(store: InMemoryEventStoreV2) -> list[Any]:
+def _memo_events(store: ConnectionTrackingStore) -> list[Any]:
     """Stored ``memo.appended`` events, excluding the fixture's ``ws.created`` seed."""
     return [e for e in store.read() if e.type == "memo.appended"]
 
@@ -132,7 +104,7 @@ def test_reused_idempotency_key_with_different_content_is_409(client: TestClient
 
 
 def test_unknown_label_is_422_and_nothing_is_stored(
-    client: TestClient, store: InMemoryEventStoreV2
+    client: TestClient, store: ConnectionTrackingStore
 ) -> None:
     response = _post(client, "ws_01", {"actor": "learner", "body": "hi", "labels": ["nope"]})
     assert response.status_code == 422
@@ -141,7 +113,7 @@ def test_unknown_label_is_422_and_nothing_is_stored(
 
 
 def test_body_over_max_length_is_422_and_nothing_is_stored(
-    client: TestClient, store: InMemoryEventStoreV2
+    client: TestClient, store: ConnectionTrackingStore
 ) -> None:
     response = _post(client, "ws_01", {"actor": "learner", "body": "x" * 4001})
     assert response.status_code == 422
@@ -149,7 +121,7 @@ def test_body_over_max_length_is_422_and_nothing_is_stored(
 
 
 def test_actor_outside_learner_or_assistant_is_422_and_nothing_is_stored(
-    client: TestClient, store: InMemoryEventStoreV2
+    client: TestClient, store: ConnectionTrackingStore
 ) -> None:
     response = _post(client, "ws_01", {"actor": "system", "body": "hi"})
     assert response.status_code == 422
@@ -164,7 +136,7 @@ def test_actor_outside_learner_or_assistant_is_422_and_nothing_is_stored(
     ],
 )
 def test_source_must_set_exactly_one_id(
-    client: TestClient, store: InMemoryEventStoreV2, source: dict[str, str]
+    client: TestClient, store: ConnectionTrackingStore, source: dict[str, str]
 ) -> None:
     response = _post(client, "ws_01", {"actor": "learner", "body": "hi", "source": source})
     assert response.status_code == 422
@@ -183,8 +155,17 @@ def test_missing_ws_is_404(client: TestClient) -> None:
     assert response.json()["code"] == "not-found"
 
 
+def test_another_users_ws_is_404_and_nothing_is_stored(store: ConnectionTrackingStore) -> None:
+    other = _client(store, user_id="usr_other")
+    response = _post(other, "ws_01", {"actor": "learner", "body": "hi"})
+    assert response.status_code == 404
+    assert response.json()["code"] == "not-found"
+    assert _memo_events(store) == []
+    assert other.get("/v2/ws/ws_01/memo/entries").status_code == 404
+
+
 def test_unknown_field_is_422_and_nothing_is_stored(
-    client: TestClient, store: InMemoryEventStoreV2
+    client: TestClient, store: ConnectionTrackingStore
 ) -> None:
     response = _post(client, "ws_01", {"actor": "learner", "body": "hi", "user_id": "usr_x"})
     assert response.status_code == 422
@@ -192,16 +173,16 @@ def test_unknown_field_is_422_and_nothing_is_stored(
 
 
 def test_body_with_nul_is_422_and_nothing_is_stored(
-    client: TestClient, store: InMemoryEventStoreV2
+    client: TestClient, store: ConnectionTrackingStore
 ) -> None:
     response = _post(client, "ws_01", {"actor": "learner", "body": "a\u0000b"})
     assert response.status_code == 422
     assert _memo_events(store) == []
 
 
-def test_list_is_scoped_to_its_own_ws(client: TestClient, store: InMemoryEventStoreV2) -> None:
-    _create_ws(store, "ws_a")
-    _create_ws(store, "ws_b")
+def test_list_is_scoped_to_its_own_ws(client: TestClient, store: ConnectionTrackingStore) -> None:
+    seed_ws(store, "ws_a")
+    seed_ws(store, "ws_b")
     _post(client, "ws_a", {"actor": "learner", "body": "a"})
     _post(client, "ws_b", {"actor": "learner", "body": "b"})
 

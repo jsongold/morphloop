@@ -13,12 +13,12 @@ from pydantic import Field, model_validator
 
 from harness.api.v2.deps import (
     EventIdDep,
-    EventStoreV2Dep,
     EventTransactionV2Dep,
     GeneratedDocumentsDep,
     PackV2Dep,
     UserIdDep,
     replay_or_conflict,
+    ws_or_404,
 )
 from harness.api.v2.models import Text, V2Model, reject_null
 from harness.core.drill import (
@@ -27,7 +27,6 @@ from harness.core.drill import (
     DrillService,
     generated_items,
     pack_items,
-    ws_session_id,
 )
 from harness.core.ports.events_v2 import EventV2
 from harness.core.ports.json_types import PlainJson
@@ -72,7 +71,6 @@ def get_drill(service: DrillServiceDep, item_id: str) -> dict[str, PlainJson]:
 @router.post("/ws/{ws_id}/drills/{item_id}/answers", status_code=201)
 def answer_drill(
     service: DrillServiceDep,
-    store: EventStoreV2Dep,
     tx: EventTransactionV2Dep,
     user_id: UserIdDep,
     event_id: EventIdDep,
@@ -105,14 +103,13 @@ def answer_drill(
         result = replay_or_conflict(tx, candidate)
         assert result is not None
         return result.to_dict()
+    ws = ws_or_404(tx, ws_id, user_id=user_id)
     try:
-        # ponytail: scans the ws's events for ws.created; read a ws view once #57 has one
-        session_id = ws_session_id(ws_id, store.read(ws_id=ws_id))
         event = service.answer(
             tx,
             event_id=event_id,
             user_id=user_id,
-            session_id=session_id,
+            session_id=str(ws["session_id"]),
             ws_id=ws_id,
             item_id=item_id,
             actual=body.actual,

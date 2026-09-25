@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,15 +15,12 @@ from harness.core.contract_schemas import ContractSchemas
 from harness.core.labels import LabelError
 from harness.core.memo.entries import (
     MemoEntries,
-    WsNotFoundError,
     append_memo_entry,
     build_memo_appended,
     entry_for,
     entry_id_for,
-    ws_session_id,
 )
 from harness.core.pack.v2.importer import PackV2, import_pack_v2
-from harness.core.ports.events_v2 import StoredEventV2
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
 
 PACK_DIR = Path(__file__).parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
@@ -151,20 +147,3 @@ def test_list_for_ws_is_append_order_and_scoped_to_one_ws(
 def test_source_is_carried_through(store: InMemoryEventStoreV2, pack: PackV2) -> None:
     entry = _append(store, pack, source={"highlight_id": "hl_abcdefgh"})
     assert entry["source"] == {"highlight_id": "hl_abcdefgh"}
-
-
-def test_ws_session_comes_from_ws_created() -> None:
-    created = StoredEventV2(
-        id=str(uuid.uuid4()),
-        type="ws.created",
-        actor="learner",
-        user_id="usr_1",
-        session_id="ses_1",
-        ws_id="ws_1",
-        payload={},
-        position=1,
-        created_at=datetime.now(UTC),
-    )
-    assert ws_session_id("ws_1", [created]) == "ses_1"
-    with pytest.raises(WsNotFoundError):
-        ws_session_id("ws_2", [])

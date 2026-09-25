@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -17,9 +16,10 @@ from referencing.jsonschema import DRAFT202012
 
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
-from harness.api.v2.deps import event_store_v2_of, pack_v2_of
+from harness.api.v2.deps import event_store_v2_of, pack_v2_of, user_id_of
+from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import import_pack_v2
-from harness.testing.fakes_v2 import InMemoryEventStoreV2, contract_schemas_with_probe
+from harness.testing.fakes_v2 import InMemoryEventStoreV2, seed_ws
 from harness.testing.openapi_v2 import load_merged_openapi_v2_spec
 
 PATHS = load_merged_openapi_v2_spec()["paths"]
@@ -52,17 +52,27 @@ WS_ID = "ws_01"
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> Iterator[TestClient]:
+def store() -> InMemoryEventStoreV2:
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    for ws_id in (WS_ID, "ws_a", "ws_b"):
+        seed_ws(store, ws_id)
+    return store
+
+
+def _client(store: InMemoryEventStoreV2, *, user_id: str | None = None) -> TestClient:
     app = FastAPI()
     install_handlers(app)
     app.include_router(build_v2_router())
-    schemas = contract_schemas_with_probe(tmp_path / "contracts_copy")
-    store = InMemoryEventStoreV2(schemas)
-    pack = import_pack_v2(PACK_DIR, schemas=schemas)
     app.dependency_overrides[event_store_v2_of] = lambda: store
-    app.dependency_overrides[pack_v2_of] = lambda: pack
-    with TestClient(app) as test_client:
-        yield test_client
+    app.dependency_overrides[pack_v2_of] = lambda: import_pack_v2(PACK_DIR)
+    if user_id is not None:
+        app.dependency_overrides[user_id_of] = lambda: user_id
+    return TestClient(app)
+
+
+@pytest.fixture
+def client(store: InMemoryEventStoreV2) -> TestClient:
+    return _client(store)
 
 
 def _anchor(start: int = 0, end: int = 5) -> dict[str, Any]:
@@ -76,12 +86,15 @@ def _anchor(start: int = 0, end: int = 5) -> dict[str, Any]:
     }
 
 
-def test_create_list_remove_flow(client: TestClient) -> None:
+def test_create_list_remove_flow(client: TestClient, store: InMemoryEventStoreV2) -> None:
     created = client.post(
         f"/v2/ws/{WS_ID}/highlights", json={"anchor": _anchor(), "labels": ["concept"]}
     )
     assert created.status_code == 201, created.text
     body = created.json()
+    # highlight.* events are session-scoped (x-scope): the ws's session is on the envelope.
+    (event,) = [e for e in store.read(ws_id=WS_ID) if e.type == "highlight.created"]
+    assert event.session_id == "ses_01"
     _check(body, "/ws/{ws_id}/highlights", "post", "201")
     assert body["ws_id"] == WS_ID
     assert body["anchor"] == _anchor()
@@ -137,6 +150,24 @@ def test_create_rejects_a_second_block_in_the_selector(client: TestClient) -> No
 def test_create_rejects_unknown_fields(client: TestClient) -> None:
     response = client.post(f"/v2/ws/{WS_ID}/highlights", json={"anchor": _anchor(), "extra": True})
     assert response.status_code == 422
+
+
+def test_missing_ws_is_404(client: TestClient) -> None:
+    assert (
+        client.post("/v2/ws/ws_missing/highlights", json={"anchor": _anchor()}).status_code == 404
+    )
+    assert client.get("/v2/ws/ws_missing/highlights").status_code == 404
+    assert client.delete("/v2/ws/ws_missing/highlights/hl_x").status_code == 404
+
+
+def test_another_users_ws_is_404(client: TestClient, store: InMemoryEventStoreV2) -> None:
+    created = client.post(f"/v2/ws/{WS_ID}/highlights", json={"anchor": _anchor()})
+    highlight_id = created.json()["highlight_id"]
+    other = _client(store, user_id="usr_other")
+    assert other.post(f"/v2/ws/{WS_ID}/highlights", json={"anchor": _anchor()}).status_code == 404
+    assert other.get(f"/v2/ws/{WS_ID}/highlights").status_code == 404
+    assert other.delete(f"/v2/ws/{WS_ID}/highlights/{highlight_id}").status_code == 404
+    assert len(store.read(ws_id=WS_ID)) == 2  # ws.created + the one highlight.created
 
 
 def test_remove_unknown_highlight_is_404(client: TestClient) -> None:

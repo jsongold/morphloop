@@ -31,7 +31,13 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, StrictInt, model_validator
 
 from harness.api.problems import problem
-from harness.api.v2.deps import EventIdDep, EventTransactionV2Dep, PackV2Dep, UserIdDep
+from harness.api.v2.deps import (
+    EventIdDep,
+    EventTransactionV2Dep,
+    PackV2Dep,
+    UserIdDep,
+    ws_or_404,
+)
 from harness.api.v2.models import Text, V2Model
 from harness.core.highlight.anchor import check_text_position
 from harness.core.highlight.service import (
@@ -132,11 +138,13 @@ def create(
     user_id: UserIdDep,
     pack: PackV2Dep,
 ) -> Response:
+    ws = ws_or_404(tx, ws_id, user_id=user_id)
     try:
         doc = create_highlight(
             tx,
             event_id=event_id,
             user_id=user_id,
+            session_id=str(ws["session_id"]),
             ws_id=ws_id,
             anchor=body.anchor.to_json(),
             labels=body.labels,
@@ -149,7 +157,10 @@ def create(
 
 
 @router.get("", response_model=None)
-def list_(ws_id: WsIdPath, tx: EventTransactionV2Dep) -> dict[str, list[JsonObject]]:
+def list_(
+    ws_id: WsIdPath, tx: EventTransactionV2Dep, user_id: UserIdDep
+) -> dict[str, list[JsonObject]]:
+    ws_or_404(tx, ws_id, user_id=user_id)
     return {"highlights": [_public(doc) for doc in list_highlights(tx, ws_id)]}
 
 
@@ -161,9 +172,15 @@ def remove(
     event_id: EventIdDep,
     user_id: UserIdDep,
 ) -> Response:
+    ws = ws_or_404(tx, ws_id, user_id=user_id)
     try:
         remove_highlight(
-            tx, event_id=event_id, user_id=user_id, ws_id=ws_id, highlight_id=highlight_id
+            tx,
+            event_id=event_id,
+            user_id=user_id,
+            session_id=str(ws["session_id"]),
+            ws_id=ws_id,
+            highlight_id=highlight_id,
         )
     except HighlightNotFoundError:
         return problem(

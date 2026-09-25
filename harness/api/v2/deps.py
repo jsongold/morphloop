@@ -25,6 +25,10 @@ never adds its own env var or loader:
 - `EventIdDep`: the new event's `id`, from the `Idempotency-Key` header (a
   UUID, else 400); the server assigns a fresh UUID when it is absent.
 - `replay_or_conflict`: the idempotent-replay check a POST runs first.
+- `ws_or_404`: a ws-scoped resource (memo, drill, highlight) resolves its
+  `ws_id` to the ws's session and owner through the `ws` view on the
+  request's own transaction -- never `store.read` (a second pooled
+  connection per request) and never by importing another resource's store.
 
 A resource route file (`harness/api/v2/routes/<resource>.py`) builds its own
 service factories on top of these two dependencies; nothing here is
@@ -37,7 +41,7 @@ import uuid
 from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import Depends, Header, Request
+from fastapi import Depends, Header, HTTPException, Request
 
 from harness.adapters.postgres.engine import create_engine_from_env
 from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
@@ -52,7 +56,9 @@ from harness.core.ports.events_v2 import (
     StoredEventV2,
 )
 from harness.core.ports.generated_documents import GeneratedDocumentStore
+from harness.core.ports.json_types import JsonObject
 from harness.core.settings import Settings
+from harness.core.ws import WsNotFoundError, get_ws
 
 
 def build_event_store_v2() -> EventStoreV2:
@@ -142,3 +148,15 @@ def replay_or_conflict(tx: EventTransactionV2, candidate: EventV2) -> StoredEven
     if not candidate.same_content_as(existing):
         raise EventIdConflictError(existing)
     return existing
+
+
+def ws_or_404(tx: EventTransactionV2, ws_id: str, *, user_id: str) -> JsonObject:
+    """The ``ws`` view document of ``ws_id``, read on the request's transaction.
+
+    404 unless the ws exists and belongs to ``user_id`` -- the same rule the
+    ws routes apply, so another learner's ws is indistinguishable from none.
+    """
+    try:
+        return get_ws(tx, ws_id, user_id=user_id)
+    except WsNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc

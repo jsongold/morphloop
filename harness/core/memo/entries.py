@@ -14,7 +14,6 @@ append order (the DB-assigned `position` is the only order, ADR-0008).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
 from typing import ClassVar
 
 from harness.core.labels import check_labels
@@ -30,26 +29,8 @@ from harness.core.ports.json_types import JsonObject, JsonValue, format_timestam
 from harness.core.view import View, dispatch
 
 MEMO_APPENDED = "memo.appended"
-WS_CREATED = "ws.created"
 
 _POSITION_WIDTH = 20  # zero-padded so a lexicographic sort is a position sort
-
-
-class WsNotFoundError(Exception):
-    """No `ws.created` event for the given `ws_id`."""
-
-
-def ws_session_id(ws_id: str, events: Sequence[StoredEventV2]) -> str | None:
-    """The session of `ws_id`, from its `ws.created` event among `events`.
-
-    Raises `WsNotFoundError` when the ws was never created.
-    # ponytail: duplicated in harness.core.drill.service / harness.core.artifact_lab.service
-    # (core.<resource> packages must not import each other); read a ws view once #57 has one.
-    """
-    for event in events:
-        if event.type == WS_CREATED and event.ws_id == ws_id:
-            return event.session_id
-    raise WsNotFoundError(f"no ws {ws_id!r}")
 
 
 def entry_id_for(event_id: str) -> str:
