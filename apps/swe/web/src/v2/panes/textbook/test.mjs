@@ -24,3 +24,14 @@ for (const file of readdirSync("../../../contracts/fixtures/plaintext")) {
   assert.equal(text(result.content), fixture.plaintext, file);
   assert.equal(result.artifacts.length, (file.startsWith("artifact-") && !file.includes("lookalike") && !file.includes("multiline") ? 1 : 0), file);
 }
+
+// Edge cases the Python extractor pins but no fixture covers yet.
+for (const [markdown, plaintext, artifacts] of [
+  ["![first\nsecond](x)", "first\nsecond", 0],
+  ["<p>if (a < b) alert(1);</p>", "if (a < b) alert(1);", 0],
+  ["Before\r::artifact{type=lab ref=x}\rAfter", "Before\nAfter", 1],
+]) {
+  const result = exports.renderBlock(markdown);
+  assert.equal(text(result.content), plaintext, JSON.stringify(markdown));
+  assert.equal(result.artifacts.length, artifacts, JSON.stringify(markdown));
+}

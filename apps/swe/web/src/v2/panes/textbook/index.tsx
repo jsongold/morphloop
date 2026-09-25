@@ -69,7 +69,8 @@ function safeHref(href: string): boolean {
   return !scheme || /^(https?|mailto)$/i.test(scheme[1]);
 }
 
-/** Strips tags and comments, keeping the text between them (quote-aware, unlike a `<[^>]*>` regex). */
+/** Strips tags and comments, keeping the text between them; a `<` that cannot open a tag
+ * (e.g. the comparison in `a < b`) is data, like an HTML parser — not a delimiter to scan to `>`. */
 function stripTags(html: string): string {
   let out = "", i = 0;
   while (i < html.length) {
@@ -78,6 +79,10 @@ function stripTags(html: string): string {
       const end = html.indexOf("-->", i + 4);
       i = end < 0 ? html.length : end + 3;
       continue;
+    }
+    const next = html[i + 1] ?? "";
+    if (!(next === "!" || next === "?" || next === "/" || /[a-zA-Z]/.test(next))) {
+      out += html[i]; i++; continue;
     }
     let j = i + 1, quote = "";
     while (j < html.length && (html[j] !== ">" || quote)) {
@@ -101,6 +106,17 @@ function ArtifactHost({ directive }: { directive: ArtifactDirective }) {
   return <span ref={ref} className="artifact-slot">{root && createPortal(<ArtifactSlot directive={directive} />, root)}</span>;
 }
 
+/** Plaintext of inline tokens, matching the API's recursive rule (breaks are "\n", images recurse). */
+function plainText(tokens: Token[]): string {
+  let out = "";
+  for (const t of tokens) {
+    if (t.type === "text" || t.type === "text_special" || t.type === "code_inline") out += t.content;
+    else if (t.type === "softbreak" || t.type === "hardbreak") out += "\n";
+    else if (t.type === "image") out += plainText(t.children ?? []);
+  }
+  return out;
+}
+
 function inline(tokens: Token[]): ReactNode[] {
   const out: ReactNode[] = [];
   for (let i = 0; i < tokens.length; i++) {
@@ -114,7 +130,7 @@ function inline(tokens: Token[]): ReactNode[] {
     } else if (t.type === "text") out.push(t.content);
     else if (t.type === "code_inline") out.push(<code key={i}>{t.content}</code>);
     else if (t.type === "image") {
-      const alt = t.children?.map((child) => child.content).join("") ?? t.content;
+      const alt = plainText(t.children ?? []);
       out.push(<span key={i}><img src={t.attrGet("src") ?? ""} alt={alt} /><span hidden>{alt}</span></span>);
     } else if (t.type === "softbreak" || t.type === "hardbreak") out.push("\n");
     // html_inline: dropped, same as the plaintext rule (its content is only the tag; any text
@@ -124,7 +140,7 @@ function inline(tokens: Token[]): ReactNode[] {
 }
 
 export function renderBlock(body: string): { content: ReactNode[]; artifacts: ArtifactDirective[] } {
-  const tokens = md.parse(body, {}), source = body.split(/\r?\n/);
+  const tokens = md.parse(body, {}), source = body.split(/\r\n|\r|\n/);
   const listStarts = new Set(tokens.filter((t) => t.type === "list_item_open" && t.map).map((t) => t.map![0]));
   const artifacts: ArtifactDirective[] = [];
   let hasText = false;
