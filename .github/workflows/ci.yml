@@ -48,13 +48,18 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Mypy
-        run: uv run mypy harness domains
+        run: uv run mypy harness domains apps
 
       - name: Import linter
         run: uv run lint-imports
 
-      - name: Pytest
+      - name: Pytest (SDK)
         run: uv run pytest -q -rs
+
+      # Own step: the SDK tests stand in stubs for the app's artifact types, and one
+      # process registers each type name once (apps/swe/pyproject.toml configures it).
+      - name: Pytest (apps/swe)
+        run: uv run pytest -q -rs apps/swe/tests
 
   web:
     runs-on: ubuntu-latest
