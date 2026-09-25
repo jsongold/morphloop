@@ -26,10 +26,11 @@ from harness.core.drill import (
     DrillError,
     DrillService,
     generated_items,
+    list_answers,
     pack_items,
 )
 from harness.core.ports.events_v2 import EventV2
-from harness.core.ports.json_types import PlainJson
+from harness.core.ports.json_types import JsonObject, PlainJson
 
 router = APIRouter(tags=["drill"])
 
@@ -118,3 +119,9 @@ def answer_drill(
     except DrillError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
     return event.to_dict()
+
+
+@router.get("/ws/{ws_id}/drills/answers")
+def get_answers(tx: EventTransactionV2Dep, user_id: UserIdDep, ws_id: str) -> JsonObject:
+    ws_or_404(tx, ws_id, user_id=user_id)
+    return {"items": list_answers(tx, ws_id)}
