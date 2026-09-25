@@ -172,6 +172,20 @@ def test_resend_of_the_same_thread_event_id_returns_the_same_thread(
     assert len(store.read(ws_id=ws.ws_id)) == 2  # ws.created + one thread.created
 
 
+def test_resend_of_the_main_thread_key_with_different_labels_conflicts(
+    store: InMemoryEventStoreV2,
+) -> None:
+    # the main-thread short-circuit must not mask a reused Idempotency-Key
+    # sent with different content (bug: it ran before the idempotency check).
+    with store.transaction() as tx:
+        ws = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
+    event_id = str(uuid.uuid4())
+    with store.transaction() as tx:
+        create_thread(tx, event_id=event_id, user_id=USER, ws_id=ws.ws_id, labels=[])
+    with pytest.raises(EventIdConflictError), store.transaction() as tx:
+        create_thread(tx, event_id=event_id, user_id=USER, ws_id=ws.ws_id, labels=["mode:hint"])
+
+
 def test_a_second_targetless_thread_returns_the_existing_main_thread(
     store: InMemoryEventStoreV2,
 ) -> None:

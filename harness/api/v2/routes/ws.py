@@ -9,7 +9,6 @@ from pydantic import ConfigDict, Field, model_validator
 
 from harness.api.v2.deps import EventIdDep, EventTransactionV2Dep, UserIdDep
 from harness.api.v2.models import Text, V2Model
-from harness.core.ports.events_v2 import EventIdConflictError
 from harness.core.ports.json_types import JsonObject, PlainJson
 from harness.core.ws import WsError, create_thread, create_ws, get_ws, list_ws
 
@@ -57,12 +56,10 @@ def post_ws(
     event_id: EventIdDep,
     body: CreateWsRequest,
 ) -> dict[str, PlainJson]:
-    try:
-        event = create_ws(
-            tx, event_id=event_id, user_id=user_id, session_id=body.session_id, labels=body.labels
-        )
-    except EventIdConflictError as exc:
-        raise HTTPException(409, str(exc)) from exc
+    # EventIdConflictError propagates to the global handler (409 idempotency-key-reused).
+    event = create_ws(
+        tx, event_id=event_id, user_id=user_id, session_id=body.session_id, labels=body.labels
+    )
     return event.to_dict()
 
 
@@ -104,6 +101,4 @@ def post_thread(
         )
     except WsError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
-    except EventIdConflictError as exc:
-        raise HTTPException(409, str(exc)) from exc
     return event.to_dict()
