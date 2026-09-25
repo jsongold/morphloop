@@ -12,6 +12,7 @@ import yaml
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
@@ -58,7 +59,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     app.include_router(build_v2_router())
     schemas = contract_schemas_with_probe(tmp_path / "contracts_copy")
     store = InMemoryEventStoreV2(schemas)
-    pack = import_pack_v2(PACK_DIR, schemas=schemas)
+    pack = import_pack_v2(PACK_DIR, schemas=schemas, artifact_types=PACK_ARTIFACT_TYPES)
     app.dependency_overrides[event_store_v2_of] = lambda: store
     app.dependency_overrides[pack_v2_of] = lambda: pack
     with TestClient(app) as test_client:
