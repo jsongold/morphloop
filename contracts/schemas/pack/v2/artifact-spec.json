@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://morphloop.dev/contracts/schemas/pack/v2/artifact-spec.json",
   "title": "Artifact spec",
-  "description": "Something the learner can operate or view, embedded in a text block, a drill item or a chat message. 'type' names an artifact subclass registered in the domain adapter layer; it is not an enum, and an unregistered type is an import error. 'spec' is validated by that subclass. The 'lab' type's spec shape is fixed here because the generator is bound by it.",
+  "description": "Something the learner can operate or view, embedded in a text block, a drill item or a chat message. 'type' names an artifact subclass registered in the domain adapter layer; it is not an enum, and an unregistered type is an import error. 'spec' is validated by that subclass. The 'lab' type's spec shape is fixed here because the generator is bound by it; the 'diagram' type's spec is diagram-spec.json.",
   "type": "object",
   "required": [
     "id",
@@ -24,21 +24,41 @@
       "type": "object"
     }
   },
-  "if": {
-    "properties": {
-      "type": {
-        "const": "lab"
-      }
-    }
-  },
-  "then": {
-    "properties": {
-      "spec": {
-        "$ref": "#/$defs/lab_spec"
-      }
-    }
-  },
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "lab"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "spec": {
+            "$ref": "#/$defs/lab_spec"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "diagram"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "spec": {
+            "$ref": "https://morphloop.dev/contracts/schemas/pack/v2/diagram-spec.json"
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "lab_spec": {
       "title": "Lab spec",

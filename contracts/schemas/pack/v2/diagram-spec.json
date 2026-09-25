@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/v2/diagram-spec.json",
+  "title": "Diagram spec",
+  "description": "The 'spec' of a type 'diagram' artifact: a sequence diagram from abstraction to reality (AC-C1..C3), ported from the retired v0.1 visualization schema (pack/visualization.json) without the fields the artifact-spec wrapper now carries (id, version, skills). Each step may map to reality: the concrete mechanism, argv commands the learner can run in the lab terminal, and observable artifacts. At least one step carries a reality mapping. A step id is what visualization.step_selected records. Importer checks: step from/to name declared actors; actor and step ids unique.",
+  "type": "object",
+  "required": [
+    "title",
+    "diagram"
+  ],
+  "properties": {
+    "title": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+    },
+    "environment_bindings": {
+      "description": "Literal values this diagram shows that come from the lab environment's fixture params (param name -> value), so its commands target the real lab (AC-C2, AC-C3).",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      }
+    },
+    "diagram": {
+      "type": "object",
+      "required": [
+        "type",
+        "actors",
+        "steps"
+      ],
+      "properties": {
+        "type": {
+          "const": "sequence"
+        },
+        "actors": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+              },
+              "label": {
+                "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "contains": {
+            "required": [
+              "reality"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": [
+        "id",
+        "from",
+        "to",
+        "label"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+        },
+        "from": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+        },
+        "to": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+        },
+        "label": {
+          "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/title"
+        },
+        "explanation": {
+          "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+        },
+        "reality": {
+          "$ref": "#/$defs/reality"
+        }
+      },
+      "additionalProperties": false
+    },
+    "reality": {
+      "title": "Reality mapping",
+      "type": "object",
+      "required": [
+        "mechanism",
+        "observe"
+      ],
+      "properties": {
+        "mechanism": {
+          "description": "The concrete implementation behind the abstract step (AC-C2).",
+          "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+        },
+        "observe": {
+          "description": "Executable observations (AC-C2, AC-C3). Run in the learner's lab terminal, inside the sandbox.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "argv",
+              "purpose"
+            ],
+            "properties": {
+              "argv": {
+                "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/sandbox_argv"
+              },
+              "purpose": {
+                "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+              },
+              "look_for": {
+                "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "artifacts": {
+          "description": "Observable state behind the step (file, log, packet, process, socket...).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "locator",
+              "description"
+            ],
+            "properties": {
+              "kind": {
+                "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+              },
+              "locator": {
+                "description": "Where to find it inside the lab, e.g. a path. Display only; never executed.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "description": {
+                "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

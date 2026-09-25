@@ -15,7 +15,8 @@ the v1 schemas in `../`, which stay unchanged until v1 is removed. Conventions
 | `topic.json` | `topics` | one topic tree per file (`id`, `title`, `description`, `docs[]`, `topics[]`) |
 | `textbook-doc.json` | `textbooks` | teaching text: `blocks[]` of `{id, body, labels}` |
 | `drill-item.json` | `drills` | question + expected answer, `answer_mode` text / choice / artifact |
-| `artifact-spec.json` | `artifacts` | `{id, type, labels, spec}`; `type: lab` fixes the spec shape |
+| `artifact-spec.json` | `artifacts` | `{id, type, labels, spec}`; `type: lab` and `type: diagram` fix the spec shape |
+| `diagram-spec.json` | none | `spec` of a `diagram` artifact: sequence diagram with reality mappings (ported from `../visualization.json`) |
 | `llm-role.json` | `llm_roles` | `{role, model, temperature?, max_tokens?, prompt, output_schema?}`; one LLM call the pack configures |
 | `defs.json` | none | label shapes |
 
@@ -47,7 +48,9 @@ that change SDK behavior (`answer_mode`, the `sys:` labels).
 - **Artifact type** names a subclass registered in the domain adapter layer.
   It is not an enum. `spec` is validated by that subclass, except `lab`: its
   spec is `{environment, allowed_fixtures[], allowed_checks[]}`, where the
-  generator may compose only the listed adapter items (ADR-0014).
+  generator may compose only the listed adapter items (ADR-0014); and
+  `diagram`: its spec is `diagram-spec.json` (the Importer additionally checks
+  that step `from`/`to` name declared actors and that ids are unique).
 - **LLM roles** configure the LLM calls a pack uses (chat assistant, generation,
   gap judgment, scheduling, ...). `role` is a name the pack chooses; the
   harness holds no role enum (ADR-0002, ADR-0018) and does not interpret it.
