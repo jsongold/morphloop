@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/chat.sent/1.json",
+  "title": "chat.sent payload v1",
+  "description": "The learner sent a message in a ws thread (chat resource, #63). ws_id is on the envelope. allow_writes is true only when the learner explicitly commanded a write; only then is the assistant offered write tools.",
+  "x-envelope": 2,
+  "x-actors": ["learner"],
+  "type": "object",
+  "required": ["thread_id", "message_id", "text", "allow_writes"],
+  "properties": {
+    "thread_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/thread_id"
+    },
+    "message_id": {
+      "description": "'msg_' + the event id without dashes.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/message_id"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allow_writes": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

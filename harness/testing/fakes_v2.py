@@ -86,6 +86,9 @@ class _Transaction:
         state.by_id[stored.id] = stored
         return AppendResultV2(event=stored, created=True)
 
+    def get(self, event_id: str) -> StoredEventV2 | None:
+        return self._open().by_id.get(event_id)
+
     def get_view(self, view: str, key: str) -> JsonObject | None:
         return self._open().views.get(view, {}).get(key)
 
@@ -144,11 +147,12 @@ class InMemoryEventStoreV2:
         return selected if limit is None else selected[:limit]
 
 
-def contract_schemas_with_probe(directory: Path) -> ContractSchemas:
+def contract_schemas_with_probe(directory: Path, *, scope: Sequence[str] = ()) -> ContractSchemas:
     """Copy ``contracts/`` into ``directory`` and add the test-only v2 type ``probe.created``.
 
-    Its payload is ``{"note": str}`` and any actor may emit it. Real v2 types
-    arrive with their resource PRs; until then stores are tested with this one.
+    Its payload is ``{"note": str}`` and any actor may emit it; ``scope`` is its
+    ``x-scope`` (required envelope ids). Real v2 types arrive with their
+    resource PRs; until then stores are tested with this one.
     """
     contracts = directory / "contracts"
     shutil.copytree(CONTRACTS_DIR, contracts)
@@ -159,6 +163,7 @@ def contract_schemas_with_probe(directory: Path) -> ContractSchemas:
         "$id": f"https://morphloop.dev/contracts/schemas/events/payloads/{PROBE_EVENT_TYPE}/1.json",
         "x-envelope": 2,
         "x-actors": ["learner", "assistant", "system"],
+        **({"x-scope": list(scope)} if scope else {}),
         "type": "object",
         "required": ["note"],
         "properties": {"note": {"type": "string"}},

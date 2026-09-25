@@ -8,22 +8,88 @@
 #
 # Chat: messages. The natural-language entry point into the notebook; the assistant calls notebook functions as tools. Writes happen only on the learner's explicit command.
 #
-# `/chat/_stub` below is a placeholder with no meaning; replace or
-# extend it with the resource's real paths.
-/chat/_stub:
+/ws/{ws_id}/threads/{thread_id}/messages:
+  parameters:
+    - {name: ws_id, in: path, required: true, schema: {type: string}}
+    - {name: thread_id, in: path, required: true, schema: {type: string}}
   get:
     tags: [chat]
-    operationId: getChatStub
-    summary: Placeholder for the chat resource.
-    description: |
-      No behavior yet. Real endpoints for chat land in a follow-up PR
-      that edits only this file (ADR-0018, issue #34).
+    operationId: listChatMessages
+    summary: The thread's messages, oldest first.
     responses:
       '200':
-        description: Stub response.
+        description: Messages.
         content:
           application/json:
             schema:
-              $ref: '../components/common.yaml#/Stub'
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  items: &message
+                    type: object
+                    required: [message_id, role, text, created_at]
+                    properties:
+                      message_id: {type: string}
+                      role: {enum: [learner, assistant]}
+                      text: {type: string}
+                      created_at: {type: string, format: date-time}
+                      in_reply_to: {type: string}
+                      tool_calls:
+                        type: array
+                        items:
+                          type: object
+                          required: [name, arguments]
+                          properties:
+                            name: {type: string}
+                            arguments: {type: object}
+                    additionalProperties: false
+              additionalProperties: false
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+  post:
+    tags: [chat]
+    operationId: sendChatMessage
+    summary: Send a learner message; the Assistant answers, possibly calling notebook tools.
+    description: |
+      Appends `chat.sent`, runs the Assistant (tool loop; model and prompt
+      are the pack's `assistant` LLM role), appends `chat.replied`. The
+      `Idempotency-Key` header is the `chat.sent` event id: resending it
+      returns the stored pair (or retries the Assistant when no reply was
+      recorded).
+      Write tools are offered only when `allow_writes` is true (the learner's
+      explicit command). A `mode:hint` thread never shows the Assistant an
+      `expected` answer. 404 unknown thread, 409 `idempotency-key-reused`,
+      502 `llm-failed` (the learner message stays recorded, no reply).
+    parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        description: UUID; the `chat.sent` event id. The server assigns one when absent. Not a UUID -> 400.
+        schema: {type: string, format: uuid}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [text]
+            properties:
+              text: {type: string, minLength: 1}
+              allow_writes: {type: boolean, default: false}
+            additionalProperties: false
+    responses:
+      '200':
+        description: The learner message and the Assistant reply.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sent, reply]
+              properties:
+                sent: *message
+                reply: *message
+              additionalProperties: false
       default:
         $ref: '../root.yaml#/components/responses/Problem'

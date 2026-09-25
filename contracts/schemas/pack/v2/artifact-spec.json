@@ -68,6 +68,11 @@
           "items": {
             "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
           }
+        },
+        "idle_seconds": {
+          "description": "Stop the lab after its ws has had no learner activity for this many seconds. Absent: the lab stops only when asked (or at the runtime's lifetime limit).",
+          "type": "integer",
+          "minimum": 1
         }
       },
       "additionalProperties": false

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/drill.answered/1.json",
+  "title": "drill.answered payload v1",
+  "description": "The learner answered one drill item in a ws. Records the answer (actual) only; the gap against the item's expected answer is judged separately. 'text' and 'choice' items carry 'actual' (for 'choice', one of the item's choices); 'artifact' items carry 'artifact_id', the artifact the learner worked in.",
+  "x-envelope": 2,
+  "x-actors": ["learner"],
+  "type": "object",
+  "required": ["item_id", "answer_mode"],
+  "properties": {
+    "item_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/item_id"
+    },
+    "answer_mode": {
+      "enum": ["text", "choice", "artifact"]
+    },
+    "actual": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000
+    },
+    "artifact_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/artifact_id"
+    }
+  },
+  "if": {
+    "properties": {"answer_mode": {"const": "artifact"}}
+  },
+  "then": {
+    "required": ["artifact_id"],
+    "not": {"required": ["actual"]}
+  },
+  "else": {
+    "required": ["actual"],
+    "not": {"required": ["artifact_id"]}
+  },
+  "additionalProperties": false
+}

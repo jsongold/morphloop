@@ -1,0 +1,4 @@
+{
+  "markdown": "Keep *emphasis*, **strong** and [link text](http://example.com \"title\").",
+  "plaintext": "Keep emphasis, strong and link text."
+}

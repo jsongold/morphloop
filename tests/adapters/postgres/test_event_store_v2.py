@@ -107,6 +107,17 @@ def test_resend_with_same_id_returns_existing(store: EventStoreV2, user: str) ->
     assert len(store.read(user_id=user)) == 1
 
 
+def test_get_finds_stored_event_by_id(store: EventStoreV2, user: str) -> None:
+    event = _event(user)
+    with store.transaction() as tx:
+        assert tx.get(event.id) is None
+        stored = tx.append(event).event
+        assert tx.get(event.id) == stored
+    with store.transaction() as tx:
+        assert tx.get(event.id) == stored
+        assert tx.get(str(uuid.uuid4())) is None
+
+
 def test_same_id_different_content_conflicts(store: EventStoreV2, user: str) -> None:
     event = _event(user)
     with store.transaction() as tx:

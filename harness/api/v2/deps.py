@@ -22,6 +22,7 @@ never adds its own env var or loader:
   carries `user_id`.
 - `EventIdDep`: the new event's `id`, from the `Idempotency-Key` header (a
   UUID, else 400); the server assigns a fresh UUID when it is absent.
+- `replay_or_conflict`: the idempotent-replay check a POST runs first.
 
 A resource route file (`harness/api/v2/routes/<resource>.py`) builds its own
 service factories on top of these two dependencies; nothing here is
@@ -41,7 +42,13 @@ from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
 from harness.adapters.postgres.generated_documents import PostgresGeneratedDocumentStore
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import PackV2, import_pack_v2
-from harness.core.ports.events_v2 import EventStoreV2, EventTransactionV2
+from harness.core.ports.events_v2 import (
+    EventIdConflictError,
+    EventStoreV2,
+    EventTransactionV2,
+    EventV2,
+    StoredEventV2,
+)
 from harness.core.ports.generated_documents import GeneratedDocumentStore
 from harness.core.settings import Settings
 
@@ -117,3 +124,18 @@ def event_id_of(
 
 
 EventIdDep = Annotated[str, Depends(event_id_of)]
+
+
+def replay_or_conflict(tx: EventTransactionV2, candidate: EventV2) -> StoredEventV2 | None:
+    """Idempotent replay check, run before any other validation or append.
+
+    ``None``: the id is new. The stored event: ``candidate`` is a resend of it
+    (same user and content). Raises `EventIdConflictError` (409
+    `idempotency-key-reused`) when the id is stored with other content.
+    """
+    existing = tx.get(candidate.id)
+    if existing is None:
+        return None
+    if not candidate.same_content_as(existing):
+        raise EventIdConflictError(existing)
+    return existing
