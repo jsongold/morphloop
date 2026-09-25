@@ -1,0 +1,90 @@
+# memo resource schemas (ADR-0018, issue #59). Owned by the memo resource PR.
+#
+# These shapes mirror `contracts/schemas/events/payloads/memo.appended/1.json`
+# and `harness/api/v2/routes/memo.py`'s pydantic models by hand (ADR-0017: no
+# codegen between the two; a contract test on the real response/store keeps
+# them from drifting). The v0.2 OpenAPI skeleton does not yet resolve `$ref`s
+# into `contracts/schemas/*.json` by `$id` (see
+# `tests/contracts/test_openapi_v2_contract.py`'s `_no_contracts_schema_handler`),
+# so the constraints are written out here rather than referenced.
+
+MemoSource:
+  title: Memo entry source
+  description: What an entry is about, if anything. Exactly one of the two ids.
+  type: object
+  properties:
+    highlight_id:
+      type: string
+      pattern: '^hl_[0-9A-Za-z]{1,64}$'
+    thread_id:
+      type: string
+      pattern: '^thr_[0-9A-Za-z]{1,64}$'
+  oneOf:
+    - required: [highlight_id]
+    - required: [thread_id]
+  additionalProperties: false
+
+MemoEntryCreate:
+  title: New memo entry
+  type: object
+  required: [actor, body]
+  properties:
+    actor:
+      description: Who wrote the entry.
+      enum: [learner, assistant]
+    body:
+      description: Short Markdown note.
+      type: string
+      minLength: 1
+      maxLength: 4000
+    source:
+      $ref: '#/MemoSource'
+    labels:
+      type: array
+      uniqueItems: true
+      items:
+        type: string
+        pattern: '^[a-z0-9][a-z0-9._-]{0,63}(:[a-z0-9][a-z0-9._-]{0,127})?$'
+  additionalProperties: false
+
+MemoEntry:
+  title: Memo entry
+  description: A stored, append-only memo entry. There is no edit or delete route.
+  type: object
+  required: [entry_id, ws_id, actor, body, labels, created_at, position]
+  properties:
+    entry_id:
+      type: string
+      pattern: '^ent_[0-9A-Za-z]{1,64}$'
+    ws_id:
+      type: string
+      pattern: '^ws_[0-9A-Za-z]{1,64}$'
+    actor:
+      enum: [learner, assistant]
+    body:
+      type: string
+    source:
+      $ref: '#/MemoSource'
+    labels:
+      type: array
+      items:
+        type: string
+    created_at:
+      type: string
+      format: date-time
+    position:
+      description: DB-assigned append order (ADR-0008); entries list in this order.
+      type: integer
+      minimum: 1
+  additionalProperties: false
+
+MemoEntryList:
+  title: Memo entries
+  type: object
+  required: [entries]
+  properties:
+    entries:
+      type: array
+      items:
+        $ref: '#/MemoEntry'
+  additionalProperties: false
