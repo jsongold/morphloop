@@ -1,24 +1,27 @@
-"""The ``lab`` artifact type and the ``artifact`` view (#62).
+"""The ``lab`` artifact type and the ``artifact`` view (#62, #95).
 
 :class:`LabArtifact` is read from a pack artifact spec (``pack/v2/artifact-spec.json``,
 ``type: lab``); the shape of its ``spec`` is :data:`LAB_SPEC_SCHEMA`, owned by this type,
-not by the contract (#95). :class:`ArtifactView` keeps one document per artifact instance,
-keyed by ``artifact_id``, built from ``artifact.started`` / ``reset`` / ``stopped``.
+not by the SDK contracts (ADR-0018 §19). :class:`ArtifactView` keeps one document per
+artifact instance, keyed by ``artifact_id``, built from ``artifact.started`` / ``reset`` /
+``stopped``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
-from harness.core.artifact import Artifact
-from harness.core.ports.events_v2 import StoredEventV2, ViewDocumentStore
-from harness.core.ports.json_types import JsonObject, to_plain_json
-from harness.core.view import View
-
-if TYPE_CHECKING:
-    from harness.core.pack.v2.importer import PackV2
+from harness.sdk import (
+    Artifact,
+    JsonObject,
+    PackV2,
+    StoredEventV2,
+    View,
+    ViewDocumentStore,
+    to_plain_json,
+)
 
 _CONTRACTS = "https://morphloop.dev/contracts/schemas/"
 _ADAPTER_ITEM_IDS: JsonObject = {

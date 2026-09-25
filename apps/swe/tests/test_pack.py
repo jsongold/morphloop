@@ -1,11 +1,12 @@
-"""Contract tests for the real v2 pack under contents/v2/software-engineering/.
+"""The SE pack (apps/swe/pack/): SDK contracts, cross-file rules and the app's types.
 
-Validates every file listed in the manifest against its pack v2 schema (as
-tests/contracts/test_pack_v2_contracts.py does for the fixture pack) and checks the
-cross-file rules the Importer enforces that need no adapter registry: labels are
-'sys:holdout', 'topic:<existing topic>' or in the vocabulary; a choice item's
-expected answer is one of its choices; 'artifact_ref' and '::artifact{...}' refs
-name an artifact spec (of that type).
+Validates every file listed in the manifest against its pack v2 schema (as the
+SDK's tests/contracts/test_pack_v2_contracts.py does for the fixture pack) and
+checks the cross-file rules the Importer enforces that need no adapter registry:
+labels are 'sys:holdout', 'topic:<existing topic>' or in the vocabulary; a choice
+item's expected answer is one of its choices; 'artifact_ref' and
+'::artifact{...}' refs name an artifact spec (of that type). Finally the pack
+imports with the app's artifact types, which validate each artifact ``spec``.
 """
 
 from __future__ import annotations
@@ -18,10 +19,12 @@ from typing import Any
 
 import pytest
 
-from harness.testing.contracts import CONTRACTS_DIR, validate
+from harness.sdk import PackV2ImportError, import_pack_v2
+from harness.testing.contracts import validate
+from swe import PACK_DIR
+from swe.app import EXTENSION
 
 V2 = "schemas/pack/v2/"
-PACK_DIR = CONTRACTS_DIR.parent / "contents" / "v2" / "software-engineering"
 LIST_SCHEMA = {
     "topics": "topic.json",
     "textbooks": "textbook-doc.json",
@@ -142,3 +145,32 @@ def test_artifact_refs_resolve() -> None:
     assert directives, "no text embeds an artifact"
     for doc_id, (kind, ref) in directives:
         assert types.get(ref) == kind, f"{doc_id}: ::artifact{{type={kind} ref={ref}}}"
+
+
+def test_pack_imports_with_the_apps_artifact_types() -> None:
+    pack = import_pack_v2(PACK_DIR, artifact_types=EXTENSION.artifact_types)
+    assert pack.pack_id == "software-engineering"
+    assert {doc["type"] for doc in pack.documents["artifacts"].values()} == {"lab", "diagram"}
+
+
+def test_pack_needs_both_types(tmp_path: Path) -> None:
+    lab_only = [t for t in EXTENSION.artifact_types if t.type == "lab"]
+    with pytest.raises(PackV2ImportError, match="'diagram' is not registered"):
+        import_pack_v2(PACK_DIR, artifact_types=lab_only)
+
+
+def test_diagram_cross_references_are_checked_on_import(tmp_path: Path) -> None:
+    import shutil
+
+    dest = tmp_path / "pack"
+    shutil.copytree(PACK_DIR, dest)
+    path = dest / "artifacts" / "dns-resolution-flow.json"
+    doc = _load(path)
+    doc["spec"]["diagram"]["steps"][0]["from"] = "ghost"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    with pytest.raises(PackV2ImportError) as info:
+        import_pack_v2(dest, artifact_types=EXTENSION.artifact_types)
+    assert (
+        "artifacts/dns-resolution-flow.json: $.spec.diagram.steps[0].from: 'ghost' is not a "
+        "declared actor"
+    ) in info.value.problems
