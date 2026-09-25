@@ -122,3 +122,40 @@
                 payload: {type: object}
       default:
         $ref: '../root.yaml#/components/responses/Problem'
+
+/ws/{ws_id}/drills/answers:
+  get:
+    tags: [drill]
+    operationId: listDrillAnswers
+    summary: The caller's answers in a ws, in creation order.
+    description: |
+      Never `actual` or `expected`. `judgment_status` is `unjudged` until the
+      answer's gap has been judged (issue #65); `gap` is `null` until then.
+      The ws must exist and belong to the caller (404 otherwise).
+    parameters:
+      - {name: ws_id, in: path, required: true, schema: {type: string}}
+    responses:
+      '200':
+        description: Matching answers, oldest first.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              additionalProperties: false
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [item_id, answer_event_id, judgment_status, gap]
+                    additionalProperties: false
+                    properties:
+                      item_id: {type: string}
+                      answer_event_id: {type: string}
+                      judgment_status: {enum: [unjudged, judged]}
+                      gap:
+                        type: [object, "null"]
+                        description: The judged gap (`drill.judged` payload's `gap`, issue #65), or null.
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
