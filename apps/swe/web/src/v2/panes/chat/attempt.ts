@@ -22,6 +22,26 @@ export function mergeMessages(current: Message[], added: Message[]): Message[] {
 export const clearIfUnchanged = (current: string, submitted: string): string =>
   current === submitted ? "" : current;
 
+// Sending is gated on a settled history load for the active thread. A send
+// bumps the load version to make the follow-up refresh authoritative, so if it
+// races the pending initial GET that GET is discarded; with no older messages
+// in hand, a failed refresh would leave the log showing only the new exchange.
+export function canSend(
+  loadedPath: string | null,
+  path: string | null,
+  text: string,
+  sending: boolean,
+): boolean {
+  return !!path && loadedPath === path && text.trim().length > 0 && !sending;
+}
+
+// A load can be retried once it has failed for the active path: a success
+// sets loadedPath to path, a pending load has no error yet, and a send error
+// (loadedPath === path) is handled by resending instead.
+export function canRetryLoad(loadedPath: string | null, path: string | null, error: string | null): boolean {
+  return !!path && loadedPath !== path && !!error;
+}
+
 // Whether the active thread carries the hint-mode label. `labelsOf` maps
 // thread_id -> labels for threads this pane has itself created (currently
 // just the main thread); a thread selected by id that we haven't created

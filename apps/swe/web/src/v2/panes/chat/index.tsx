@@ -6,6 +6,8 @@ import { useWorkspace } from "@/v2/state";
 import type { StoredEvent } from "@/v2/types";
 import {
   attemptFor,
+  canRetryLoad,
+  canSend,
   clearIfUnchanged,
   isHintThread,
   keyForWorkspace,
@@ -25,6 +27,7 @@ export default function ChatPane() {
   const [sending, setSending] = useState(false);
   const [openError, setOpenError] = useState<{ wsId: string; message: string } | null>(null);
   const [openRetry, setOpenRetry] = useState(0);
+  const [loadRetry, setLoadRetry] = useState(0);
   // Labels of every thread this pane has itself created or loaded, keyed by
   // thread_id (currently only ever the main thread we posted for this ws).
   const [threadLabels, setThreadLabels] = useState<Map<string, string[] | undefined>>(new Map());
@@ -36,7 +39,9 @@ export default function ChatPane() {
   const isHint = isHintThread(threadLabels, activeId);
   const path = ws && activeId ? `/ws/${ws.ws_id}/threads/${activeId}/messages` : null;
   const messages = loaded && loaded.path === path ? loaded.messages : null;
+  const loadedPath = loaded?.path ?? null;
   const openingError = openError && openError.wsId === ws?.ws_id ? openError.message : null;
+  const loadFailed = canRetryLoad(loadedPath, path, error);
 
   useEffect(() => {
     if (!ws) return;
@@ -63,7 +68,7 @@ export default function ChatPane() {
       (e: unknown) => { if (!cancelled && version === loadVersion.current) setError(e instanceof Error ? e.message : String(e)); },
     );
     return () => { cancelled = true; };
-  }, [path]);
+  }, [path, loadRetry]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -71,7 +76,7 @@ export default function ChatPane() {
 
   async function send() {
     const value = text.trim();
-    if (!path || !value || sending) return;
+    if (!path || !canSend(loadedPath, path, value, sending)) return;
     const draft = text;
     const attempt = attemptFor(pending, path, value, newIdempotencyKey);
     const version = ++loadVersion.current;
@@ -121,7 +126,12 @@ export default function ChatPane() {
         {sending && <p className="muted">Tutor is replying…</p>}
       </div>
       {!activeId && openingError && <div><p className="error" role="alert">{openingError}</p><button onClick={() => { setOpenError(null); setOpenRetry((n) => n + 1); }}>Retry opening chat</button></div>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && (
+        <div>
+          <p className="error" role="alert">{error}</p>
+          {loadFailed && <button onClick={() => { setError(null); setLoadRetry((n) => n + 1); }}>Retry loading chat</button>}
+        </div>
+      )}
       <form className="chat-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
         <textarea
           value={text}
@@ -136,7 +146,7 @@ export default function ChatPane() {
             }
           }}
         />
-        <button type="submit" disabled={!activeId || sending || !text.trim()}>
+        <button type="submit" disabled={!canSend(loadedPath, path, text, sending)}>
           {pending?.path === path && pending.text === text.trim() && error ? "Resend" : "Send"}
         </button>
       </form>
