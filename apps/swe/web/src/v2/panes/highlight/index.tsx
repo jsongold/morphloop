@@ -5,7 +5,7 @@ import { del, get, newIdempotencyKey, post } from "@/v2/api";
 import { useWorkspace } from "@/v2/state";
 import type { StoredEvent } from "@/v2/types";
 import { anchorFor, chars, type Anchor } from "./anchor";
-import { highlightKey, keepsDraft, nearBottom, popupTop, threadTarget, type PendingHighlight } from "./behavior";
+import { highlightKey, keepsDraft, mergeById, nearBottom, popupTop, reuseKey, shouldClearDraft, threadTarget, type PendingHighlight } from "./behavior";
 
 type Highlight = { highlight_id: string; anchor: Anchor };
 type Message = { message_id: string; role: "learner" | "assistant"; text: string };
@@ -86,6 +86,8 @@ export default function HighlightPane() {
   const activeThread = useRef<string | null>(null);
   const pendingHighlight = useRef<PendingHighlight | null>(null);
   const pendingMessage = useRef<{ threadId: string; text: string; key: string } | null>(null);
+  const deleteKeys = useRef(new Map<string, string>());
+  const openingHighlight = useRef<string | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const followMessages = useRef(true);
@@ -97,7 +99,7 @@ export default function HighlightPane() {
     let cancelled = false;
     const requests = openRequest;
     get<{ highlights: Highlight[] }>(`/ws/${wsId}/highlights`).then(
-      ({ highlights }) => { if (!cancelled) setHighlights(highlights); },
+      ({ highlights: loaded }) => { if (!cancelled) setHighlights((items) => mergeById(loaded, items, (item) => item.highlight_id)); },
       (error: unknown) => { if (!cancelled) setError(errorText(error)); },
     );
     return () => { cancelled = true; requests.current++; activeThread.current = null; setOpening(false); setHighlights([]); setSelection(null); setPopup(null); };
@@ -120,6 +122,7 @@ export default function HighlightPane() {
   async function open(highlight: Highlight, x: number, y: number) {
     if (!wsId) return;
     const request = ++openRequest.current;
+    openingHighlight.current = highlight.highlight_id;
     setSelection(null);
     window.getSelection()?.removeAllRanges();
     setError(null);
@@ -140,7 +143,7 @@ export default function HighlightPane() {
       activeThread.current = threadId;
       setPopup({ highlight, x, y, threadId, messages });
     } catch (error) { if (request === openRequest.current) setError(errorText(error)); }
-    finally { if (request === openRequest.current) setOpening(false); }
+    finally { if (request === openRequest.current) { setOpening(false); openingHighlight.current = null; } }
   }
 
   useLayoutEffect(() => {
@@ -199,10 +202,17 @@ export default function HighlightPane() {
 
   async function remove(highlight: Highlight) {
     if (!wsId || busy) return;
+    if (openingHighlight.current === highlight.highlight_id) {
+      openRequest.current++;
+      openingHighlight.current = null;
+      setOpening(false);
+    }
     setBusy(true);
     setError(null);
+    const key = reuseKey(deleteKeys.current, highlight.highlight_id, newIdempotencyKey);
     try {
-      await del(`/ws/${wsId}/highlights/${highlight.highlight_id}`);
+      await del(`/ws/${wsId}/highlights/${highlight.highlight_id}`, key);
+      deleteKeys.current.delete(highlight.highlight_id);
       setHighlights((items) => items.filter((item) => item.highlight_id !== highlight.highlight_id));
       if (popup?.highlight.highlight_id === highlight.highlight_id) setPopup(null);
     } catch (error) { setError(errorText(error)); }
@@ -222,8 +232,8 @@ export default function HighlightPane() {
       const { body } = await post<{ sent: Message; reply: Message }>(`/ws/${wsId}/threads/${popup.threadId}/messages`, { text }, key);
       pendingMessage.current = null;
       setPopup((current) => current && current.threadId === popup.threadId
-        ? { ...current, messages: [...current.messages, body.sent, body.reply] } : current);
-      if (activeThread.current === popup.threadId) setDraft("");
+        ? { ...current, messages: mergeById(current.messages, [body.sent, body.reply], (message) => message.message_id) } : current);
+      if (activeThread.current === popup.threadId) setDraft((current) => (shouldClearDraft(current, text) ? "" : current));
     } catch (error) { setError(errorText(error)); }
     finally { setBusy(false); }
   }
