@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
@@ -76,7 +77,8 @@ def client(store: InMemoryEventStoreV2) -> TestClient:
     install_handlers(app)
     app.include_router(build_v2_router())
     app.dependency_overrides[event_store_v2_of] = lambda: store
-    app.dependency_overrides[pack_v2_of] = lambda: import_pack_v2(PACK_DIR)
+    pack = import_pack_v2(PACK_DIR, artifact_types=PACK_ARTIFACT_TYPES)
+    app.dependency_overrides[pack_v2_of] = lambda: pack
     return TestClient(app)
 
 
