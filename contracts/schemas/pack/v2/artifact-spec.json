@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://morphloop.dev/contracts/schemas/pack/v2/artifact-spec.json",
   "title": "Artifact spec",
-  "description": "Something the learner can operate or view, embedded in a text block, a drill item or a chat message. 'type' names an artifact subclass registered in the domain adapter layer; it is not an enum, and an unregistered type is an import error. 'spec' is validated by that subclass. The 'lab' type's spec shape is fixed here because the generator is bound by it.",
+  "description": "Something the learner can operate or view, embedded in a text block, a drill item or a chat message. 'type' names an Artifact subclass the app registers; it is not an enum, and an unregistered type is an import error. 'spec' is any object here: its shape is the 'spec_schema' of that type, validated by the importer (ADR-0018 section 19).",
   "type": "object",
   "required": [
     "id",
@@ -24,58 +24,5 @@
       "type": "object"
     }
   },
-  "if": {
-    "properties": {
-      "type": {
-        "const": "lab"
-      }
-    }
-  },
-  "then": {
-    "properties": {
-      "spec": {
-        "$ref": "#/$defs/lab_spec"
-      }
-    }
-  },
-  "additionalProperties": false,
-  "$defs": {
-    "lab_spec": {
-      "title": "Lab spec",
-      "description": "A disposable lab plus the bounds for generating variants of it. The generator may compose only the listed fixtures and checks (adapter item ids).",
-      "type": "object",
-      "required": [
-        "environment",
-        "allowed_fixtures",
-        "allowed_checks"
-      ],
-      "properties": {
-        "environment": {
-          "$ref": "https://morphloop.dev/contracts/schemas/pack/environment.json"
-        },
-        "allowed_fixtures": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
-          }
-        },
-        "allowed_checks": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
-          }
-        },
-        "idle_seconds": {
-          "description": "Stop the lab after its ws has had no learner activity for this many seconds. Absent: the lab stops only when asked (or at the runtime's lifetime limit).",
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "additionalProperties": false
-    }
-  }
+  "additionalProperties": false
 }

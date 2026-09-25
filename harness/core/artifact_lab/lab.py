@@ -1,20 +1,56 @@
 """The ``lab`` artifact type and the ``artifact`` view (#62).
 
 :class:`LabArtifact` is read from a pack artifact spec (``pack/v2/artifact-spec.json``,
-``type: lab``). :class:`ArtifactView` keeps one document per artifact instance, keyed
-by ``artifact_id``, built from ``artifact.started`` / ``reset`` / ``stopped``.
+``type: lab``); the shape of its ``spec`` is :data:`LAB_SPEC_SCHEMA`, owned by this type,
+not by the contract (#95). :class:`ArtifactView` keeps one document per artifact instance,
+keyed by ``artifact_id``, built from ``artifact.started`` / ``reset`` / ``stopped``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from harness.core.artifact import Artifact
 from harness.core.ports.events_v2 import StoredEventV2, ViewDocumentStore
 from harness.core.ports.json_types import JsonObject, to_plain_json
 from harness.core.view import View
+
+if TYPE_CHECKING:
+    from harness.core.pack.v2.importer import PackV2
+
+_CONTRACTS = "https://morphloop.dev/contracts/schemas/"
+_ADAPTER_ITEM_IDS: JsonObject = {
+    "type": "array",
+    "minItems": 1,
+    "uniqueItems": True,
+    "items": {"$ref": _CONTRACTS + "common/ids.json#/$defs/adapter_item_id"},
+}
+LAB_SPEC_SCHEMA: JsonObject = {
+    "title": "Lab spec",
+    "description": (
+        "A disposable lab plus the bounds for generating variants of it. The generator "
+        "may compose only the listed fixtures and checks (adapter item ids)."
+    ),
+    "type": "object",
+    "required": ["environment", "allowed_fixtures", "allowed_checks"],
+    "properties": {
+        "environment": {"$ref": _CONTRACTS + "pack/environment.json"},
+        "allowed_fixtures": _ADAPTER_ITEM_IDS,
+        "allowed_checks": _ADAPTER_ITEM_IDS,
+        "idle_seconds": {
+            "description": (
+                "Stop the lab after its ws has had no learner activity for this many "
+                "seconds. Absent: the lab stops only when asked (or at the runtime's "
+                "lifetime limit)."
+            ),
+            "type": "integer",
+            "minimum": 1,
+        },
+    },
+    "additionalProperties": False,
+}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -23,12 +59,23 @@ class LabArtifact(Artifact):
 
     type: ClassVar[str] = "lab"
     capabilities: ClassVar[frozenset[str]] = frozenset({"terminal"})
+    spec_schema: ClassVar[JsonObject] = LAB_SPEC_SCHEMA
 
     spec_id: str
     environment: JsonObject
     allowed_checks: frozenset[str]
     idle_seconds: int | None = None
     """Stop the lab after this long without ws activity; ``None``: only on request."""
+
+    @classmethod
+    def validate_spec(cls, spec: JsonObject, pack: PackV2) -> Iterable[str]:
+        environment, fixtures = spec["environment"], spec["allowed_fixtures"]
+        assert isinstance(environment, Mapping) and isinstance(fixtures, Sequence)
+        if environment.get("fixture") not in fixtures:
+            return [
+                f"environment fixture {environment.get('fixture')!r} is not in allowed_fixtures"
+            ]
+        return ()
 
     @classmethod
     def from_spec(cls, artifact_id: str, spec: JsonObject) -> LabArtifact:

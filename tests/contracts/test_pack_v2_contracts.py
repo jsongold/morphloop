@@ -100,3 +100,14 @@ def test_invalid_pack_v2_document_is_rejected(path: Path) -> None:
     }
     for expected in case["expected_error_paths"]:
         assert expected in reported, f"{expected} not in {sorted(reported)}"
+
+
+def test_artifact_spec_contract_fixes_no_type_shape() -> None:
+    """A type's spec shape belongs to the app's Artifact subclass (ADR-0018 s19)."""
+    schema = _load(CONTRACTS_DIR / V2 / "artifact-spec.json")
+    assert not {"if", "then", "$defs", "oneOf", "anyOf"} & set(schema)
+    validate({"id": "lab1", "type": "lab", "labels": [], "spec": {}}, V2 + "artifact-spec.json")
+    with pytest.raises(ContractViolation):
+        validate(
+            {"id": "x", "type": "Bad Type", "labels": [], "spec": {}}, V2 + "artifact-spec.json"
+        )

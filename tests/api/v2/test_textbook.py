@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.core.pack.v2 import import_pack_v2
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
@@ -30,7 +31,7 @@ def _check(body: Any, url: str) -> None:
 @pytest.fixture(scope="module")
 def client() -> Any:
     app, _ = build_app()
-    app.state.pack_v2 = import_pack_v2(SE_PACK)
+    app.state.pack_v2 = import_pack_v2(SE_PACK, artifact_types=PACK_ARTIFACT_TYPES)
     app.state.generated_documents = InMemoryGeneratedDocumentStore()
     with TestClient(app) as c:
         yield c

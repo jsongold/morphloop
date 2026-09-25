@@ -5,10 +5,14 @@
 #                               nor harness.api/harness.cli/domains.
 #   domains.*               -- domain adapter layer; must not import harness.adapters/api/cli.
 #   harness.api / harness.cli -- wiring layer; may import everything, so no contract restricts it.
+#   apps.*                  -- apps built on the SDK (ADR-0018 s19); harness never imports them.
+#                               `apps` is not a root package (it may not even exist), so it is
+#                               matched as an external package: include_external_packages.
 #
 # The pack (contents/<pack-id>/) is pure data and is never imported by Python code, so it is
 # not, and cannot be, a node in this graph.
 [importlinter]
+include_external_packages = True
 root_packages =
     harness
     domains
@@ -86,3 +90,11 @@ ignore_imports =
     harness.core.registry.** -> harness.core.learner_model.**
     harness.core.pack.** -> harness.core.registry.**
 unmatched_ignore_imports_alerting = none
+
+[importlinter:contract:harness-does-not-import-apps]
+name = harness must not import apps
+type = forbidden
+source_modules =
+    harness
+forbidden_modules =
+    apps
