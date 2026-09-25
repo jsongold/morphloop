@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/highlight.removed/1.json",
+  "title": "highlight.removed payload v1",
+  "description": "The learner removed a highlight they created. HighlightView tombstones the highlight_id (no further highlight.created reuses it); the anchor is not repeated here, it lives on the highlight.created event.",
+  "x-envelope": 2,
+  "x-actors": ["learner"],
+  "type": "object",
+  "required": ["highlight_id"],
+  "properties": {
+    "highlight_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/highlight_id"
+    }
+  },
+  "additionalProperties": false
+}

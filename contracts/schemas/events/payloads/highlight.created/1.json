@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/highlight.created/1.json",
+  "title": "highlight.created payload v1",
+  "description": "The learner created a highlight anchored to a range of one textbook block's plaintext (a single block only in v0.2.0; the plaintext rule itself is the SDK-defined block plaintext, issue #55). The anchor selector follows the W3C Web Annotation Data Model (TextQuoteSelector + TextPositionSelector). This schema checks shape only: JSON Schema cannot compare start and end, so that (and any later match against the block's actual text) is checked by harness.core.highlight (issue #34/#60).",
+  "x-envelope": 2,
+  "x-actors": ["learner"],
+  "type": "object",
+  "required": ["highlight_id", "anchor"],
+  "properties": {
+    "highlight_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/highlight_id"
+    },
+    "anchor": {
+      "$ref": "#/$defs/anchor"
+    },
+    "labels": {
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/v2/defs.json#/$defs/labels"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "text_quote_selector": {
+      "title": "TextQuoteSelector",
+      "type": "object",
+      "required": ["type", "exact"],
+      "properties": {
+        "type": {
+          "const": "TextQuoteSelector"
+        },
+        "exact": {
+          "description": "The exact quoted text.",
+          "type": "string",
+          "minLength": 1
+        },
+        "prefix": {
+          "description": "A short run of text before the quote, for disambiguation.",
+          "type": "string"
+        },
+        "suffix": {
+          "description": "A short run of text after the quote, for disambiguation.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "text_position_selector": {
+      "title": "TextPositionSelector",
+      "description": "Character offsets into the block's plaintext. start < end is checked by harness.core.highlight, not this schema.",
+      "type": "object",
+      "required": ["type", "start", "end"],
+      "properties": {
+        "type": {
+          "const": "TextPositionSelector"
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "anchor": {
+      "title": "Highlight anchor",
+      "description": "v0.2.0: one textbook block only. selector is always [TextQuoteSelector, TextPositionSelector], in that order.",
+      "type": "object",
+      "required": ["doc_id", "block_id", "selector"],
+      "properties": {
+        "doc_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/doc_id"
+        },
+        "block_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/block_id"
+        },
+        "selector": {
+          "type": "array",
+          "prefixItems": [
+            { "$ref": "#/$defs/text_quote_selector" },
+            { "$ref": "#/$defs/text_position_selector" }
+          ],
+          "items": false,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

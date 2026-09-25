@@ -1,29 +1,75 @@
 # URL -> Path Item map for the highlight resource (ADR-0018). Owned by the
-# highlight resource PR: this file is the only file that PR edits (plus an
-# optional new components/highlight.yaml for highlight-specific schemas).
-# Never edit ../root.yaml or another resource's paths/*.yaml — new URLs are
-# just new top-level keys in this file, merged into the document by
-# harness.testing.openapi_v2.load_merged_openapi_v2_spec (duplicate URLs
-# across files are a load-time error). See ../README.md.
+# highlight resource PR: this file (plus components/highlight.yaml) is the
+# only thing this PR edits. Never edit ../root.yaml or another resource's
+# paths/*.yaml -- new URLs are just new top-level keys in this file, merged
+# into the document by harness.testing.openapi_v2.load_merged_openapi_v2_spec
+# (duplicate URLs across files are a load-time error). See ../README.md.
 #
-# Highlight: items (a View). A learner's free-form highlight is the event `highlight.created`; anchor is doc_id/block_id + a W3C TextQuoteSelector and TextPositionSelector.
-#
-# `/highlight/_stub` below is a placeholder with no meaning; replace or
-# extend it with the resource's real paths.
-/highlight/_stub:
-  get:
+# Highlight: items (a View), a child of ws. A learner's free-form highlight is
+# the event `highlight.created`; anchor = doc_id/block_id + a W3C
+# TextQuoteSelector and TextPositionSelector (issue #34/#60).
+/ws/{ws_id}/highlights:
+  parameters:
+    - name: ws_id
+      in: path
+      required: true
+      schema:
+        $ref: '../components/highlight.yaml#/WsId'
+  post:
     tags: [highlight]
-    operationId: getHighlightStub
-    summary: Placeholder for the highlight resource.
-    description: |
-      No behavior yet. Real endpoints for highlight land in a follow-up PR
-      that edits only this file (ADR-0018, issue #34).
+    operationId: createHighlight
+    summary: Create a highlight (`highlight.created`).
+    parameters:
+      - $ref: '../components/highlight.yaml#/IdempotencyKeyHeader'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/highlight.yaml#/HighlightCreateRequest'
     responses:
-      '200':
-        description: Stub response.
+      '201':
+        description: The created highlight.
         content:
           application/json:
             schema:
-              $ref: '../components/common.yaml#/Stub'
+              $ref: '../components/highlight.yaml#/Highlight'
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+  get:
+    tags: [highlight]
+    operationId: listHighlights
+    summary: Current (non-removed) highlights of this ws (HighlightView).
+    responses:
+      '200':
+        description: The ws's highlights.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/highlight.yaml#/HighlightList'
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+
+/ws/{ws_id}/highlights/{highlight_id}:
+  parameters:
+    - name: ws_id
+      in: path
+      required: true
+      schema:
+        $ref: '../components/highlight.yaml#/WsId'
+    - name: highlight_id
+      in: path
+      required: true
+      schema:
+        $ref: '../components/highlight.yaml#/HighlightId'
+  delete:
+    tags: [highlight]
+    operationId: removeHighlight
+    summary: Remove a highlight (`highlight.removed`).
+    parameters:
+      - $ref: '../components/highlight.yaml#/IdempotencyKeyHeader'
+    responses:
+      '204':
+        description: Removed.
       default:
         $ref: '../root.yaml#/components/responses/Problem'
