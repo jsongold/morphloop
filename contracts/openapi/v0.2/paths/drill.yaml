@@ -8,22 +8,117 @@
 #
 # Drill: items, answers. Understanding gap = (question + expected) - actual. Items are content (pack-authored and generated are peers, distinguished by label); answers (actual, gap) are ws-scoped.
 #
-# `/drill/_stub` below is a placeholder with no meaning; replace or
-# extend it with the resource's real paths.
-/drill/_stub:
+/drills:
   get:
     tags: [drill]
-    operationId: getDrillStub
-    summary: Placeholder for the drill resource.
+    operationId: listDrillItems
+    summary: Drill items carrying every given label (pack-bundled and generated alike).
     description: |
-      No behavior yet. Real endpoints for drill land in a follow-up PR
-      that edits only this file (ADR-0018, issue #34).
+      Items are teaching material (no learner scope). Every item carries
+      `origin:pack` or `origin:generated`. `expected` is never included.
+    parameters:
+      - name: labels
+        in: query
+        description: Repeat to require several labels, e.g. `?labels=topic:network.dns&labels=origin:pack`.
+        schema:
+          type: array
+          items: {type: string}
+        style: form
+        explode: true
     responses:
       '200':
-        description: Stub response.
+        description: Matching items.
         content:
           application/json:
             schema:
-              $ref: '../components/common.yaml#/Stub'
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items: &drill_item
+                    type: object
+                    description: A drill item without `expected`.
+                    required: [id, question, answer_mode, labels]
+                    properties:
+                      id: {type: string}
+                      question: {type: string, description: CommonMark.}
+                      answer_mode: {enum: [text, choice, artifact]}
+                      choices: {type: array, items: {type: string}}
+                      artifact_ref: {type: string}
+                      labels: {type: array, items: {type: string}}
+                    additionalProperties: false
+              additionalProperties: false
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+
+/drills/{item_id}:
+  get:
+    tags: [drill]
+    operationId: getDrillItem
+    summary: One drill item, learner-facing (without `expected`).
+    parameters:
+      - {name: item_id, in: path, required: true, schema: {type: string}}
+    responses:
+      '200':
+        description: The item.
+        content:
+          application/json:
+            schema: *drill_item
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+
+/ws/{ws_id}/drills/{item_id}/answers:
+  post:
+    tags: [drill]
+    operationId: answerDrillItem
+    summary: Record the learner's answer to one item in a ws (`drill.answered`).
+    description: |
+      `text` / `choice` items take `actual` (for `choice`, one of the item's
+      choices); `artifact` items take `artifact_id`. The ws must exist (404);
+      the event's session is the ws's session and its user is the server's
+      single learner. The gap is judged separately.
+    parameters:
+      - {name: ws_id, in: path, required: true, schema: {type: string}}
+      - {name: item_id, in: path, required: true, schema: {type: string}}
+      - name: Idempotency-Key
+        in: header
+        required: false
+        description: |
+          Client-generated UUID, used as the event id. A resend with the same
+          key and body returns the stored event; the same key with another
+          body is 409. The server assigns a fresh UUID when absent.
+        schema: {type: string, format: uuid}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              actual: {type: string}
+              artifact_id: {type: string}
+            additionalProperties: false
+    responses:
+      '201':
+        description: |
+          The stored `drill.answered` event; its full shape is
+          `contracts/schemas/events/envelope/v2/stored.json` with payload
+          `contracts/schemas/events/payloads/drill.answered/1.json`.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, position, type, created_at, actor, user_id, ws_id, payload]
+              properties:
+                id: {type: string}
+                position: {type: integer, minimum: 1}
+                type: {const: drill.answered}
+                created_at: {type: string, format: date-time}
+                actor: {const: learner}
+                user_id: {type: string}
+                session_id: {type: string}
+                ws_id: {type: string}
+                payload: {type: object}
       default:
         $ref: '../root.yaml#/components/responses/Problem'
