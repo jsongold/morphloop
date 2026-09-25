@@ -157,7 +157,7 @@ def test_answer_resend_after_pack_change_returns_stored_result(client: Any) -> N
     from harness.core.drill import DrillService
 
     key = {"Idempotency-Key": str(uuid.uuid4())}
-    first = client.post(URL, json={"actual": "`NXDOMAIN`"}, headers=key)
+    first = client.post(URL, json={"actual": "A"}, headers=key)
     assert first.status_code == 201
 
     def _no_items() -> DrillService:
@@ -165,7 +165,7 @@ def test_answer_resend_after_pack_change_returns_stored_result(client: Any) -> N
 
     client.app.dependency_overrides[drill_service_of] = _no_items
     try:
-        resend = client.post(URL, json={"actual": "`NXDOMAIN`"}, headers=key)
+        resend = client.post(URL, json={"actual": "A"}, headers=key)
     finally:
         del client.app.dependency_overrides[drill_service_of]
     assert resend.status_code == 201, resend.text

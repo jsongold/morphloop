@@ -106,9 +106,9 @@ def test_entity_encoded_lookalike_is_not_a_directive(tmp_path: Path) -> None:
     """``&#58;&#58;artifact{...}`` decodes to look like a directive but never is one:
     directive-ness is decided from the literal source line, not decoded content."""
     pack = tmp_path / "pack"
-    shutil.copytree(SE_PACK, pack)
+    shutil.copytree(PACK, pack)
     doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
-    doc["blocks"][2]["body"] = "&#58;&#58;artifact{type=lab ref=missing}"
+    doc["blocks"][BLOCK]["body"] = "&#58;&#58;artifact{type=lab ref=missing}"
     (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
     import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
 
@@ -131,34 +131,34 @@ def test_directive_in_code_block_is_ignored(tmp_path: Path, body: str) -> None:
 
 def test_multiline_code_span_directive_is_ignored(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
-    shutil.copytree(SE_PACK, pack)
+    shutil.copytree(PACK, pack)
     doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
-    doc["blocks"][2]["body"] = "Try `\n::artifact{type=lab ref=missing}\n` here."
+    doc["blocks"][BLOCK]["body"] = "Try `\n::artifact{type=lab ref=missing}\n` here."
     (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
     import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
 
 
 def test_duplicate_block_id_is_refused(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
-    shutil.copytree(SE_PACK, pack)
+    shutil.copytree(PACK, pack)
     doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
     doc["blocks"][1]["id"] = doc["blocks"][0]["id"]
     (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
     with pytest.raises(PackV2ImportError) as info:
         import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
-    assert any(f"{DOC}: block id 'summary' appears 2 times" in p for p in info.value.problems)
+    assert any(f"{DOC}: block id 'b1' appears 2 times" in p for p in info.value.problems)
 
 
 def test_duplicate_doc_id_is_refused(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
-    shutil.copytree(SE_PACK, pack)
-    other = pack / "textbooks/network.dns.answers.json"
-    doc = json.loads(other.read_text(encoding="utf-8"))
-    doc["id"] = "network.dns.lookup-path"
-    other.write_text(json.dumps(doc), encoding="utf-8")
+    shutil.copytree(PACK, pack)
+    # A second manifest-listed textbook file that reuses the same doc id.
+    (pack / "textbooks/dns-resolution-copy.json").write_text(
+        (pack / DOC).read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    manifest = json.loads((pack / "manifest.json").read_text(encoding="utf-8"))
+    manifest["textbooks"].append("textbooks/dns-resolution-copy.json")
+    (pack / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(PackV2ImportError) as info:
         import_pack_v2(pack, artifact_types=PACK_ARTIFACT_TYPES)
-    assert any(
-        "textbook doc id 'network.dns.lookup-path' appears 2 times" in p
-        for p in info.value.problems
-    )
+    assert any("textbook doc id 'dns-resolution' appears 2 times" in p for p in info.value.problems)
