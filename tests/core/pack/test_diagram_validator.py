@@ -110,7 +110,7 @@ def test_argv_with_whitespace_first_element_is_rejected(pack: Path) -> None:
                 break
 
     _edit(pack / DIAGRAM, edit)
-    assert "argv[0]: must not contain whitespace" in _problems(pack)
+    assert "argv: argv[0] must be non-empty without whitespace" in _problems(pack)
 
 
 def test_empty_environment_bindings_is_rejected(pack: Path) -> None:
@@ -129,3 +129,36 @@ def test_boolean_environment_binding_value_is_rejected(pack: Path) -> None:
     assert "environment_bindings['verbose']: must be a non-empty string or an integer" in _problems(
         pack
     )
+
+
+def _edit_first_observe(pack: Path, key: str, value: Any) -> None:
+    def edit(d: dict[str, Any]) -> None:
+        for step in d["spec"]["diagram"]["steps"]:
+            if "reality" in step:
+                step["reality"]["observe"][0][key] = value
+                break
+
+    _edit(pack / DIAGRAM, edit)
+
+
+def test_argv_given_as_string_is_rejected(pack: Path) -> None:
+    _edit_first_observe(pack, "argv", "dig")
+    assert "reality.observe[0].argv: must be an array" in _problems(pack)
+
+
+@pytest.mark.parametrize("look_for", ["", {"text": "x"}, ["x"]])
+def test_non_string_or_empty_look_for_is_rejected(pack: Path, look_for: Any) -> None:
+    _edit_first_observe(pack, "look_for", look_for)
+    assert "reality.observe[0].look_for: must be a non-empty string" in _problems(pack)
+
+
+@pytest.mark.parametrize("end", ["from", "to"])
+def test_non_string_step_endpoint_is_rejected(pack: Path, end: str) -> None:
+    _edit(pack / DIAGRAM, lambda d: d["spec"]["diagram"]["steps"][0].__setitem__(end, {"a": 1}))
+    assert f"[diagram] {DIAGRAM}.spec.diagram.steps[0].{end}: must be a string" in _problems(pack)
+
+
+@pytest.mark.parametrize("step_id", ["bad step", "Upper", "-lead"])
+def test_step_id_must_be_a_token(pack: Path, step_id: str) -> None:
+    _edit(pack / DIAGRAM, lambda d: d["spec"]["diagram"]["steps"][0].__setitem__("id", step_id))
+    assert f"[diagram] {DIAGRAM}.spec.diagram.steps[0].id: must be a token" in _problems(pack)

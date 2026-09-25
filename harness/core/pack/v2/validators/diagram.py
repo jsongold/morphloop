@@ -11,11 +11,18 @@ observation).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
+from harness.core.ports.lab_runtime import check_argv
+
 if TYPE_CHECKING:
     from harness.core.pack.v2.importer import PackV2
+
+
+# common/ids.json#/$defs/token, as the retired visualization schema used for step ids.
+_TOKEN_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
 def _text(value: object) -> str | None:
@@ -33,16 +40,17 @@ def _check_observe(where: str, observe: object) -> list[str]:
             problems.append(f"{item_where}: must be an object")
             continue
         argv = item.get("argv")
-        if (
-            not isinstance(argv, Sequence)
-            or not argv
-            or not all(isinstance(a, str) and a for a in argv)
-        ):
-            problems.append(f"{item_where}.argv: must be a non-empty array of non-empty strings")
-        elif any(c.isspace() for c in str(argv[0])):
-            problems.append(f"{item_where}.argv[0]: must not contain whitespace")
+        if isinstance(argv, str) or not isinstance(argv, Sequence):
+            problems.append(f"{item_where}.argv: must be an array")
+        else:
+            try:
+                check_argv(tuple(argv))  # pack/defs.json#/$defs/sandbox_argv
+            except ValueError as exc:
+                problems.append(f"{item_where}.argv: {exc}")
         if _text(item.get("purpose")) is None:
             problems.append(f"{item_where}.purpose: is required")
+        if "look_for" in item and _text(item["look_for"]) is None:
+            problems.append(f"{item_where}.look_for: must be a non-empty string")
     return problems
 
 
@@ -114,6 +122,8 @@ def _check_steps(where: str, steps: object, actor_ids: frozenset[str]) -> list[s
         step_id = _text(step.get("id"))
         if step_id is None:
             problems.append(f"{step_where}.id: is required")
+        elif not _TOKEN_RE.fullmatch(step_id):
+            problems.append(f"{step_where}.id: must be a token")
         elif step_id in seen_ids:
             problems.append(f"{step_where}.id: duplicate step id {step_id!r}")
         else:
@@ -121,7 +131,9 @@ def _check_steps(where: str, steps: object, actor_ids: frozenset[str]) -> list[s
         if _text(step.get("label")) is None:
             problems.append(f"{step_where}.label: is required")
         for end in ("from", "to"):
-            if step.get(end) not in actor_ids:
+            if not isinstance(step.get(end), str):
+                problems.append(f"{step_where}.{end}: must be a string")
+            elif step.get(end) not in actor_ids:
                 problems.append(f"{step_where}.{end}: {step.get(end)!r} is not a declared actor")
         if "reality" in step:
             has_reality = True
