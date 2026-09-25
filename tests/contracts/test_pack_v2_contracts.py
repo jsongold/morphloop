@@ -29,6 +29,7 @@ LIST_SCHEMA = {
     "textbooks": "textbook-doc.json",
     "drills": "drill-item.json",
     "artifacts": "artifact-spec.json",
+    "llm_roles": "llm-role.json",
 }
 
 
@@ -46,6 +47,15 @@ def _listed() -> list[tuple[str, str]]:
     pairs = [(manifest["labels"], "labels.json")]
     pairs += [(p, schema) for key, schema in LIST_SCHEMA.items() for p in manifest[key]]
     return pairs
+
+
+def _prompt_paths() -> set[str]:
+    """Markdown prompt paths referenced from llm_roles config files.
+
+    Not schema-validated JSON, so not part of ``_listed()``, but still a real
+    pack file the "every file is listed" check must account for.
+    """
+    return {_load(PACK_DIR / p)["prompt"] for p in _manifest()["llm_roles"]}
 
 
 @pytest.mark.parametrize("path", SCHEMA_FILES, ids=lambda p: p.name)
@@ -71,7 +81,7 @@ def test_every_pack_file_is_listed() -> None:
         for p in PACK_DIR.rglob("*")
         if p.is_file() and p.name != "manifest.json"
     }
-    assert on_disk == {rel for rel, _ in _listed()}
+    assert on_disk == {rel for rel, _ in _listed()} | _prompt_paths()
 
 
 def test_every_answer_mode_has_a_valid_example() -> None:

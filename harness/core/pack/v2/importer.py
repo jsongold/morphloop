@@ -6,7 +6,10 @@ Steps (every problem of a step is reported together in :class:`PackV2ImportError
 2. parse and schema-validate the root manifest (``pack/v2/manifest.json``);
 3. every file is listed in the manifest and every listed file exists;
 4. parse each listed file and validate it against the schema of its kind;
-5. run every registered validator (:mod:`harness.core.pack.v2.validators`).
+5. resolve each ``llm_roles`` file's ``prompt`` Markdown path (checked for
+   existence here, since it is a plain-text path referenced from inside a
+   JSON document rather than listed directly under a manifest key);
+6. run every registered validator (:mod:`harness.core.pack.v2.validators`).
 
 The pack hash is the v1 pack content hash (ADR-0010) over every file. Nothing is
 stored here; the result is a value.
@@ -22,7 +25,7 @@ from types import MappingProxyType
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.canonical_json import pack_content_hash
 from harness.core.pack.model import MANIFEST_NAMES
-from harness.core.pack.parsing import PackParseError, parse_document
+from harness.core.pack.parsing import PackParseError, parse_document, parse_text
 from harness.core.pack.v2 import validators
 from harness.core.ports import JsonObject, JsonValue, PlainJson
 
@@ -35,6 +38,7 @@ KIND_SCHEMAS: Mapping[str, str] = MappingProxyType(
         "textbooks": _V2 + "textbook-doc.json",
         "drills": _V2 + "drill-item.json",
         "artifacts": _V2 + "artifact-spec.json",
+        "llm_roles": _V2 + "llm-role.json",
     }
 )
 """Manifest key -> schema of the files it lists (``labels`` lists one file)."""
@@ -46,6 +50,40 @@ class PackV2ImportError(Exception):
     def __init__(self, problems: Sequence[str]) -> None:
         super().__init__(f"pack refused with {len(problems)} problem(s):\n" + "\n".join(problems))
         self.problems = tuple(problems)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LLMRole:
+    """One ``llm_roles`` declaration plus the text of its prompt file.
+
+    Tuning values (``model``, ``temperature``, ``max_tokens``) are exactly what
+    the pack declares; the harness adds no defaults (ADR-0002). ``role`` is
+    pack vocabulary, not an SDK enum (ADR-0018).
+    """
+
+    role: str
+    model: str
+    temperature: float | None
+    max_tokens: int | None
+    prompt: str
+    prompt_text: str
+    output_schema: str | None
+
+
+def _optional_number(doc: JsonObject, key: str) -> float | None:
+    value = doc.get(key)
+    if value is None:
+        return None
+    assert isinstance(value, int | float) and not isinstance(value, bool)
+    return float(value)
+
+
+def _optional_int(doc: JsonObject, key: str) -> int | None:
+    value = doc.get(key)
+    if value is None:
+        return None
+    assert isinstance(value, int) and not isinstance(value, bool)
+    return value
 
 
 def _freeze(value: PlainJson) -> JsonValue:
@@ -67,6 +105,7 @@ class PackV2:
     labels: frozenset[str]
     topics: tuple[JsonObject, ...]
     documents: Mapping[str, Mapping[str, JsonObject]]
+    llm_roles: Mapping[str, LLMRole]
 
     @property
     def topic_ids(self) -> tuple[str, ...]:
@@ -137,12 +176,6 @@ def import_pack_v2(path: Path | str, *, schemas: ContractSchemas | None = None) 
         raise PackV2ImportError(problems)
 
     listed = _listed(manifest)
-    all_listed = {p for paths in listed.values() for p in paths}
-    problems.extend(
-        f"{p}: file is not listed in the manifest"
-        for p in raw
-        if p != manifest_path and p not in all_listed
-    )
     documents: dict[str, dict[str, JsonObject]] = {}
     for kind, paths in listed.items():
         documents[kind] = {}
@@ -155,11 +188,44 @@ def import_pack_v2(path: Path | str, *, schemas: ContractSchemas | None = None) 
                 frozen = _freeze(doc)
                 assert isinstance(frozen, Mapping)
                 documents[kind][p] = frozen
+
+    # A role's prompt is a Markdown file referenced by path from within its JSON
+    # config, not listed directly under a manifest key: resolve it here so the
+    # "every file is listed" check below accounts for it.
+    prompt_text: dict[str, str] = {}
+    for role_path, role_doc in documents["llm_roles"].items():
+        prompt_path = str(role_doc["prompt"])
+        if prompt_path not in raw:
+            problems.append(f"{role_path}: prompt file {prompt_path!r} does not exist")
+            continue
+        try:
+            prompt_text[prompt_path] = parse_text(prompt_path, raw[prompt_path])
+        except PackParseError as exc:
+            problems.append(str(exc))
+
+    all_listed = {p for paths in listed.values() for p in paths} | set(prompt_text)
+    problems.extend(
+        f"{p}: file is not listed in the manifest"
+        for p in raw
+        if p != manifest_path and p not in all_listed
+    )
     if problems:
         raise PackV2ImportError(problems)
 
     vocabulary = next(iter(documents["labels"].values()))["labels"]
     assert isinstance(vocabulary, Sequence)
+    llm_roles = {
+        str(doc["role"]): LLMRole(
+            role=str(doc["role"]),
+            model=str(doc["model"]),
+            temperature=_optional_number(doc, "temperature"),
+            max_tokens=_optional_int(doc, "max_tokens"),
+            prompt=str(doc["prompt"]),
+            prompt_text=prompt_text[str(doc["prompt"])],
+            output_schema=str(doc["output_schema"]) if "output_schema" in doc else None,
+        )
+        for doc in documents["llm_roles"].values()
+    }
     pack = PackV2(
         pack_id=str(manifest["pack_id"]),
         pack_version=str(manifest["pack_version"]),
@@ -168,6 +234,7 @@ def import_pack_v2(path: Path | str, *, schemas: ContractSchemas | None = None) 
         labels=frozenset(str(label) for label in vocabulary),
         topics=tuple(documents["topics"].values()),
         documents=MappingProxyType({k: MappingProxyType(v) for k, v in documents.items()}),
+        llm_roles=MappingProxyType(llm_roles),
     )
     for name, validate in validators.registered().items():
         problems.extend(f"[{name}] {problem}" for problem in validate(pack))

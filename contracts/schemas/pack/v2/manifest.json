@@ -14,7 +14,8 @@
     "topics",
     "textbooks",
     "drills",
-    "artifacts"
+    "artifacts",
+    "llm_roles"
   ],
   "properties": {
     "pack_format": {
@@ -56,6 +57,10 @@
     },
     "artifacts": {
       "description": "Artifact spec files (artifact-spec.json).",
+      "$ref": "#/$defs/paths"
+    },
+    "llm_roles": {
+      "description": "LLM role config files (llm-role.json). Role names are pack vocabulary, not an SDK enum (ADR-0002, ADR-0018).",
       "$ref": "#/$defs/paths"
     }
   },

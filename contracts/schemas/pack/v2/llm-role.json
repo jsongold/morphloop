@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/pack/v2/llm-role.json",
+  "title": "LLM role",
+  "description": "One LLM call the pack configures: the prompt it uses, the model, and its generation parameters. 'role' is a name the pack chooses (e.g. 'assistant', 'generator', 'judge', 'schedule'); the harness holds no role enum (ADR-0002, ADR-0018) and does not interpret it. Tuning values (model, temperature, max_tokens) live entirely in the pack (ADR-0002); the harness adds no defaults. 'prompt' names a pack-internal Markdown file whose existence the Importer checks; role names must be unique across a pack's llm_roles files (checked by the Importer, not this schema).",
+  "type": "object",
+  "required": [
+    "role",
+    "model",
+    "prompt"
+  ],
+  "properties": {
+    "role": {
+      "description": "Pack-chosen name for this LLM call. Not an enum.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+    },
+    "model": {
+      "description": "Model identifier passed to the provider adapter, e.g. 'gpt-5.4-2026-03-05'.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "temperature": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2
+    },
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "prompt": {
+      "description": "Path, relative to the pack root, of the Markdown prompt file for this role.",
+      "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/relative_path"
+    },
+    "output_schema": {
+      "description": "$id of the contracts schema this role's structured output must validate against, when the role has one yet.",
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://morphloop\\.dev/contracts/"
+    }
+  },
+  "additionalProperties": false
+}

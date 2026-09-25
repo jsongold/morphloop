@@ -1,0 +1,11 @@
+{
+  "description": "output_schema names a contracts $id, never an arbitrary URI.",
+  "schema": "schemas/pack/v2/llm-role.json",
+  "expected_error_paths": ["$.output_schema"],
+  "instance": {
+    "role": "judge",
+    "model": "gpt-5.4-2026-03-05",
+    "prompt": "llm/judge.md",
+    "output_schema": "https://example.com/schema.json"
+  }
+}

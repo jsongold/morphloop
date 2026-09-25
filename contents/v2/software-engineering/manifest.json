@@ -26,5 +26,11 @@
   "artifacts": [
     "artifacts/diagnose-dns-resolver-misconfiguration-lab.json",
     "artifacts/dns-resolution-flow.json"
+  ],
+  "llm_roles": [
+    "llm/assistant.json",
+    "llm/generator.json",
+    "llm/judge.json",
+    "llm/schedule.json"
   ]
 }

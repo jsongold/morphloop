@@ -16,6 +16,7 @@ the v1 schemas in `../`, which stay unchanged until v1 is removed. Conventions
 | `textbook-doc.json` | `textbooks` | teaching text: `blocks[]` of `{id, body, labels}` |
 | `drill-item.json` | `drills` | question + expected answer, `answer_mode` text / choice / artifact |
 | `artifact-spec.json` | `artifacts` | `{id, type, labels, spec}`; `type: lab` fixes the spec shape |
+| `llm-role.json` | `llm_roles` | `{role, model, temperature?, max_tokens?, prompt, output_schema?}`; one LLM call the pack configures |
 | `defs.json` | none | label shapes |
 
 ## Labels over enums
@@ -47,6 +48,12 @@ that change SDK behavior (`answer_mode`, the `sys:` labels).
   It is not an enum. `spec` is validated by that subclass, except `lab`: its
   spec is `{environment, allowed_fixtures[], allowed_checks[]}`, where the
   generator may compose only the listed adapter items (ADR-0014).
+- **LLM roles** configure the LLM calls a pack uses (chat assistant, generation,
+  gap judgment, scheduling, ...). `role` is a name the pack chooses; the
+  harness holds no role enum (ADR-0002, ADR-0018) and does not interpret it.
+  `prompt` names a pack-internal Markdown file; `model`, `temperature` and
+  `max_tokens` are tuning values the pack owns in full. `output_schema` is
+  optional: a role with nothing consuming its output yet declares no schema.
 
 ## Enforced by the Importer, not by the schemas
 
@@ -60,7 +67,9 @@ that change SDK behavior (`answer_mode`, the `sys:` labels).
   by an adapter in `domain_adapters`; the lab environment's `fixture` is in
   `allowed_fixtures`;
 - every id in a topic's `docs` names an existing textbook doc, and every
-  textbook doc is listed under exactly one topic's `docs`.
+  textbook doc is listed under exactly one topic's `docs`;
+- each llm role's `prompt` file exists; role names are unique across a pack's
+  `llm_roles` files.
 
 ## Tests
 
