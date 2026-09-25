@@ -3,7 +3,7 @@
 Rules every resource route (`harness/api/v2/routes/<resource>.py`) follows.
 They exist so each route does not re-discover the same input bugs (#87, #92).
 
-## Request bodies
+## Request bodies and parameters
 
 - Subclass `V2Model` (`harness/api/v2/models.py`), never `BaseModel` directly.
   Unknown fields are rejected with 422, matching `additionalProperties: false`.
@@ -12,6 +12,9 @@ They exist so each route does not re-discover the same input bugs (#87, #92).
 - Mirror the OpenAPI schema's constraints on the field, e.g.
   `Annotated[Text, Field(min_length=1, max_length=2000)]` or `pattern=...`.
   The request model is the only check before the event store.
+- Strict types: integers are `StrictInt` (no `"3"` or `3.0`); an optional
+  field the schema does not allow as `null` is non-nullable (omitted is not
+  `null`). `Query(...)` parameters carry the same constraints as the contract.
 - A POST body never carries `user_id`; use `UserIdDep`.
 
 ## Shared dependencies (`harness/api/v2/deps.py`)
@@ -21,11 +24,22 @@ They exist so each route does not re-discover the same input bugs (#87, #92).
 - `EventTransactionV2Dep`, `PackV2Dep`, `GeneratedDocumentsDep`, `UserIdDep`.
   Do not add route-local env vars or loaders.
 
-## Errors
+## Idempotency
 
-- The same `Idempotency-Key` with the same body replays (no new event).
-  With a different body the store raises `EventIdConflictError`, which
-  `harness/api/problems.py` renders as `409 state-conflict`. Do not catch it.
+- Check replay first: if `tx.get(event_id)` finds an event for the same user,
+  return the response built from it before any validation, lookup or id
+  generation (a resend must succeed even if the pack or state changed since).
+- The same key with a different body raises `EventIdConflictError`, which
+  `harness/api/problems.py` renders as `409 idempotency-key-reused`.
+  Do not catch it.
+
+## Events and views
+
+- Event types that belong to a session/workspace declare `x-scope` in their
+  payload schema (`["session_id"]` or `["session_id", "ws_id"]`); the store
+  then rejects an append without those ids.
+- List order = creation order: store the event `position` in the view
+  document and sort by it. Never sort by uuid keys.
 
 ## Regression test per route
 

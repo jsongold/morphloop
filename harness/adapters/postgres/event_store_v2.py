@@ -111,6 +111,10 @@ class _Transaction:
             raise EventIdConflictError(existing)
         return AppendResultV2(event=existing, created=False)
 
+    def get(self, event_id: str) -> StoredEventV2 | None:
+        row = self._conn().execute(_SELECT_BY_ID, {"id": event_id}).mappings().one_or_none()
+        return None if row is None else _row_to_event(row)
+
     def get_view(self, view: str, key: str) -> JsonObject | None:
         params = {"view": view, "key": key}
         return cast(JsonObject | None, self._conn().execute(_GET_VIEW, params).scalar_one_or_none())

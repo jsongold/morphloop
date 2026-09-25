@@ -83,5 +83,5 @@ def test_reused_idempotency_key_with_other_content_is_409(tmp_path: Path) -> Non
     assert client.post("/notes", json={"note": "one"}, headers=headers).status_code == 201
     response = client.post("/notes", json={"note": "two"}, headers=headers)
     assert response.status_code == 409
-    assert response.json()["code"] == "state-conflict"
+    assert response.json()["code"] == "idempotency-key-reused"
     assert _count(store) == 1

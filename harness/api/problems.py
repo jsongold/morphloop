@@ -6,7 +6,7 @@ its status, and :func:`problem_body` renders it. The handlers here only add the
 two failures that happen before core is reached -- a body that fails its request
 schema (422 ``validation-failed``) and a malformed body or query parameter
 (400 ``invalid-request``) -- a reused ``Idempotency-Key`` with a different
-body (409 ``state-conflict``, v2), and a catch-all for an unexpected exception
+body (409 ``idempotency-key-reused``, v2), and a catch-all for an unexpected exception
 (500 ``internal``).
 """
 
@@ -92,7 +92,7 @@ def install_handlers(app: FastAPI) -> None:
     @app.exception_handler(EventIdConflictError)
     async def _event_id_conflict(request: Request, exc: Exception) -> Response:
         # A reused Idempotency-Key with a different body (v2 routes).
-        return problem(status=409, code="state-conflict", detail=str(exc))
+        return problem(status=409, code="idempotency-key-reused", detail=str(exc))
 
     @app.exception_handler(RequestValidationError)
     async def _request_error(request: Request, exc: Exception) -> Response:
