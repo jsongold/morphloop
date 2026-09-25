@@ -47,3 +47,17 @@ test("registerArtifactRenderer registers a type's renderer", () => {
   pane.registerArtifactRenderer("probe", () => React.createElement("b", null, "probed"));
   assert.match(slot("probe", "x"), /probed/);
 });
+
+test("the diagram carries its stroke styles into the shadow tree", () => {
+  const spec = {
+    title: "DNS resolution",
+    diagram: {
+      actors: [{ id: "client", label: "Client" }, { id: "resolver", label: "Resolver" }],
+      steps: [{ id: "s1", from: "client", to: "resolver", label: "query", explanation: "asks" }],
+    },
+  };
+  const html = renderToStaticMarkup(React.createElement(pane.DiagramContent, { spec }));
+  assert.match(html, /\.viz-lifeline\s*\{[^}]*stroke:\s*var\(--border\)/);
+  assert.match(html, /\.viz-step line,\s*\.viz-step path\s*\{[^}]*stroke:\s*currentColor/);
+  assert.match(html, /class="viz-lifeline"/);
+});

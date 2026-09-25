@@ -103,10 +103,23 @@ type Diagram = {
   diagram: { actors: { id: string; label: string }[]; steps: DiagramStep[] };
 };
 
+// The diagram's styles must live in the shadow tree: ArtifactHost portals this
+// pane into a ShadowRoot, so the global .viz-* rules in globals.css never reach
+// it. Without a stroke the SVG lifelines and arrows default to none and vanish.
+const diagramStyle = `
+.viz-svg { width: 100%; max-height: 320px; color: var(--foreground); }
+.viz-svg text { fill: currentColor; font-size: 12px; }
+.viz-actor { font-weight: 600; }
+.viz-lifeline { stroke: var(--border); stroke-dasharray: 4 3; }
+.viz-step line, .viz-step path { stroke: currentColor; stroke-width: 1.5; }
+.viz-step { cursor: pointer; }
+.viz-steps { margin: 6px 0; }
+.viz-detail { border-top: 1px solid var(--border); padding-top: 6px; }
+`;
+
 function DiagramView({ directive }: { directive: ArtifactDirective }) {
   const [spec, setSpec] = useState<ArtifactSpecView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState(0);
   useEffect(() => {
     let cancelled = false;
     artifactSpec(get, directive.ref).then(
@@ -118,10 +131,15 @@ function DiagramView({ directive }: { directive: ArtifactDirective }) {
   if (error) return <p role="alert">{error}</p>;
   if (!spec) return <p className="muted">Loading diagram…</p>;
   if (spec.type !== "diagram") return <p role="alert">Artifact {directive.ref} is not a diagram.</p>;
-  const { title, diagram } = spec.spec;
+  return <DiagramContent spec={spec.spec} />;
+}
+
+export function DiagramContent({ spec }: { spec: Diagram }) {
+  const [selected, setSelected] = useState(0);
+  const { title, diagram } = spec;
   const x = (actorId: string) => (diagram.actors.findIndex((actor) => actor.id === actorId) + 0.5) * 190;
   const step = diagram.steps[selected];
-  return <section className="viz"><h3>{title}</h3>
+  return <section className="viz"><style>{diagramStyle}</style><h3>{title}</h3>
     <svg className="viz-svg" viewBox={`0 0 ${diagram.actors.length * 190} ${40 + diagram.steps.length * 45}`} role="img" aria-label={`Sequence diagram: ${title}`}>
       <defs><marker id="v2-diagram-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" /></marker></defs>
       {diagram.actors.map((actor) => <g key={actor.id}><text x={x(actor.id)} y={18} textAnchor="middle" className="viz-actor">{actor.label}</text><line x1={x(actor.id)} x2={x(actor.id)} y1={25} y2={30 + diagram.steps.length * 45} className="viz-lifeline" /></g>)}
