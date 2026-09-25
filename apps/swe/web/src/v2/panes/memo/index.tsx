@@ -1,16 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { get, newIdempotencyKey, post } from "@/v2/api";
 import { useWorkspace } from "@/v2/state";
-import { attemptFor, type Attempt } from "./attempt";
-
-type Entry = {
-  entry_id: string;
-  actor: "learner" | "assistant";
-  body: string;
-  position: number;
-};
+import { attemptFor, clearIfUnchanged, mergeEntries, type Attempt, type Entry } from "./attempt";
 
 export default function MemoPane() {
   const { ws } = useWorkspace();
@@ -19,15 +12,17 @@ export default function MemoPane() {
   const [pending, setPending] = useState<Attempt | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadVersion = useRef(0);
 
   const entries = loaded && loaded.wsId === ws?.ws_id ? loaded.entries : [];
 
   useEffect(() => {
     if (!ws) return;
     let cancelled = false;
+    const version = ++loadVersion.current;
     get<{ entries: Entry[] }>(`/ws/${ws.ws_id}/memo/entries`).then(
-      ({ entries }) => { if (!cancelled) { setLoaded({ wsId: ws.ws_id, entries }); setError(null); } },
-      (e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); },
+      ({ entries }) => { if (!cancelled && version === loadVersion.current) { setLoaded({ wsId: ws.ws_id, entries }); setError(null); } },
+      (e: unknown) => { if (!cancelled && version === loadVersion.current) setError(e instanceof Error ? e.message : String(e)); },
     );
     return () => { cancelled = true; };
   }, [ws]);
@@ -35,16 +30,28 @@ export default function MemoPane() {
   async function append() {
     const value = body.trim();
     if (!ws || !value || value.length > 4000 || saving) return;
+    const draft = body;
+    const version = ++loadVersion.current;
     const attempt = attemptFor(pending, ws.ws_id, value, newIdempotencyKey);
     setPending(attempt);
     setSaving(true);
     setError(null);
     try {
-      await post(`/ws/${ws.ws_id}/memo/entries`, { actor: "learner", body: value }, attempt.key);
+      const { body: entry } = await post<Entry>(`/ws/${ws.ws_id}/memo/entries`, { actor: "learner", body: value }, attempt.key);
+      if (version === loadVersion.current) {
+        setLoaded((current) => ({
+          wsId: ws.ws_id,
+          entries: mergeEntries(current?.wsId === ws.ws_id ? current.entries : [], entry),
+        }));
+      }
       setPending(null);
-      setBody("");
-      const result = await get<{ entries: Entry[] }>(`/ws/${ws.ws_id}/memo/entries`);
-      setLoaded({ wsId: ws.ws_id, entries: result.entries });
+      setBody((current) => clearIfUnchanged(current, draft));
+      try {
+        const result = await get<{ entries: Entry[] }>(`/ws/${ws.ws_id}/memo/entries`);
+        if (version === loadVersion.current) setLoaded({ wsId: ws.ws_id, entries: result.entries });
+      } catch {
+        // The POST already returned the stored entry; the local list is current.
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

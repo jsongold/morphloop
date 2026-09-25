@@ -1,14 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ApiError, get, newIdempotencyKey, post } from "@/v2/api";
+import { get, newIdempotencyKey, post } from "@/v2/api";
 import { useWorkspace } from "@/v2/state";
 import type { StoredEvent } from "@/v2/types";
-import { attemptFor, type Attempt } from "./attempt";
+import {
+  attemptFor,
+  clearIfUnchanged,
+  isHintThread,
+  keyForWorkspace,
+  mergeMessages,
+  type Attempt,
+  type Message,
+} from "./attempt";
 
 type ThreadCreated = StoredEvent<{ thread_id: string; labels?: string[] }>;
-type Message = { message_id: string; role: "learner" | "assistant"; text: string; created_at: string };
-
 export default function ChatPane() {
   const { ws, threadId, setThread } = useWorkspace();
   const [main, setMain] = useState<ThreadCreated | null>(null);
@@ -17,32 +23,47 @@ export default function ChatPane() {
   const [pending, setPending] = useState<Attempt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [openError, setOpenError] = useState<{ wsId: string; message: string } | null>(null);
+  const [openRetry, setOpenRetry] = useState(0);
+  // Labels of every thread this pane has itself created or loaded, keyed by
+  // thread_id (currently only ever the main thread we posted for this ws).
+  const [threadLabels, setThreadLabels] = useState<Map<string, string[] | undefined>>(new Map());
+  const mainKeys = useRef(new Map<string, string>());
+  const loadVersion = useRef(0);
   const logRef = useRef<HTMLDivElement>(null);
   const mainId = main && main.ws_id === ws?.ws_id ? main.payload.thread_id : null;
   const activeId = threadId ?? mainId;
-  const isHint = activeId === mainId && main?.payload.labels?.includes("mode:hint");
+  const isHint = isHintThread(threadLabels, activeId);
   const path = ws && activeId ? `/ws/${ws.ws_id}/threads/${activeId}/messages` : null;
   const messages = loaded && loaded.path === path ? loaded.messages : null;
+  const openingError = openError && openError.wsId === ws?.ws_id ? openError.message : null;
 
   useEffect(() => {
     if (!ws) return;
     let cancelled = false;
-    post<ThreadCreated>(`/ws/${ws.ws_id}/threads`, {}).then(
-      ({ body }) => { if (!cancelled) setMain(body); },
-      (e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); },
+    const key = keyForWorkspace(mainKeys.current, ws.ws_id, newIdempotencyKey);
+    post<ThreadCreated>(`/ws/${ws.ws_id}/threads`, {}, key).then(
+      ({ body }) => {
+        if (cancelled) return;
+        setMain(body);
+        setOpenError(null);
+        setThreadLabels((prev) => new Map(prev).set(body.payload.thread_id, body.payload.labels));
+      },
+      (e: unknown) => { if (!cancelled) setOpenError({ wsId: ws.ws_id, message: e instanceof Error ? e.message : String(e) }); },
     );
     return () => { cancelled = true; };
-  }, [ws]);
+  }, [ws, openRetry]);
 
   useEffect(() => {
-    if (!ws || !activeId) return;
+    if (!path) return;
     let cancelled = false;
-    get<{ messages: Message[] }>(`/ws/${ws.ws_id}/threads/${activeId}/messages`).then(
-      ({ messages }) => { if (!cancelled) { setLoaded({ path: `/ws/${ws.ws_id}/threads/${activeId}/messages`, messages }); setError(null); } },
-      (e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); },
+    const version = ++loadVersion.current;
+    get<{ messages: Message[] }>(path).then(
+      ({ messages }) => { if (!cancelled && version === loadVersion.current) { setLoaded({ path, messages }); setError(null); } },
+      (e: unknown) => { if (!cancelled && version === loadVersion.current) setError(e instanceof Error ? e.message : String(e)); },
     );
     return () => { cancelled = true; };
-  }, [ws, activeId]);
+  }, [path]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -51,23 +72,30 @@ export default function ChatPane() {
   async function send() {
     const value = text.trim();
     if (!path || !value || sending) return;
+    const draft = text;
     const attempt = attemptFor(pending, path, value, newIdempotencyKey);
+    const version = ++loadVersion.current;
     setPending(attempt);
     setSending(true);
     setError(null);
     try {
-      await post(path, { text: value }, attempt.key);
+      const { body } = await post<{ sent: Message; reply: Message }>(path, { text: value }, attempt.key);
+      if (version === loadVersion.current) {
+        setLoaded((current) => ({
+          path,
+          messages: mergeMessages(current?.path === path ? current.messages : [], [body.sent, body.reply]),
+        }));
+      }
       setPending(null);
-      setText("");
+      setText((current) => clearIfUnchanged(current, draft));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      if (!(e instanceof ApiError && e.status === 502)) return;
     } finally {
       try {
         const result = await get<{ messages: Message[] }>(path);
-        setLoaded({ path, messages: result.messages });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        if (version === loadVersion.current) setLoaded({ path, messages: result.messages });
+      } catch {
+        // Keep the POST result or error; this GET only reconciles the log.
       }
       setSending(false);
     }
@@ -82,7 +110,7 @@ export default function ChatPane() {
         {threadId && <button className="link" onClick={() => setThread(null)}>Main chat</button>}
       </div>
       <div className="chat-log" ref={logRef} aria-live="polite">
-        {!activeId && <p className="muted">Opening chat…</p>}
+        {!activeId && !openingError && <p className="muted">Opening chat…</p>}
         {activeId && messages?.length === 0 && <p className="muted">Ask the tutor a question.</p>}
         {messages?.map((message) => (
           <div key={message.message_id} className={`chat-msg ${message.role === "assistant" ? "tutor" : "learner"}`}>
@@ -92,6 +120,7 @@ export default function ChatPane() {
         ))}
         {sending && <p className="muted">Tutor is replying…</p>}
       </div>
+      {!activeId && openingError && <div><p className="error" role="alert">{openingError}</p><button onClick={() => { setOpenError(null); setOpenRetry((n) => n + 1); }}>Retry opening chat</button></div>}
       {error && <p className="error" role="alert">{error}</p>}
       <form className="chat-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
         <textarea
