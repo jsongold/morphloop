@@ -1,0 +1,4 @@
+{
+  "markdown": "Before\n::artifact{type=lab ref=x}\nAfter",
+  "plaintext": "Before\nAfter"
+}
