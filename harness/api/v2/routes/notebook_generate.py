@@ -7,10 +7,12 @@ generated content: it appears in `generated_documents` only once it has passed
 validation, and a rejected candidate never appears.
 
 Wiring: the v2 pack (`PackV2Dep`, its `generator` LLM role), the generated
-documents store (`GeneratedDocumentsDep`) and the litellm provider
-(`app.state.llm`, built on first use). Lab variants are not wired: pack v2
-declares no solution-step timeout for a lab, so the generator here only
-references existing pack labs; a lab candidate is rejected.
+documents store (`GeneratedDocumentsDep`) and `harness.cli.wiring.llm_provider`
+(the litellm adapter, or the deterministic fake under
+`MORPHLOOP_LLM_PROVIDER=fake`, #130), cached on `app.state.llm` after first use.
+Lab variants are not wired: pack v2 declares no solution-step timeout for a lab,
+so the generator here only references existing pack labs; a lab candidate is
+rejected.
 """
 
 from __future__ import annotations
@@ -19,7 +21,6 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
-from harness.adapters.litellm import LiteLLMProvider
 from harness.api.v2.deps import GeneratedDocumentsDep, PackV2Dep
 from harness.api.v2.models import V2Model
 from harness.core.contract_schemas import ContractSchemas
@@ -36,10 +37,12 @@ class GenerateBody(V2Model):
 
 
 def llm_of(request: Request) -> LLMProvider:
-    """The LLM provider; litellm, built and cached on `app.state` on first use."""
+    """The LLM provider, built via `wiring.llm_provider` and cached on `app.state`."""
     llm: LLMProvider | None = getattr(request.app.state, "llm", None)
     if llm is None:
-        llm = LiteLLMProvider()
+        from harness.cli import wiring  # heavy import, only when used
+
+        llm = wiring.llm_provider()
         request.app.state.llm = llm
     return llm
 

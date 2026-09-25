@@ -1,8 +1,9 @@
 """`/v2/ws/{ws_id}/threads/{thread_id}/messages` (chat resource, #63).
 
-Wiring: the tool-calling LLM is the litellm adapter unless a test overrides
-`chat_llm_of`; the model, generation parameters and prompt are the pack's
-`assistant` LLM role (`PackV2Dep`, ADR-0002).
+Wiring: the tool-calling LLM comes from `harness.cli.wiring.llm_provider` (the
+litellm adapter, or the deterministic fake under `MORPHLOOP_LLM_PROVIDER=fake`,
+#130) unless a test overrides `chat_llm_of`; the model, generation parameters
+and prompt are the pack's `assistant` LLM role (`PackV2Dep`, ADR-0002).
 """
 
 from __future__ import annotations
@@ -36,9 +37,9 @@ MAX_TOOL_ROUNDS = 4
 def chat_llm_of(request: Request) -> LLMToolProvider:
     provider: LLMToolProvider | None = getattr(request.app.state, "chat_llm", None)
     if provider is None:
-        from harness.adapters.litellm import LiteLLMProvider  # heavy import, only when used
+        from harness.cli import wiring  # heavy import, only when used
 
-        provider = LiteLLMProvider()
+        provider = wiring.llm_provider()
         request.app.state.chat_llm = provider
     return provider
 

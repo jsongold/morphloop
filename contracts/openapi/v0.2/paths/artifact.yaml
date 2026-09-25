@@ -16,9 +16,64 @@
 # Every POST takes an optional `Idempotency-Key` (UUID) header: it becomes
 # the event id, and a resend by the same learner in the same ws returns the
 # stored result (another learner's key: 409 idempotency-key-reused).
+/artifact-specs/{spec_id}:
+  get:
+    tags: [artifact]
+    operationId: getArtifactSpec
+    summary: Read a learner-safe artifact spec from the loaded pack.
+    parameters:
+      - name: spec_id
+        in: path
+        required: true
+        schema: {type: string, minLength: 1}
+    responses:
+      '200':
+        description: The type-selected learner view of the artifact spec.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, labels, spec]
+              additionalProperties: false
+              properties:
+                id: {type: string, minLength: 1}
+                type: {type: string, minLength: 1}
+                labels: {type: array, items: {type: string}}
+                spec: {type: object, additionalProperties: true}
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
 /ws/{ws_id}/artifacts:
   parameters:
     - &ws_id {name: ws_id, in: path, required: true, schema: {type: string, pattern: '^ws_[0-9A-Za-z]{1,64}$'}}
+  get:
+    tags: [artifact]
+    operationId: listArtifacts
+    summary: The learner's artifacts in this ws, in creation order (oldest first).
+    parameters:
+      - {name: spec_id, in: query, required: false, schema: {type: string, minLength: 1}}
+    responses:
+      '200':
+        description: Matching artifacts. An unknown or another learner's ws is 404.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [artifact_id, type, spec_id, status]
+                    properties:
+                      artifact_id: {type: string, pattern: '^art_[0-9A-Za-z]{1,64}$'}
+                      type: {type: string}
+                      spec_id: {type: string}
+                      status: {enum: [running, stopped]}
+                    additionalProperties: false
+              additionalProperties: false
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
   post:
     tags: [artifact]
     operationId: startArtifact

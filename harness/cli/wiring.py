@@ -15,11 +15,13 @@ than a traceback.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 
 import domains.dns
 from harness.adapters.docker_lab import DockerLabRuntime
+from harness.adapters.fake_llm import FakeDevLLMProvider
 from harness.adapters.fs_pack_source import FilesystemPackSource
 from harness.adapters.litellm import LiteLLMProvider
 from harness.adapters.postgres.engine import create_engine_from_env
@@ -33,13 +35,15 @@ from harness.core.ports import (
     EventStore,
     EventTransaction,
     LabRuntime,
-    LLMProvider,
     PackSource,
     StoredEvent,
 )
 from harness.core.ports.events_v2 import EventStoreV2
 from harness.core.registry import AlgorithmRegistry
 from harness.core.registry.builtin import v01_algorithm_registry
+from harness.core.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 type ImporterFactory = Callable[[PackSource], PackImporter]
 
@@ -83,12 +87,28 @@ def pack_source() -> PackSource:
     return FilesystemPackSource()
 
 
-def llm_provider() -> LLMProvider:
+def llm_provider() -> LiteLLMProvider | FakeDevLLMProvider:
     """The one LLM adapter; the pack's model string decides the provider.
 
     Credentials stay in the environment (``OPENAI_API_KEY``,
     ``ANTHROPIC_API_KEY``, ...), where litellm reads them itself.
+
+    ``MORPHLOOP_LLM_PROVIDER=fake`` (#130) swaps in a deterministic, keyless
+    fake for dev-stack / local E2E runs; refused when ``MORPHLOOP_ENVIRONMENT``
+    is ``production``, since it never calls a real model.
     """
+    settings = Settings()
+    if settings.morphloop_llm_provider == "fake":
+        if settings.morphloop_environment == "production":
+            raise CommandError(
+                "MORPHLOOP_LLM_PROVIDER=fake is refused when MORPHLOOP_ENVIRONMENT=production: "
+                "it fabricates output instead of calling a real model."
+            )
+        logger.warning(
+            "MORPHLOOP_LLM_PROVIDER=fake: LLM output is a deterministic fake, not a real "
+            "model. Dev-stack / local E2E only."
+        )
+        return FakeDevLLMProvider()
     return LiteLLMProvider()
 
 

@@ -198,3 +198,44 @@
                 payload: {type: object}
       default:
         $ref: '../root.yaml#/components/responses/Problem'
+  get:
+    tags: [ws]
+    operationId: listThreads
+    summary: The caller's threads in this ws, in creation order.
+    description: |
+      `target` and `labels` are the same shape the thread was created with
+      (`target.kind` plus that named resource's own extra fields, e.g. a
+      highlight's popup thread carries `target.highlight_id`). Messages
+      inside a thread are `GET /ws/{ws_id}/threads/{thread_id}/messages`
+      (issue #63), not returned here. The ws must exist and belong to the
+      caller (404 otherwise).
+    parameters:
+      - {name: ws_id, in: path, required: true, schema: {type: string}}
+      - name: target_highlight_id
+        in: query
+        required: false
+        description: Only threads whose `target` carries this `highlight_id` (issue #129).
+        schema: {type: string, pattern: '^hl_[0-9A-Za-z]{1,64}$'}
+    responses:
+      '200':
+        description: Matching threads, oldest first.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              additionalProperties: false
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [thread_id, target, labels, created_at]
+                    additionalProperties: false
+                    properties:
+                      thread_id: {type: string}
+                      target: {type: [object, "null"]}
+                      labels: {type: array, items: {type: string}}
+                      created_at: {type: string, format: date-time}
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'

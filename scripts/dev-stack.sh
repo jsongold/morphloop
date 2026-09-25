@@ -6,11 +6,15 @@
 # derived from the worktree path, so each worktree can `up` without colliding.
 # Ports land in 18000-18999 (api) and 13000-13999 (web), offset from the hash.
 #
-#   scripts/dev-stack.sh up [pack-path]          # build + start, then import
+#   scripts/dev-stack.sh up [pack-path] [--fake-llm]  # build + start, then import
 #   scripts/dev-stack.sh down [-v]               # stop (and delete the db)
 #   scripts/dev-stack.sh logs [service]            # follow logs (api/web/db)
 #   scripts/dev-stack.sh import [pack-path]        # import a pack via the api
 #   scripts/dev-stack.sh test                       # e2e tests inside the api
+#
+# --fake-llm (or MORPHLOOP_LLM_PROVIDER=fake in the environment, #130): the api
+# answers chat / judge / generate with a deterministic fake LLM instead of a
+# real provider, so the stack works with no key. Never set this in production.
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
@@ -25,7 +29,15 @@ cmd="${1:-up}"
 case "$cmd" in
   up)
     shift
-    pack="${1:-contents/software-engineering}"
+    args=()
+    for arg in "$@"; do
+      if [[ "$arg" == "--fake-llm" ]]; then
+        export MORPHLOOP_LLM_PROVIDER=fake
+      else
+        args+=("$arg")
+      fi
+    done
+    pack="${args[0]:-contents/software-engineering}"
     docker compose up -d --build
     docker compose exec -T api python -m harness.cli import "$pack" 2>/dev/null || true
     echo "api  http://localhost:${API_PORT}  (project ${COMPOSE_PROJECT_NAME})"
