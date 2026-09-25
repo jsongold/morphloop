@@ -18,7 +18,11 @@ from dataclasses import dataclass
 from harness.core.labels import TOPIC_PREFIX
 from harness.core.pack.v2 import PackV2
 from harness.core.ports import JsonObject, PlainJson
-from harness.core.ports.generated_documents import GeneratedDocument, GeneratedDocumentStore
+from harness.core.ports.generated_documents import (
+    GeneratedDocument,
+    GeneratedDocumentStore,
+    belongs_to_pack,
+)
 from harness.core.ports.json_types import to_plain_object
 from harness.core.textbook.plaintext import block_plaintext
 
@@ -84,11 +88,19 @@ class Textbook:
     def _pack_docs(self) -> dict[str, JsonObject]:
         return {str(d["id"]): d for d in self.pack.documents["textbooks"].values()}
 
+    def _generated_docs(self, *, label: str | None = None) -> list[GeneratedDocument]:
+        """Generated docs whose recorded provenance belongs to this pack revision."""
+        return [
+            doc
+            for doc in self.generated.list(RESOURCE, label=label)
+            if belongs_to_pack(doc, pack_id=self.pack.pack_id, pack_hash=self.pack.pack_hash)
+        ]
+
     def _all(self) -> Iterator[dict[str, PlainJson]]:
         pack_docs = self._pack_docs()
         for doc in pack_docs.values():
             yield _with_origin(doc, ORIGIN_PACK)
-        for generated_doc in self.generated.list(RESOURCE):
+        for generated_doc in self._generated_docs():
             if generated_doc.id not in pack_docs:
                 yield _generated(generated_doc)
 
@@ -109,7 +121,7 @@ class Textbook:
         doc_ids = topic.get("docs", ())
         assert isinstance(doc_ids, Sequence)
         docs = [_with_origin(pack_docs[str(i)], ORIGIN_PACK) for i in doc_ids]
-        for doc in self.generated.list(RESOURCE, label=TOPIC_PREFIX + topic_id):
+        for doc in self._generated_docs(label=TOPIC_PREFIX + topic_id):
             if doc.id not in pack_docs:
                 docs.append(_generated(doc))
         return [_summary(d) for d in docs]
@@ -121,7 +133,9 @@ class Textbook:
             out = _with_origin(found, ORIGIN_PACK)
         else:
             generated = self.generated.get(RESOURCE, doc_id)
-            if generated is None:
+            if generated is None or not belongs_to_pack(
+                generated, pack_id=self.pack.pack_id, pack_hash=self.pack.pack_hash
+            ):
                 raise TextbookNotFoundError(f"no textbook doc {doc_id!r}")
             out = _generated(generated)
         return _with_plaintext(out)

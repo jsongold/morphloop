@@ -6,9 +6,8 @@ import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from harness.core.drill.service import DrillService
-from harness.core.drill.store import generated_items, pack_items
 from harness.core.labels import check_labels
+from harness.core.notebook.corpus import learner_drills
 from harness.core.pack.v2 import PackV2
 from harness.core.ports.events_v2 import (
     EventIdConflictError,
@@ -92,7 +91,7 @@ def build_workspace(
             except TopicNotFoundError as exc:
                 raise LookupError(f"no topic {topic!r} in session {session_id!r}") from exc
     textbook = Textbook(pack, generated)
-    drills = DrillService([*pack_items(pack), *generated_items(generated.list("drill"))])
+    drills = learner_drills(pack, generated)
     selection = tx.get(_selection_id(event_id))
     if selection is None:
         if existing is not None:

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from harness.core.drill.service import DrillService
-from harness.core.drill.store import generated_items, pack_items
 from harness.core.memo.entries import MemoEntries
+from harness.core.notebook.corpus import learner_drills
 from harness.core.pack.v2 import PackV2
 from harness.core.ports.events_v2 import EventTransactionV2
 from harness.core.ports.generated_documents import GeneratedDocumentStore
@@ -49,7 +48,7 @@ def search(
                         "text": text,
                     }
                 )
-    drills = DrillService([*pack_items(pack), *generated_items(generated.list("drill"))])
+    drills = learner_drills(pack, generated)
     results.extend(
         {"kind": "drill_item", "id": item.id, "text": item.question}
         for item in drills.list_items()

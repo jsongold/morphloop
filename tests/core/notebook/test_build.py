@@ -123,6 +123,90 @@ def test_build_rejects_a_session_pinned_to_a_different_pack() -> None:
                 )
 
 
+def test_build_excludes_generated_content_from_another_pack() -> None:
+    """#117 P1: generated content recorded under another pack revision is not
+    selected into a workspace pinned to the loaded pack."""
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    generated = InMemoryGeneratedDocumentStore()
+    other_pack = {"pack_id": "other-pack", "pack_hash": "other-hash"}
+    generated.add(
+        GeneratedDocument(
+            resource="drill",
+            id="old-drill",
+            body={
+                "id": "old-drill",
+                "question": "Old question",
+                "expected": "old",
+                "answer_mode": "text",
+                "labels": ["concept"],
+            },
+            provenance=other_pack,
+        )
+    )
+    generated.add(
+        GeneratedDocument(
+            resource="textbook",
+            id="old-doc",
+            body={
+                "id": "old-doc",
+                "title": "Old lesson",
+                "labels": ["concept"],
+                "blocks": [{"id": "b1", "body": "Old text", "labels": []}],
+            },
+            provenance=other_pack,
+        )
+    )
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    with store.transaction() as tx:
+        session = create_session(
+            tx,
+            pack=pack,
+            user_id="usr_local",
+            event_id=str(uuid.uuid4()),
+            pack_id=pack.pack_id,
+            topic_id="network.dns",
+        )
+        result = build_workspace(
+            tx,
+            pack=pack,
+            generated=generated,
+            event_id=str(uuid.uuid4()),
+            user_id="usr_local",
+            session_id=str(session["id"]),
+            labels=["concept"],
+        )
+    assert all(item["id"] != "old-drill" for item in result["drills"])
+    assert all(doc["id"] != "old-doc" for doc in result["documents"])
+
+
+def test_build_excludes_pack_holdout_drills() -> None:
+    """#117 P1: the notebook must not reveal a pack drill marked ``sys:holdout``."""
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    generated = InMemoryGeneratedDocumentStore()
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    with store.transaction() as tx:
+        session = create_session(
+            tx,
+            pack=pack,
+            user_id="usr_local",
+            event_id=str(uuid.uuid4()),
+            pack_id=pack.pack_id,
+            topic_id="network.dns",
+        )
+        result = build_workspace(
+            tx,
+            pack=pack,
+            generated=generated,
+            event_id=str(uuid.uuid4()),
+            user_id="usr_local",
+            session_id=str(session["id"]),
+            topic="network.dns.resolution",
+        )
+    ids = {item["id"] for item in result["drills"]}
+    assert "dns-resolver-text" in ids
+    assert "dns-fix-resolver-lab" not in ids
+
+
 def test_build_replay_is_race_safe_when_selection_appears() -> None:
     pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
     generated = InMemoryGeneratedDocumentStore()

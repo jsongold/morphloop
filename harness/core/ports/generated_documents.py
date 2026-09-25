@@ -29,6 +29,23 @@ class GeneratedDocument:
     provenance: JsonObject
 
 
+def belongs_to_pack(document: GeneratedDocument, *, pack_id: str, pack_hash: str) -> bool:
+    """Whether ``document`` may be served with the pack at ``pack_id``/``pack_hash``.
+
+    A generated document records the pack it was generated and validated under
+    in its ``provenance`` (``pack_id``/``pack_hash``). A document recorded under
+    a different pack revision must not be mixed into a workspace pinned to this
+    one, or its provenance would be corrupted. A document that records neither
+    field is kept: its provenance predates the pack fields.
+    """
+    provenance = document.provenance
+    recorded_id = provenance.get("pack_id")
+    recorded_hash = provenance.get("pack_hash")
+    return (recorded_id is None or recorded_id == pack_id) and (
+        recorded_hash is None or recorded_hash == pack_hash
+    )
+
+
 class GeneratedDocumentsError(Exception):
     """Base class for generated documents store failures."""
 

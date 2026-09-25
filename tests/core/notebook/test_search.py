@@ -32,6 +32,52 @@ class CountingDocuments(InMemoryGeneratedDocumentStore):
         return super().get(resource, id)
 
 
+def test_search_excludes_generated_content_from_another_pack() -> None:
+    """#117 P1: search does not surface generated content of another pack revision."""
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    generated = InMemoryGeneratedDocumentStore()
+    other_pack = {"pack_id": "other-pack", "pack_hash": "other-hash"}
+    generated.add(
+        GeneratedDocument(
+            resource="textbook",
+            id="old-doc",
+            body={
+                "id": "old-doc",
+                "title": "Quarantined lesson",
+                "labels": ["concept"],
+                "blocks": [{"id": "b1", "body": "quarantined text", "labels": []}],
+            },
+            provenance=other_pack,
+        )
+    )
+    generated.add(
+        GeneratedDocument(
+            resource="drill",
+            id="old-drill",
+            body={
+                "id": "old-drill",
+                "question": "Quarantined question",
+                "expected": "x",
+                "answer_mode": "text",
+                "labels": ["concept"],
+            },
+            provenance=other_pack,
+        )
+    )
+    with InMemoryEventStoreV2(ContractSchemas.load()).transaction() as tx:
+        found = search("quarantined", pack=pack, generated=generated, tx=tx, user_id="usr_local")
+    assert found == []
+
+
+def test_search_excludes_pack_holdout_drills() -> None:
+    """#117 P1: search must not expose a pack drill marked ``sys:holdout``."""
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    generated = InMemoryGeneratedDocumentStore()
+    with InMemoryEventStoreV2(ContractSchemas.load()).transaction() as tx:
+        found = search("api.internal", pack=pack, generated=generated, tx=tx, user_id="usr_local")
+    assert found == []
+
+
 def test_generated_textbook_block_is_searchable_without_answer_leakage() -> None:
     pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
     generated = CountingDocuments()
