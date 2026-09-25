@@ -1,6 +1,7 @@
 "use client";
 
-import { createElement, useEffect, useState, type ReactNode } from "react";
+import { createElement, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import MarkdownIt from "markdown-it";
 import type { Token } from "markdown-it";
 import { get } from "@/v2/api";
@@ -62,6 +63,44 @@ function rawLines(token: Token, source: string[], listStarts: Set<number>): (str
   return lines.map((_, i) => i < first ? strip(start + i) : i > last ? strip(end - count + i) : null);
 }
 
+/** No scheme (relative path, `#frag`, `//host`) or an explicitly safe one; rejects `javascript:` etc. */
+function safeHref(href: string): boolean {
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(href);
+  return !scheme || /^(https?|mailto)$/i.test(scheme[1]);
+}
+
+/** Strips tags and comments, keeping the text between them (quote-aware, unlike a `<[^>]*>` regex). */
+function stripTags(html: string): string {
+  let out = "", i = 0;
+  while (i < html.length) {
+    if (html[i] !== "<") { out += html[i]; i++; continue; }
+    if (html.startsWith("<!--", i)) {
+      const end = html.indexOf("-->", i + 4);
+      i = end < 0 ? html.length : end + 3;
+      continue;
+    }
+    let j = i + 1, quote = "";
+    while (j < html.length && (html[j] !== ">" || quote)) {
+      if (quote) { if (html[j] === quote) quote = ""; }
+      else if (html[j] === '"' || html[j] === "'") quote = html[j];
+      j++;
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
+/** Renders an artifact directive in a shadow tree so its text never joins the block's `textContent`. */
+function ArtifactHost({ directive }: { directive: ArtifactDirective }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [root, setRoot] = useState<ShadowRoot | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) setRoot(el.shadowRoot ?? el.attachShadow({ mode: "open" }));
+  }, []);
+  return <span ref={ref} className="artifact-slot">{root && createPortal(<ArtifactSlot directive={directive} />, root)}</span>;
+}
+
 function inline(tokens: Token[]): ReactNode[] {
   const out: ReactNode[] = [];
   for (let i = 0; i < tokens.length; i++) {
@@ -70,15 +109,16 @@ function inline(tokens: Token[]): ReactNode[] {
       let depth = 1, end = i + 1;
       while (depth && end < tokens.length) depth += tokens[end++].nesting;
       const href = t.attrGet("href");
-      out.push(createElement(t.tag, t.tag === "a" && href && /^(https?:|mailto:|\/|#|\.)/i.test(href) ? { key: i, href } : { key: i }, inline(tokens.slice(i + 1, end - 1))));
+      out.push(createElement(t.tag, t.tag === "a" && href && safeHref(href) ? { key: i, href } : { key: i }, inline(tokens.slice(i + 1, end - 1))));
       i = end - 1;
     } else if (t.type === "text") out.push(t.content);
     else if (t.type === "code_inline") out.push(<code key={i}>{t.content}</code>);
     else if (t.type === "image") {
       const alt = t.children?.map((child) => child.content).join("") ?? t.content;
-      out.push(<span key={i}><img src={t.attrGet("src") ?? ""} alt={alt} />{alt}</span>);
-    } else if (t.type === "html_inline") out.push(md.utils.unescapeAll(t.content.replace(/<[^>]*>/g, "")));
-    else if (t.type === "softbreak" || t.type === "hardbreak") out.push("\n");
+      out.push(<span key={i}><img src={t.attrGet("src") ?? ""} alt={alt} /><span hidden>{alt}</span></span>);
+    } else if (t.type === "softbreak" || t.type === "hardbreak") out.push("\n");
+    // html_inline: dropped, same as the plaintext rule (its content is only the tag; any text
+    // around it is a separate "text" token already handled above).
   }
   return out;
 }
@@ -98,22 +138,39 @@ export function renderBlock(body: string): { content: ReactNode[]; artifacts: Ar
         out.push(createElement(t.tag, { key: i, start: t.tag === "ol" ? t.attrGet("start") ?? undefined : undefined }, render(i + 1, end - 1)));
         i = end - 1;
       } else if (t.type === "inline") {
-        const lines: Token[][] = [[]];
+        const lines: Token[][] = [[]], delims: Token[] = [];
         for (const child of t.children ?? []) {
-          if (child.type === "softbreak" || child.type === "hardbreak") lines.push([]);
+          if (child.type === "softbreak" || child.type === "hardbreak") { delims.push(child); lines.push([]); }
           else lines[lines.length - 1].push(child);
         }
-        const raws = rawLines(t, source, listStarts), kept: Token[] = [];
-        const separator = (t.children ?? []).find((child) => child.type === "softbreak" || child.type === "hardbreak");
+        const raws = rawLines(t, source, listStarts);
+        const nodes: ReactNode[] = [];
+        let hadText = false, pendingHard = false;
         lines.forEach((line, index) => {
+          if (index > 0 && delims[index - 1].type === "hardbreak") pendingHard = true;
           const match = raws[index]?.match(directive);
-          if (match) artifacts.push({ type: match[1], ref: match[2] });
-          else { if (kept.length && separator) kept.push(separator); kept.push(...line); }
+          if (match) {
+            const found: ArtifactDirective = { type: match[1], ref: match[2] };
+            artifacts.push(found);
+            nodes.push(<ArtifactHost key={`${i}-${index}`} directive={found} />);
+            return;
+          }
+          if (hadText) { if (pendingHard) nodes.push(<br key={`${i}-${index}-br`} />); nodes.push("\n"); }
+          pendingHard = false;
+          nodes.push(...inline(line));
+          hadText = true;
         });
-        if (kept.length) { if (hasText) out.push("\n"); out.push(...inline(kept)); hasText = true; }
-      } else if (t.type === "fence" || t.type === "code_block" || t.type === "html_block") {
-        const value = t.type === "html_block" ? md.utils.unescapeAll(t.content.replace(/<[^>]*>/g, "")).trim() : t.content.replace(/\n$/, "");
-        if (value) { if (hasText) out.push("\n"); out.push(t.type === "html_block" ? value : <pre key={i}><code>{value}</code></pre>); hasText = true; }
+        // Keep artifact widgets at their directive position even when the whole line/block is
+        // otherwise empty; only join with the surrounding blocks when this one has real text.
+        if (nodes.length) { if (hadText && hasText) out.push("\n"); out.push(...nodes); if (hadText) hasText = true; }
+      } else if (t.type === "fence" || t.type === "code_block") {
+        const value = t.content.replace(/\n$/, "");
+        if (hasText) out.push("\n");
+        out.push(<pre key={i}><code>{value}</code></pre>);
+        hasText = true;
+      } else if (t.type === "html_block") {
+        const value = md.utils.unescapeAll(stripTags(t.content)).trim();
+        if (value) { if (hasText) out.push("\n"); out.push(value); hasText = true; }
       } else if (t.type === "hr") out.push(<hr key={i} />);
     }
     return out;
@@ -137,11 +194,7 @@ export function TextbookReader() {
   if (!docId) return <p className="muted">Select a textbook doc.</p>;
   if (error?.id === docId) return <p className="error" role="alert">{error.message}</p>;
   if (!loaded || loaded.id !== docId) return <p className="muted">Loading textbook…</p>;
-  return <article><h1>{loaded.title}</h1>{loaded.blocks.map((item) => {
-    const rendered = renderBlock(item.body);
-    return <div key={item.id}>
-      <div data-doc-id={loaded.id} data-block-id={item.id}>{rendered.content}</div>
-      {rendered.artifacts.map((artifact, i) => <ArtifactSlot key={i} directive={artifact} />)}
-    </div>;
-  })}</article>;
+  return <article><h1>{loaded.title}</h1>{loaded.blocks.map((item) =>
+    <div key={item.id} data-doc-id={loaded.id} data-block-id={item.id}>{renderBlock(item.body).content}</div>,
+  )}</article>;
 }
