@@ -21,16 +21,18 @@ GENERATED: JsonObject = {
     "blocks": [{"id": "b1", "body": "Use **getent**.", "labels": []}],
 }
 SHADOW: JsonObject = {**GENERATED, "id": TOPIC, "title": "Shadow"}
+# Store key "gen-keyed" differs from the body id; it also tries to spoof its origin.
+KEYED: JsonObject = {**GENERATED, "id": "body-id", "labels": ["origin:pack"]}
 
 
 @pytest.fixture(scope="module")
 def textbook() -> Textbook:
     store = InMemoryGeneratedDocumentStore()
-    for body in (GENERATED, SHADOW):
+    for key, body in ((GENERATED["id"], GENERATED), (TOPIC, SHADOW), ("gen-keyed", KEYED)):
         store.add(
             GeneratedDocument(
                 resource="textbook",
-                id=str(body["id"]),
+                id=str(key),
                 body=body,
                 labels=(f"topic:{TOPIC}",),
                 provenance={},
@@ -41,9 +43,9 @@ def textbook() -> Textbook:
 
 def test_reading_list_is_topic_docs_then_generated(textbook: Textbook) -> None:
     docs = textbook.reading_list(TOPIC)
-    assert [d["id"] for d in docs] == [TOPIC, "gen-lookup-path-001"]
+    assert [d["id"] for d in docs] == [TOPIC, "gen-keyed", "gen-lookup-path-001"]
     assert "origin:pack" in docs[0]["labels"]  # type: ignore[operator]
-    assert "origin:generated" in docs[1]["labels"]  # type: ignore[operator]
+    assert "origin:generated" in docs[2]["labels"]  # type: ignore[operator]
     assert set(docs[0]) == {"id", "title", "labels"}
 
 
@@ -69,3 +71,11 @@ def test_generated_doc_and_unknown_doc(textbook: Textbook) -> None:
     assert doc["blocks"][0]["plaintext"] == "Use getent."  # type: ignore[index, call-overload]
     with pytest.raises(TextbookNotFoundError):
         textbook.doc("nope")
+
+
+def test_generated_doc_id_is_store_key_and_origin_is_not_spoofable(textbook: Textbook) -> None:
+    listed = next(d for d in textbook.reading_list(TOPIC) if d["id"] == "gen-keyed")
+    doc = textbook.doc("gen-keyed")
+    assert doc["id"] == "gen-keyed"
+    for labels in (listed["labels"], doc["labels"]):
+        assert [x for x in labels if x.startswith("origin:")] == ["origin:generated"]  # type: ignore[union-attr]

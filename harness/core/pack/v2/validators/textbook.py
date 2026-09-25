@@ -1,6 +1,7 @@
 """Every ``::artifact{type=<type> ref=<id>}`` line in a textbook block names a pack artifact.
 
-The directive is a whole line of a block body, exactly ``::artifact{type=T ref=R}``.
+The directive is a whole line of paragraph text in a block body (CommonMark; lines
+inside code blocks are not directives), exactly ``::artifact{type=T ref=R}``.
 ``ref`` must be an artifact id of the pack and ``type`` that artifact's type. A line
 that starts with ``::artifact`` but is not this form is a problem too.
 (Topic coverage of textbook docs is checked by :mod:`.topics`.)
@@ -9,14 +10,26 @@ that starts with ``::artifact`` but is not this form is a problem too.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING
+
+from markdown_it import MarkdownIt
 
 if TYPE_CHECKING:
     from harness.core.pack.v2.importer import PackV2
 
 ARTIFACT_DIRECTIVE = re.compile(r"::artifact\{type=([^\s{}]+) ref=([^\s{}]+)\}")
 """One directive line (use ``fullmatch`` on the stripped line); groups are type, ref."""
+
+MD = MarkdownIt("commonmark")
+"""The CommonMark parser block bodies are read with (shared with textbook plaintext)."""
+
+
+def text_lines(body: str) -> Iterator[str]:
+    """Stripped source lines of the body's inline text (paragraphs, headings), not code."""
+    for token in MD.parse(body):
+        if token.type == "inline":
+            yield from (line.strip() for line in token.content.split("\n"))
 
 
 def validate(pack: PackV2) -> Iterable[str]:
@@ -28,8 +41,7 @@ def validate(pack: PackV2) -> Iterable[str]:
         for block in blocks:
             assert isinstance(block, Mapping)
             where = f"{path}#{block['id']}"
-            for line in str(block["body"]).splitlines():
-                line = line.strip()
+            for line in text_lines(str(block["body"])):
                 if not line.startswith("::artifact"):
                     continue
                 match = ARTIFACT_DIRECTIVE.fullmatch(line)

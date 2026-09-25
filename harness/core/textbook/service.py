@@ -22,8 +22,9 @@ from harness.core.ports.generated_documents import GeneratedDocument, GeneratedD
 from harness.core.ports.json_types import to_plain_object
 from harness.core.textbook.plaintext import block_plaintext
 
-ORIGIN_PACK = "origin:pack"
-ORIGIN_GENERATED = "origin:generated"
+ORIGIN_PREFIX = "origin:"
+ORIGIN_PACK = ORIGIN_PREFIX + "pack"
+ORIGIN_GENERATED = ORIGIN_PREFIX + "generated"
 
 RESOURCE = "textbook"
 
@@ -44,17 +45,17 @@ def _with_origin(doc: JsonObject, origin: str) -> dict[str, PlainJson]:
     out = to_plain_object(doc)
     labels = out.get("labels")
     assert isinstance(labels, list)
-    if origin not in labels:
-        labels.append(origin)
+    # Origin is set here only: an authored/stored ``origin:*`` label is dropped.
+    out["labels"] = [x for x in labels if not str(x).startswith(ORIGIN_PREFIX)] + [origin]
     return out
 
 
 def _generated(doc: GeneratedDocument) -> dict[str, PlainJson]:
-    """The body with the row labels merged in, plus ``origin:generated``."""
+    """The body with the row labels merged in, plus ``origin:generated``; id is the store key."""
     labels = doc.body.get("labels", ())
     assert isinstance(labels, Sequence)
     merged = [*labels, *(label for label in doc.labels if label not in labels)]
-    return _with_origin({**doc.body, "labels": merged}, ORIGIN_GENERATED)
+    return _with_origin({**doc.body, "id": doc.id, "labels": merged}, ORIGIN_GENERATED)
 
 
 def _summary(doc: dict[str, PlainJson]) -> dict[str, PlainJson]:

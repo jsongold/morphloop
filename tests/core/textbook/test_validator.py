@@ -41,3 +41,19 @@ def test_bad_directive_is_refused(tmp_path: Path, body: str, expected: str) -> N
     problems = _problems_with_body(tmp_path, body)
     assert f"{DOC}#diagram: " in problems
     assert expected in problems
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "```\n::artifact{type=lab ref=missing}\n```",
+        "Example:\n\n    ::artifact{type=lab ref=missing}",
+    ],
+)
+def test_directive_in_code_block_is_ignored(tmp_path: Path, body: str) -> None:
+    pack = tmp_path / "pack"
+    shutil.copytree(SE_PACK, pack)
+    doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
+    doc["blocks"][2]["body"] = body
+    (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
+    import_pack_v2(pack)

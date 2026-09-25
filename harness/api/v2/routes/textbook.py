@@ -15,7 +15,7 @@ router = APIRouter(prefix="/textbook", tags=["textbook"])
 
 @router.get("/docs")
 def list_docs(
-    pack: PackV2Dep, generated: GeneratedDocumentsDep, topic_id: Annotated[str, Query()]
+    pack: PackV2Dep, generated: GeneratedDocumentsDep, topic_id: Annotated[str, Query(min_length=1)]
 ) -> dict[str, PlainJson]:
     try:
         return {"docs": list(Textbook(pack, generated).reading_list(topic_id))}

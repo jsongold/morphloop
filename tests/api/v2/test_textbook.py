@@ -57,3 +57,8 @@ def test_errors_are_problems(client: TestClient, url: str) -> None:
     res = client.get(url)
     assert res.status_code in (400, 404, 422)
     assert res.headers["content-type"].startswith("application/problem+json")
+
+
+def test_empty_topic_id_is_rejected(client: TestClient) -> None:
+    res = client.get("/v2/textbook/docs", params={"topic_id": ""})
+    assert res.status_code in (400, 422)
