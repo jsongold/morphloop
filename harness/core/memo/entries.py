@@ -14,6 +14,7 @@ append order (the DB-assigned `position` is the only order, ADR-0008).
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import ClassVar
 
 from harness.core.labels import check_labels
@@ -29,8 +30,26 @@ from harness.core.ports.json_types import JsonObject, JsonValue, format_timestam
 from harness.core.view import View, dispatch
 
 MEMO_APPENDED = "memo.appended"
+WS_CREATED = "ws.created"
 
 _POSITION_WIDTH = 20  # zero-padded so a lexicographic sort is a position sort
+
+
+class WsNotFoundError(Exception):
+    """No `ws.created` event for the given `ws_id`."""
+
+
+def ws_session_id(ws_id: str, events: Sequence[StoredEventV2]) -> str | None:
+    """The session of `ws_id`, from its `ws.created` event among `events`.
+
+    Raises `WsNotFoundError` when the ws was never created.
+    # ponytail: duplicated in harness.core.drill.service / harness.core.artifact_lab.service
+    # (core.<resource> packages must not import each other); read a ws view once #57 has one.
+    """
+    for event in events:
+        if event.type == WS_CREATED and event.ws_id == ws_id:
+            return event.session_id
+    raise WsNotFoundError(f"no ws {ws_id!r}")
 
 
 def entry_id_for(event_id: str) -> str:
@@ -74,42 +93,58 @@ class MemoEntries(View):
         return [doc for _, doc in cls.list(tx, key_prefix=f"{ws_id}/")]
 
 
-def append_memo_entry(
-    tx: EventTransactionV2,
+def build_memo_appended(
     *,
     event_id: str,
     user_id: str,
     ws_id: str,
+    session_id: str | None,
     actor: ActorV2,
     body: str,
     source: JsonObject | None,
     labels: list[str],
-    pack: PackV2,
-) -> JsonObject:
-    """Validate `labels`, append `memo.appended`, update the view; return the entry.
+) -> EventV2:
+    """The `memo.appended` candidate event for one request (pure; no I/O).
 
-    Raises `harness.core.labels.LabelError` for a label outside the pack's
-    vocabulary (checked before the event is built, so nothing is appended).
-    Idempotent: resending `event_id` returns the same stored entry.
+    The route checks `replay_or_conflict` against this candidate before
+    calling `append_memo_entry`, so a resend never re-validates labels.
     """
-    check_labels(labels, vocabulary=pack.labels, topic_ids=pack.topic_ids)
     payload: dict[str, JsonValue] = {"entry_id": entry_id_for(event_id), "body": body}
     if source is not None:
         payload["source"] = source
     if labels:
         payload["labels"] = labels
-    result = tx.append(
-        EventV2(
-            id=event_id,
-            type=MEMO_APPENDED,
-            actor=actor,
-            user_id=user_id,
-            ws_id=ws_id,
-            payload=payload,
-        )
+    return EventV2(
+        id=event_id,
+        type=MEMO_APPENDED,
+        actor=actor,
+        user_id=user_id,
+        session_id=session_id,
+        ws_id=ws_id,
+        payload=payload,
     )
-    if result.created:
-        dispatch(result.event, tx)
-    entry = MemoEntries.get(tx, _key(ws_id, result.event.position))
+
+
+def append_memo_entry(tx: EventTransactionV2, *, candidate: EventV2, pack: PackV2) -> JsonObject:
+    """Validate labels, append `candidate`, update the view; return the entry.
+
+    `candidate` must be new (the caller has already resolved idempotent
+    replay via `replay_or_conflict`). Raises `harness.core.labels.LabelError`
+    for a label outside the pack's vocabulary (checked before the event is
+    appended, so nothing is stored).
+    """
+    labels = candidate.payload.get("labels", [])
+    assert isinstance(labels, list)
+    check_labels(labels, vocabulary=pack.labels, topic_ids=pack.topic_ids)
+    result = tx.append(candidate)
+    assert result.created, "caller must check replay_or_conflict before appending"
+    dispatch(result.event, tx)
+    return entry_for(tx, result.event)
+
+
+def entry_for(tx: ViewDocumentStore, stored: StoredEventV2) -> JsonObject:
+    """The stored `memo.appended` entry for `stored`, from the view."""
+    assert stored.ws_id is not None, "memo.appended always carries a ws_id"
+    entry = MemoEntries.get(tx, _key(stored.ws_id, stored.position))
     assert entry is not None
     return entry

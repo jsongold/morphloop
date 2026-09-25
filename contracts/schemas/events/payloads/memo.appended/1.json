@@ -8,6 +8,10 @@
     "learner",
     "assistant"
   ],
+  "x-scope": [
+    "session_id",
+    "ws_id"
+  ],
   "type": "object",
   "required": [
     "entry_id",
