@@ -37,7 +37,7 @@ from harness.core.ports.events_v2 import (
 )
 from harness.core.ports.json_types import JsonObject, PlainJson, to_plain_object
 from harness.core.view import dispatch
-from harness.core.ws.view import THREAD_CREATED, WS_CREATED, WsView
+from harness.core.ws.view import THREAD_CREATED, WS_CREATED, ThreadsView, WsView
 
 WsActor = Literal["learner", "system"]
 """Actors the ``ws.created`` contract allows (narrower than ``ActorV2``:
@@ -174,3 +174,25 @@ def create_thread(
     if result.created:
         dispatch(result.event, tx)
     return result.event
+
+
+def list_threads(
+    tx: EventTransactionV2, ws_id: str, *, user_id: str, target_highlight_id: str | None = None
+) -> list[JsonObject]:
+    """The ws's threads, in creation order. Raises :class:`WsNotFoundError`.
+
+    ``target_highlight_id`` filters to threads whose ``target`` carries that
+    ``highlight_id`` -- a highlight-scoped thread's own extra field on
+    ``target`` (only ``target.kind`` is this resource's business; ADR-0009),
+    e.g. the popup thread a highlight is discussed in.
+    """
+    get_ws(tx, ws_id, user_id=user_id)
+    threads = ThreadsView.list_for_ws(tx, ws_id)
+    if target_highlight_id is None:
+        return threads
+    matches = []
+    for doc in threads:
+        target = doc.get("target")
+        if isinstance(target, dict) and target.get("highlight_id") == target_highlight_id:
+            matches.append(doc)
+    return matches
