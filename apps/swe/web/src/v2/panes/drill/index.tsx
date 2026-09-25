@@ -9,6 +9,7 @@ import {
   answeredItems,
   answerRequest,
   artifactOptions,
+  canSubmit,
   artifactsPath,
   answersPath,
   drillArtifactRefs,
@@ -34,6 +35,7 @@ function Drills({ wsId }: { wsId: string | null }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const pending = useRef<Record<string, Submission>>({});
+  const historyWsId = answers?.wsId ?? null;
   const answered = answers && answers.wsId === wsId ? answers.byItem : {};
 
   useEffect(() => {
@@ -77,7 +79,7 @@ function Drills({ wsId }: { wsId: string | null }) {
 
   async function submit(item: DrillItem, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!wsId || busy) return;
+    if (!wsId || !canSubmit(historyWsId, wsId, values[item.id] ?? "", busy !== null)) return;
     const request = answerRequest(wsId, item, values[item.id] ?? "", pending.current[item.id] ?? null, newIdempotencyKey);
     if (!request) return;
     pending.current[item.id] = request;
@@ -156,7 +158,7 @@ function Drills({ wsId }: { wsId: string | null }) {
                       </label>
                     )}
                     {!(item.answer_mode === "artifact" && options.length === 0) && (
-                      <div><button type="submit" disabled={!wsId || busy !== null || !(values[item.id] ?? "").trim()}>{busy === item.id ? "Submitting…" : "Submit answer"}</button></div>
+                      <div><button type="submit" disabled={!canSubmit(historyWsId, wsId, values[item.id] ?? "", busy !== null)}>{busy === item.id ? "Submitting…" : "Submit answer"}</button></div>
                     )}
                   </form>
                 )}
