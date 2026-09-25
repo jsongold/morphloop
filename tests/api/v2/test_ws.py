@@ -147,6 +147,17 @@ def test_create_thread_null_target_is_a_client_error(client: Any) -> None:
     assert len(client.store.read(ws_id=ws["ws_id"])) == 1  # only ws.created
 
 
+def test_resend_of_the_main_thread_key_with_different_labels_is_409(client: Any) -> None:
+    ws = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()
+    key = _key()
+    first = client.post(f"/v2/ws/{ws['ws_id']}/threads", json={"labels": []}, headers=key)
+    assert first.status_code == 201
+    second = client.post(
+        f"/v2/ws/{ws['ws_id']}/threads", json={"labels": ["mode:hint"]}, headers=key
+    )
+    assert second.status_code == 409
+
+
 def test_a_second_targetless_thread_returns_the_existing_main_thread(client: Any) -> None:
     ws = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()
     first = client.post(f"/v2/ws/{ws['ws_id']}/threads", headers=_key())

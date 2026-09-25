@@ -16,9 +16,10 @@ identical ws/thread instead of a new one by deriving the new id from it, the
 same trick chat (#63) uses for a reply's event id.
 
 A ws has at most one main (targetless) thread: a second targetless request
-(a different Idempotency-Key, since a same-key resend is already handled by
-``tx.append``) returns the existing main thread instead of creating another
-one (Codex finding on #90).
+with a *different* Idempotency-Key returns the existing main thread instead
+of creating another one (Codex finding on #90). The idempotency check (same
+key, same content -> replay; same key, different content -> 409) always runs
+first, so it can never be shadowed by that short-circuit.
 """
 
 from __future__ import annotations
@@ -27,7 +28,13 @@ import uuid
 from collections.abc import Sequence
 from typing import Literal
 
-from harness.core.ports.events_v2 import ActorV2, EventTransactionV2, EventV2, StoredEventV2
+from harness.core.ports.events_v2 import (
+    ActorV2,
+    EventIdConflictError,
+    EventTransactionV2,
+    EventV2,
+    StoredEventV2,
+)
 from harness.core.ports.json_types import JsonObject, PlainJson, to_plain_object
 from harness.core.view import dispatch
 from harness.core.ws.view import THREAD_CREATED, WS_CREATED, WsView
@@ -131,31 +138,39 @@ def create_thread(
     """Append ``thread.created`` in ``ws_id`` (idempotent on ``event_id``).
 
     Raises :class:`WsNotFoundError` (404) when the ws does not exist (or
-    belongs to another learner). A targetless request when the ws already has
-    a main thread returns that thread's event instead of creating another one.
+    belongs to another learner). Raises :class:`EventIdConflictError` (409)
+    when ``event_id`` is already stored with different content — checked
+    before the main-thread short-circuit below, so that short-circuit can
+    never mask a reused Idempotency-Key. A targetless request with a *new*
+    ``event_id``, when the ws already has a main thread, returns that
+    thread's event instead of creating another one.
     """
     ws = get_ws(tx, ws_id, user_id=user_id)
+    thread_id = _derived_id("thr", THREAD_CREATED, event_id)
+    payload: dict[str, PlainJson] = {"thread_id": thread_id, "labels": list(labels)}
+    if target is not None:
+        payload["target"] = to_plain_object(target)
+    candidate = EventV2(
+        id=event_id,
+        type=THREAD_CREATED,
+        actor=actor,
+        user_id=user_id,
+        session_id=str(ws["session_id"]) if ws["session_id"] is not None else None,
+        ws_id=ws_id,
+        payload=payload,
+    )
+    stored = tx.get(event_id)
+    if stored is not None:
+        if not candidate.same_content_as(stored):
+            raise EventIdConflictError(stored)
+        return stored
     if target is None:
         main_thread_event_id = ws["main_thread_event_id"]
         if main_thread_event_id is not None:
             existing = tx.get(str(main_thread_event_id))
             assert existing is not None, "main_thread_event_id in the ws view must be stored"
             return existing
-    thread_id = _derived_id("thr", THREAD_CREATED, event_id)
-    payload: dict[str, PlainJson] = {"thread_id": thread_id, "labels": list(labels)}
-    if target is not None:
-        payload["target"] = to_plain_object(target)
-    result = tx.append(
-        EventV2(
-            id=event_id,
-            type=THREAD_CREATED,
-            actor=actor,
-            user_id=user_id,
-            session_id=str(ws["session_id"]) if ws["session_id"] is not None else None,
-            ws_id=ws_id,
-            payload=payload,
-        )
-    )
+    result = tx.append(candidate)
     if result.created:
         dispatch(result.event, tx)
     return result.event
