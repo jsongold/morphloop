@@ -5,7 +5,19 @@ import { get, newIdempotencyKey, post } from "@/v2/api";
 import { useWorkspace } from "@/v2/state";
 import type { StoredEvent } from "@/v2/types";
 import { renderMarkdown } from "./markdown";
-import { answerRequest, drillPath, type DrillItem, type Submission } from "./request";
+import {
+  answeredItems,
+  answerRequest,
+  artifactOptions,
+  artifactsPath,
+  answersPath,
+  drillArtifactRefs,
+  drillPath,
+  type Artifact,
+  type DrillAnswer,
+  type DrillItem,
+  type Submission,
+} from "./request";
 
 export default function DrillPane() {
   const { ws } = useWorkspace();
@@ -17,10 +29,12 @@ function Drills({ wsId }: { wsId: string | null }) {
   const [labels, setLabels] = useState<string[]>([]);
   const [items, setItems] = useState<DrillItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<{ wsId: string; byItem: Record<string, string> } | null>(null);
+  const [artifacts, setArtifacts] = useState<Record<string, Artifact[]>>({});
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const pending = useRef<Record<string, Submission>>({});
+  const answered = answers && answers.wsId === wsId ? answers.byItem : {};
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +52,29 @@ function Drills({ wsId }: { wsId: string | null }) {
     return () => { cancelled = true; };
   }, [labels]);
 
+  useEffect(() => {
+    if (!wsId) return;
+    let cancelled = false;
+    get<{ items: DrillAnswer[] }>(answersPath(wsId)).then(
+      (data) => { if (!cancelled) setAnswers({ wsId, byItem: answeredItems(data.items) }); },
+      (e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); },
+    );
+    return () => { cancelled = true; };
+  }, [wsId]);
+
+  useEffect(() => {
+    const refs = drillArtifactRefs(items ?? []);
+    if (!wsId || refs.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      refs.map((ref) => get<{ items: Artifact[] }>(artifactsPath(wsId), { spec_id: ref }).then((data) => [ref, data.items] as const)),
+    ).then(
+      (entries) => { if (!cancelled) setArtifacts(Object.fromEntries(entries)); },
+      (e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); },
+    );
+    return () => { cancelled = true; };
+  }, [wsId, items]);
+
   async function submit(item: DrillItem, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!wsId || busy) return;
@@ -47,18 +84,15 @@ function Drills({ wsId }: { wsId: string | null }) {
     setBusy(item.id);
     setError(null);
     try {
-      if ("artifact_id" in request.body) {
-        const artifact = await get<{ spec_id: string }>(`/ws/${encodeURIComponent(wsId)}/artifacts/${encodeURIComponent(request.body.artifact_id)}`);
-        if (item.artifact_ref && artifact.spec_id !== item.artifact_ref) {
-          throw new Error("That artifact belongs to a different lab.");
-        }
-      }
       const { body } = await post<StoredEvent>(
         `/ws/${encodeURIComponent(wsId)}/drills/${encodeURIComponent(item.id)}/answers`,
         request.body,
         request.key,
       );
-      setAnswers((previous) => ({ ...previous, [item.id]: body.id }));
+      setAnswers((previous) => ({
+        wsId,
+        byItem: { ...(previous?.wsId === wsId ? previous.byItem : {}), [item.id]: body.id },
+      }));
       delete pending.current[item.id];
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -86,39 +120,49 @@ function Drills({ wsId }: { wsId: string | null }) {
         <p className="muted">No drills found.</p>
       ) : (
         <ol>
-          {items.map((item) => (
-            <li key={item.id} style={{ marginBottom: 12 }}>
-              <div dangerouslySetInnerHTML={{ __html: renderMarkdown(item.question) }} />
-              {answers[item.id] ? <p className="muted" role="status">Answered</p> : (
-                <form onSubmit={(event) => void submit(item, event)}>
-                  {item.answer_mode === "choice" ? (
-                    <fieldset>
-                      <legend>Choose an answer</legend>
-                      {item.choices?.map((choice, index) => (
-                        <div key={choice} className="row">
-                          <input type="radio" name={`drill-${item.id}`} value={choice} aria-labelledby={`drill-${item.id}-choice-${index}`} checked={values[item.id] === choice} onChange={() => setValues((v) => ({ ...v, [item.id]: choice }))} />
-                          <div id={`drill-${item.id}-choice-${index}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(choice) }} />
-                        </div>
-                      ))}
-                    </fieldset>
-                  ) : item.answer_mode === "artifact" ? (
-                    <>
-                      <p className="muted">Finish the lab first. Started artifacts cannot be listed yet; enter its ID if you have it.</p>
-                      <label>Artifact ID from this workspace<br />
-                        <input value={values[item.id] ?? ""} required pattern="art_[0-9A-Za-z]{1,64}" onChange={(event) => setValues((v) => ({ ...v, [item.id]: event.target.value }))} placeholder="art_…" />
+          {items.map((item) => {
+            const options = artifactOptions(artifacts[item.artifact_ref ?? ""] ?? [], item.artifact_ref);
+            return (
+              <li key={item.id} style={{ marginBottom: 12 }}>
+                <div dangerouslySetInnerHTML={{ __html: renderMarkdown(item.question) }} />
+                {answered[item.id] ? <p className="muted" role="status">Answered</p> : (
+                  <form onSubmit={(event) => void submit(item, event)}>
+                    {item.answer_mode === "choice" ? (
+                      <fieldset>
+                        <legend>Choose an answer</legend>
+                        {item.choices?.map((choice, index) => (
+                          <div key={choice} className="row">
+                            <input type="radio" name={`drill-${item.id}`} value={choice} aria-labelledby={`drill-${item.id}-choice-${index}`} checked={values[item.id] === choice} onChange={() => setValues((v) => ({ ...v, [item.id]: choice }))} />
+                            <div id={`drill-${item.id}-choice-${index}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(choice) }} />
+                          </div>
+                        ))}
+                      </fieldset>
+                    ) : item.answer_mode === "artifact" ? (
+                      options.length === 0 ? <p className="muted">Start the lab first.</p> : (
+                        <label>
+                          Your artifact<br />
+                          <select value={values[item.id] ?? ""} required onChange={(event) => setValues((v) => ({ ...v, [item.id]: event.target.value }))}>
+                            <option value="" disabled>Choose an artifact…</option>
+                            {options.map((artifact) => (
+                              <option key={artifact.artifact_id} value={artifact.artifact_id}>{artifact.artifact_id} ({artifact.status})</option>
+                            ))}
+                          </select>
+                        </label>
+                      )
+                    ) : (
+                      <label>
+                        Your answer<br />
+                        <textarea value={values[item.id] ?? ""} maxLength={20000} onChange={(event) => setValues((v) => ({ ...v, [item.id]: event.target.value }))} />
                       </label>
-                    </>
-                  ) : (
-                    <label>
-                      Your answer<br />
-                      <textarea value={values[item.id] ?? ""} maxLength={20000} onChange={(event) => setValues((v) => ({ ...v, [item.id]: event.target.value }))} />
-                    </label>
-                  )}
-                  <div><button type="submit" disabled={!wsId || busy !== null || !(values[item.id] ?? "").trim()}>{busy === item.id ? "Submitting…" : "Submit answer"}</button></div>
-                </form>
-              )}
-            </li>
-          ))}
+                    )}
+                    {!(item.answer_mode === "artifact" && options.length === 0) && (
+                      <div><button type="submit" disabled={!wsId || busy !== null || !(values[item.id] ?? "").trim()}>{busy === item.id ? "Submitting…" : "Submit answer"}</button></div>
+                    )}
+                  </form>
+                )}
+              </li>
+            );
+          })}
         </ol>
       )}
     </section>

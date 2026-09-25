@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { answerRequest, drillPath } from "./request.ts";
+import { answeredItems, answerRequest, artifactOptions, drillArtifactRefs, drillPath } from "./request.ts";
 
 test("drill labels are repeated query parameters", () => {
   assert.equal(drillPath([]), "/drills");
@@ -27,14 +27,34 @@ test("text, choice, and artifact answers keep the retry key only for the same ac
   assert.equal(answerRequest("ws_a", artifact, "invalid", null, key), null);
 });
 
-test("CommonMark renders formatting without enabling raw HTML", async (t) => {
-  let renderMarkdown;
-  try {
-    ({ renderMarkdown } = await import("./markdown.ts"));
-  } catch (error) {
-    if (error.code === "ERR_MODULE_NOT_FOUND" && error.message.includes("markdown-it")) return t.skip("markdown-it dependency PR has not landed");
-    throw error;
-  }
+test("answers loaded from the API mark their items answered", () => {
+  assert.deepEqual(
+    answeredItems([
+      { item_id: "one", answer_event_id: "ev_1", judgment_status: "unjudged", gap: null },
+      { item_id: "two", answer_event_id: "ev_2", judgment_status: "judged", gap: { missing: "dns" } },
+    ]),
+    { one: "ev_1", two: "ev_2" },
+  );
+});
+
+test("artifact items ask only for the specs they reference and offer matching artifacts", () => {
+  const items = [
+    { id: "a", answer_mode: "artifact", artifact_ref: "spec_one" },
+    { id: "b", answer_mode: "artifact", artifact_ref: "spec_one" },
+    { id: "c", answer_mode: "text" },
+    { id: "d", answer_mode: "artifact", artifact_ref: "spec_two" },
+  ];
+  assert.deepEqual(drillArtifactRefs(items), ["spec_one", "spec_two"]);
+  const artifacts = [
+    { artifact_id: "art_1", type: "lab", spec_id: "spec_one", status: "running" },
+    { artifact_id: "art_2", type: "lab", spec_id: "spec_two", status: "stopped" },
+  ];
+  assert.deepEqual(artifactOptions(artifacts, "spec_one").map((a) => a.artifact_id), ["art_1"]);
+  assert.deepEqual(artifactOptions(artifacts, "spec_missing"), []);
+});
+
+test("CommonMark renders formatting without enabling raw HTML", async () => {
+  const { renderMarkdown } = await import("./markdown.ts");
   const html = renderMarkdown("**bold** <script>alert(1)</script>");
   assert.match(html, /<strong>bold<\/strong>/);
   assert.doesNotMatch(html, /<script>/);

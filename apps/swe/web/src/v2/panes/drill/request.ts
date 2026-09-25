@@ -7,6 +7,20 @@ export interface DrillItem {
   labels: string[];
 }
 
+export interface DrillAnswer {
+  item_id: string;
+  answer_event_id: string;
+  judgment_status: "unjudged" | "judged";
+  gap: unknown;
+}
+
+export interface Artifact {
+  artifact_id: string;
+  type: string;
+  spec_id: string;
+  status: "running" | "stopped";
+}
+
 export interface Submission {
   wsId: string;
   itemId: string;
@@ -18,6 +32,27 @@ export function drillPath(labels: string[]): string {
   const query = new URLSearchParams();
   for (const label of labels) query.append("labels", label);
   return `/drills${query.size ? `?${query}` : ""}`;
+}
+
+export function answersPath(wsId: string): string {
+  return `/ws/${encodeURIComponent(wsId)}/drills/answers`;
+}
+
+export const artifactsPath = (wsId: string): string => `/ws/${encodeURIComponent(wsId)}/artifacts`;
+
+/** item_id -> answer_event_id, so a reload shows already-answered items. */
+export function answeredItems(answers: DrillAnswer[]): Record<string, string> {
+  return Object.fromEntries(answers.map((answer) => [answer.item_id, answer.answer_event_id]));
+}
+
+/** Distinct artifact specs the artifact-mode items ask for, in stable order. */
+export function drillArtifactRefs(items: DrillItem[]): string[] {
+  return [...new Set(items.flatMap((item) => (item.answer_mode === "artifact" && item.artifact_ref ? [item.artifact_ref] : [])))].sort();
+}
+
+/** The learner's artifacts whose spec is the item's artifact_ref (empty -> start the lab first). */
+export function artifactOptions(artifacts: Artifact[], artifactRef: string | undefined): Artifact[] {
+  return artifactRef ? artifacts.filter((artifact) => artifact.spec_id === artifactRef) : [];
 }
 
 export function answerRequest(wsId: string, item: DrillItem, value: string, previous: Submission | null, newKey: () => string): Submission | null {
