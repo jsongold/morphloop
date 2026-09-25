@@ -21,8 +21,11 @@ from harness.core.contract_schemas import (
     EVENT_V2_APPEND_ID,
     EVENT_V2_STORED_ID,
     ContractSchemas,
+    ContractValidationError,
 )
+from harness.core.ports.events_v2 import EventV2
 from harness.testing.contracts import CONTRACTS_DIR
+from harness.testing.fakes_v2 import InMemoryEventStoreV2, contract_schemas_with_probe
 
 PAYLOADS = Path("schemas/events/payloads")
 PROBE_TYPE = "probe.created"
@@ -141,3 +144,31 @@ def test_v1_events_unaffected(schemas: ContractSchemas) -> None:
             json.loads(path.read_text()),
             ContractSchemas.id_for("schemas/events/envelope/stored.json"),
         )
+
+
+@pytest.mark.parametrize(
+    ("scope", "missing"),
+    [(["session_id"], ("session_id",)), (["session_id", "ws_id"], ("ws_id",))],
+)
+def test_x_scope_requires_envelope_ids(
+    tmp_path: Path, scope: list[str], missing: tuple[str, ...]
+) -> None:
+    scoped = contract_schemas_with_probe(tmp_path, scope=scope)
+    scoped.validate(EVENT, EVENT_V2_APPEND_ID)
+    event = {k: v for k, v in EVENT.items() if k not in missing}
+    with pytest.raises(ContractValidationError):
+        scoped.validate(event, EVENT_V2_APPEND_ID)
+    store = InMemoryEventStoreV2(scoped)
+    with pytest.raises(ContractValidationError), store.transaction() as tx:
+        tx.append(EventV2(**event))  # type: ignore[arg-type]
+    assert store.read() == []
+
+
+def test_unscoped_type_accepts_missing_ids(schemas: ContractSchemas) -> None:
+    event = {k: v for k, v in EVENT.items() if k not in ("session_id", "ws_id")}
+    schemas.validate(event, EVENT_V2_APPEND_ID)
+
+
+def test_invalid_x_scope_is_rejected_at_load(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="x-scope"):
+        contract_schemas_with_probe(tmp_path, scope=["ws_id"])
