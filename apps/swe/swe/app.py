@@ -14,13 +14,14 @@ from fastapi import FastAPI
 
 from harness.sdk import AppExtension, create_app, import_pack_v2
 from swe import PACK_DIR
+from swe.artifacts.diagram import DiagramArtifact
 from swe.artifacts.lab import LabArtifact
 from swe.artifacts.lab import routes as lab_routes
 from swe.artifacts.lab import socket as lab_socket
 
 EXTENSION = AppExtension(
     routers=(lab_routes.router, lab_socket.router),
-    artifact_types=(LabArtifact,),
+    artifact_types=(LabArtifact, DiagramArtifact),
 )
 
 
