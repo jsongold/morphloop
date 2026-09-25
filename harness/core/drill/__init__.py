@@ -10,6 +10,7 @@ from harness.core.drill.service import (
 from harness.core.drill.store import (
     DrillAnswersView,
     generated_items,
+    list_answers,
     pack_items,
 )
 
@@ -22,5 +23,6 @@ __all__ = [
     "DrillItemNotFoundError",
     "DrillService",
     "generated_items",
+    "list_answers",
     "pack_items",
 ]

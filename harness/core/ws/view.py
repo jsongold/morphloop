@@ -17,10 +17,11 @@ targetless request instead of creating a second one.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import ClassVar, cast
 
 from harness.core.ports.events_v2 import StoredEventV2, ViewDocumentStore
-from harness.core.ports.json_types import JsonObject, format_timestamp
+from harness.core.ports.json_types import JsonObject, format_timestamp, to_plain_json
 from harness.core.view import View
 
 WS_CREATED = "ws.created"
@@ -69,3 +70,46 @@ class WsView(View):
         if doc.get("main_thread_event_id") is not None:
             return  # main thread already claimed; keep the first one
         tx.put_view(cls.name, event.ws_id, {**doc, "main_thread_event_id": event.id})
+
+
+def _thread_key(ws_id: str, thread_id: str) -> str:
+    return f"{ws_id}/{thread_id}"
+
+
+class ThreadsView(View):
+    """Every thread of a ws, keyed ``<ws_id>/<thread_id>`` (#129).
+
+    A second index over the same ``thread.created`` events ``WsView`` already
+    handles: ``WsView`` only tracks the ws's *main* thread, and ``thread_id``
+    is a uuid-derived id (not creation order), so listing needs its own
+    prefix-listable key plus the creating event's ``position`` to sort by
+    (same trick as ``HighlightView``, issue #60). Distinct from
+    ``harness.core.chat.view.ChatThreadView``, which is chat's own
+    single-thread lookup (keyed by ``thread_id`` alone) and never imported
+    here (ADR-0009).
+    """
+
+    name = "ws.threads"
+    handles: ClassVar[frozenset[str]] = frozenset({THREAD_CREATED})
+
+    @classmethod
+    def apply(cls, event: StoredEventV2, tx: ViewDocumentStore) -> None:
+        assert event.ws_id is not None
+        thread_id = str(event.payload["thread_id"])
+        target = event.payload.get("target")
+        labels = event.payload.get("labels")
+        doc: JsonObject = {
+            "thread_id": thread_id,
+            "target": to_plain_json(target) if isinstance(target, Mapping) else None,
+            "labels": [str(x) for x in labels] if isinstance(labels, list) else [],
+            "created_at": format_timestamp(event.created_at),
+            "position": event.position,
+        }
+        tx.put_view(cls.name, _thread_key(event.ws_id, thread_id), doc)
+
+    @classmethod
+    def list_for_ws(cls, tx: ViewDocumentStore, ws_id: str) -> list[JsonObject]:
+        """Every thread of ``ws_id``, in creation order (the creating event's
+        ``position`` -- never the ``thread_id``/uuid key order)."""
+        docs = [doc for _, doc in cls.list(tx, key_prefix=f"{ws_id}/")]
+        return sorted(docs, key=lambda doc: cast(int, doc["position"]))
