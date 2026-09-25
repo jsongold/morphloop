@@ -62,3 +62,10 @@ def test_errors_are_problems(client: TestClient, url: str) -> None:
 def test_empty_topic_id_is_rejected(client: TestClient) -> None:
     res = client.get("/v2/textbook/docs", params={"topic_id": ""})
     assert res.status_code in (400, 422)
+
+
+def test_topic_id_rejects_nul(client: TestClient) -> None:
+    # #93 hardening: a query param carrying a free-text value uses Text too.
+    res = client.get("/v2/textbook/docs", params={"topic_id": "a\u0000b"})
+    assert res.status_code in (400, 422)
+    assert res.headers["content-type"].startswith("application/problem+json")

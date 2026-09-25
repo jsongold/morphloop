@@ -5,6 +5,7 @@
   "description": "The learner sent a message in a ws thread (chat resource, #63). ws_id is on the envelope. allow_writes is true only when the learner explicitly commanded a write; only then is the assistant offered write tools.",
   "x-envelope": 2,
   "x-actors": ["learner"],
+  "x-scope": ["session_id", "ws_id"],
   "type": "object",
   "required": ["thread_id", "message_id", "text", "allow_writes"],
   "properties": {

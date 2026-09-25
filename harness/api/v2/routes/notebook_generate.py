@@ -18,10 +18,10 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict
 
 from harness.adapters.litellm import LiteLLMProvider
 from harness.api.v2.deps import GeneratedDocumentsDep, PackV2Dep
+from harness.api.v2.models import V2Model
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.generator.runtime import GeneratedResource, GenerateRequest, PreGenerator
 from harness.core.ports import LLMProvider
@@ -29,9 +29,7 @@ from harness.core.ports import LLMProvider
 router = APIRouter(tags=["notebook"])
 
 
-class GenerateBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class GenerateBody(V2Model):
     resource: GeneratedResource
     memo_entries: list[dict[str, Any]] = []
     gap: dict[str, Any] | None = None

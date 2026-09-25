@@ -6,10 +6,10 @@ Items are the pack's drill items plus generated documents of resource
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field, model_validator
 
 from harness.api.v2.deps import (
     EventIdDep,
@@ -18,15 +18,18 @@ from harness.api.v2.deps import (
     GeneratedDocumentsDep,
     PackV2Dep,
     UserIdDep,
+    replay_or_conflict,
 )
+from harness.api.v2.models import Text, V2Model, reject_null
 from harness.core.drill import (
+    ANSWERED,
     DrillError,
     DrillService,
     generated_items,
     pack_items,
     ws_session_id,
 )
-from harness.core.ports.events_v2 import EventIdConflictError
+from harness.core.ports.events_v2 import EventV2
 from harness.core.ports.json_types import PlainJson
 
 router = APIRouter(tags=["drill"])
@@ -39,13 +42,16 @@ def drill_service_of(pack: PackV2Dep, generated: GeneratedDocumentsDep) -> Drill
 DrillServiceDep = Annotated[DrillService, Depends(drill_service_of)]
 
 
-class AnswerRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AnswerRequest(V2Model):
     # Mirrors the drill.answered payload schema so bad input is a 4xx here,
-    # not a contract failure (500) inside tx.append.
-    actual: Annotated[str, Field(min_length=1, max_length=20000)] | None = None
-    artifact_id: Annotated[str, Field(pattern=r"^art_[0-9A-Za-z]{1,64}$")] | None = None
+    # not a contract failure (500) inside tx.append. Omitted, not null (#93).
+    actual: Annotated[Text, Field(min_length=1, max_length=20000)] | None = None
+    artifact_id: Annotated[Text, Field(pattern=r"^art_[0-9A-Za-z]{1,64}$")] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_explicit_null(cls, data: Any) -> Any:
+        return reject_null(data, "actual", "artifact_id")
 
 
 @router.get("/drills")
@@ -74,6 +80,31 @@ def answer_drill(
     item_id: str,
     body: AnswerRequest,
 ) -> dict[str, PlainJson]:
+    # Replay first (#93): a resend must return the stored event even if the
+    # pack changed since (e.g. the item was replaced), before any item lookup
+    # or answer-mode validation that could differ on retry.
+    existing = tx.get(event_id)
+    if existing is not None:
+        payload: dict[str, PlainJson] = {
+            "item_id": item_id,
+            "answer_mode": str(existing.payload.get("answer_mode")),
+        }
+        if body.actual is not None:
+            payload["actual"] = body.actual
+        if body.artifact_id is not None:
+            payload["artifact_id"] = body.artifact_id
+        candidate = EventV2(
+            id=event_id,
+            type=ANSWERED,
+            actor="learner",
+            user_id=user_id,
+            session_id=existing.session_id,
+            ws_id=ws_id,
+            payload=payload,
+        )
+        result = replay_or_conflict(tx, candidate)
+        assert result is not None
+        return result.to_dict()
     try:
         # ponytail: scans the ws's events for ws.created; read a ws view once #57 has one
         session_id = ws_session_id(ws_id, store.read(ws_id=ws_id))
@@ -89,6 +120,4 @@ def answer_drill(
         )
     except DrillError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
-    except EventIdConflictError as exc:
-        raise HTTPException(409, str(exc)) from exc
     return event.to_dict()

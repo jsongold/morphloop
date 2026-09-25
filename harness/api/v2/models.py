@@ -7,11 +7,15 @@
   surrogates are rejected (422): Postgres jsonb cannot store NUL and a lone
   surrogate cannot be encoded as UTF-8. Add the schema's own limits on
   top: `Annotated[Text, Field(min_length=1, max_length=N)]`.
+- `reject_null`: use in a `model_validator(mode="before")` for an optional
+  field whose payload schema does not list `null` as an allowed type --
+  omission is fine, an explicit JSON `null` is not (422).
 """
 
 from __future__ import annotations
 
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 from pydantic import AfterValidator, BaseModel, ConfigDict
 
@@ -33,3 +37,13 @@ def _storable(value: str) -> str:
 
 
 Text = Annotated[str, AfterValidator(_storable)]
+
+
+def reject_null(data: Any, *names: str) -> Any:
+    """For a `model_validator(mode="before")`: raise if the raw request `data`
+    carries an explicit `null` for any of `names` (omission is fine)."""
+    if isinstance(data, Mapping):
+        nulls = [name for name in names if name in data and data[name] is None]
+        if nulls:
+            raise ValueError(f"must be omitted, not null: {', '.join(nulls)}")
+    return data

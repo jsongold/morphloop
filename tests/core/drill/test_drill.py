@@ -56,7 +56,12 @@ def service() -> DrillService:
 def _answer(service: DrillService, store: InMemoryEventStoreV2, **kw: Any) -> Any:
     with store.transaction() as tx:
         return service.answer(
-            tx, event_id=kw.pop("event_id", str(uuid.uuid4())), user_id="usr_1", ws_id="ws_1", **kw
+            tx,
+            event_id=kw.pop("event_id", str(uuid.uuid4())),
+            user_id="usr_1",
+            session_id=kw.pop("session_id", "ses_1"),
+            ws_id="ws_1",
+            **kw,
         )
 
 
