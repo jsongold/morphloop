@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/artifact.checked/1.json",
+  "title": "artifact.checked payload v1",
+  "description": "A deterministic check (a domain adapter item listed in the spec's allowed_checks) observed the artifact. Facts only; judgment belongs to the LLM (ADR-0013).",
+  "x-envelope": 2,
+  "x-actors": [
+    "learner",
+    "assistant",
+    "system"
+  ],
+  "type": "object",
+  "required": [
+    "artifact_id",
+    "check_id",
+    "passed",
+    "observed"
+  ],
+  "properties": {
+    "artifact_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/artifact_id"
+    },
+    "check_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+    },
+    "passed": {
+      "type": "boolean"
+    },
+    "observed": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

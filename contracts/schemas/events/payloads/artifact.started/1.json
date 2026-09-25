@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/artifact.started/1.json",
+  "title": "artifact.started payload v1",
+  "description": "An artifact instance was started in a ws from a pack artifact spec. 'type' is the registered artifact subclass; a 'lab' artifact carries its running lab.",
+  "x-envelope": 2,
+  "x-actors": [
+    "learner",
+    "assistant",
+    "system"
+  ],
+  "type": "object",
+  "required": [
+    "artifact_id",
+    "type",
+    "spec_id"
+  ],
+  "properties": {
+    "artifact_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/artifact_id"
+    },
+    "type": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+    },
+    "spec_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/definition_id"
+    },
+    "lab": {
+      "$ref": "#/$defs/lab"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "lab"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "lab"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "lab": {
+      "title": "Running lab",
+      "description": "The lab instance behind a 'lab' artifact. runtime_ref is the opaque LabInfo.runtime_ref, handed back only to the paired terminal bridge adapter.",
+      "type": "object",
+      "required": [
+        "lab_instance_id",
+        "runtime_ref",
+        "image_digest",
+        "fixture_id"
+      ],
+      "properties": {
+        "lab_instance_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/lab_instance_id"
+        },
+        "runtime_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,255}$"
+        },
+        "image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "fixture_id": {
+          "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_item_id"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
