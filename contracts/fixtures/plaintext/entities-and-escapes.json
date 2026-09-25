@@ -1,0 +1,4 @@
+{
+  "markdown": "a &amp; b \\*not em\\* &lt;tag&gt;",
+  "plaintext": "a & b *not em* <tag>"
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/artifact.stopped/1.json",
+  "title": "artifact.stopped payload v1",
+  "description": "The artifact was stopped and its lab destroyed: on request, or because its ws saw no activity for the idle limit.",
+  "x-envelope": 2,
+  "x-actors": [
+    "learner",
+    "assistant",
+    "system"
+  ],
+  "type": "object",
+  "required": [
+    "artifact_id",
+    "reason"
+  ],
+  "properties": {
+    "artifact_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/artifact_id"
+    },
+    "reason": {
+      "enum": [
+        "requested",
+        "idle"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

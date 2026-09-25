@@ -1,0 +1,4 @@
+{
+  "markdown": "Before:\n\n```sh\ndig a.example\ncat /etc/hosts\n```",
+  "plaintext": "Before:\ndig a.example\ncat /etc/hosts"
+}

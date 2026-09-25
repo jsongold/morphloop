@@ -7,23 +7,79 @@
 # across files are a load-time error). See ../README.md.
 #
 # Textbook: docs[].blocks[]; reading order per topic is topic.docs[]. Unscoped, immutable teaching material. Body is CommonMark; an Artifact is embedded as `::artifact{type=... ref=...}`. A block is a paragraph-sized unit, id assigned once at finalization.
-#
-# `/textbook/_stub` below is a placeholder with no meaning; replace or
-# extend it with the resource's real paths.
-/textbook/_stub:
+/textbook/docs:
   get:
     tags: [textbook]
-    operationId: getTextStub
-    summary: Placeholder for the textbook resource.
+    operationId: listTextbookDocs
+    summary: A topic's reading list.
     description: |
-      No behavior yet. Real endpoints for textbook land in a follow-up PR
-      that edits only this file (ADR-0018, issue #34).
+      The topic's own `topic.docs[]` in order (label `origin:pack`, the base
+      text), then runtime-generated docs labelled `topic:<topic_id>` (label
+      `origin:generated`). Unknown topic: 404 `not-found`.
+    parameters:
+      - name: topic_id
+        in: query
+        required: true
+        schema: {type: string, minLength: 1}
     responses:
       '200':
-        description: Stub response.
+        description: Doc summaries in reading order.
         content:
           application/json:
             schema:
-              $ref: '../components/common.yaml#/Stub'
+              type: object
+              required: [docs]
+              additionalProperties: false
+              properties:
+                docs:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, title, labels]
+                    additionalProperties: false
+                    properties:
+                      id: {type: string, minLength: 1}
+                      title: {type: string, minLength: 1}
+                      labels: {type: array, items: {type: string}}
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+/textbook/docs/{doc_id}:
+  get:
+    tags: [textbook]
+    operationId: getTextbookDoc
+    summary: One textbook doc with each block's plaintext.
+    description: |
+      `blocks[].plaintext` is the block's displayed text (rules and test
+      vectors: `contracts/fixtures/plaintext/`); highlight positions count in
+      it. Unknown doc: 404 `not-found`.
+    parameters:
+      - name: doc_id
+        in: path
+        required: true
+        schema: {type: string, minLength: 1}
+    responses:
+      '200':
+        description: The doc.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, title, labels, blocks]
+              additionalProperties: false
+              properties:
+                id: {type: string, minLength: 1}
+                title: {type: string, minLength: 1}
+                labels: {type: array, items: {type: string}}
+                blocks:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, body, labels, plaintext]
+                    additionalProperties: false
+                    properties:
+                      id: {type: string, minLength: 1}
+                      body: {type: string, description: CommonMark.}
+                      labels: {type: array, items: {type: string}}
+                      plaintext: {type: string}
       default:
         $ref: '../root.yaml#/components/responses/Problem'

@@ -9,7 +9,9 @@ by ``$id`` and bundles a schema (external ``$ref``s inlined) for
 
 The v2 event dispatch (``EVENT_V2_DISPATCH_ID``) has no file: it is assembled
 from every ``schemas/events/payloads/<type>/<n>.json`` declaring
-``"x-envelope": 2`` and ``"x-actors": [...]``. File ``<n>.json`` is event type
+``"x-envelope": 2`` and ``"x-actors": [...]``, optionally ``"x-scope"`` (the
+envelope ids the type requires: ``["session_id"]`` or
+``["session_id", "ws_id"]``; an append without them is rejected). File ``<n>.json`` is event type
 ``<type>`` when ``n`` is 1, else ``<type>.v<n>``. Adding a v2 event type is
 adding its payload file; nothing else is edited.
 
@@ -42,6 +44,8 @@ CONTRACTS_DIR_ENV = "MORPHLOOP_CONTRACTS_DIR"
 CONTRACTS_ID_BASE = "https://morphloop.dev/contracts/"
 _MAX_BUNDLE_DEPTH = 64
 _PAYLOADS_DIR = ("schemas", "events", "payloads")
+type _V2Type = tuple[str, list[str], list[str]]
+"""(payload schema ``$id``, allowed actors, required envelope scope ids)."""
 EVENT_V2_DISPATCH_ID = CONTRACTS_ID_BASE + "schemas/events/envelope/v2/dispatch.json"
 EVENT_V2_APPEND_ID = CONTRACTS_ID_BASE + "schemas/events/envelope/v2/append.json"
 EVENT_V2_STORED_ID = CONTRACTS_ID_BASE + "schemas/events/envelope/v2/stored.json"
@@ -91,8 +95,11 @@ def _json_path(path: Any) -> str:
     return "$" + "".join(f"[{p}]" if isinstance(p, int) else f".{p}" for p in path)
 
 
-def _event_v2_type(rel: Path, schema: dict[str, Any]) -> tuple[str, tuple[str, list[str]]]:
-    """``(type, (payload $id, allowed actors))`` for one ``x-envelope: 2`` payload file."""
+_SCOPES: tuple[list[str], ...] = ([], ["session_id"], ["session_id", "ws_id"])
+
+
+def _event_v2_type(rel: Path, schema: dict[str, Any]) -> tuple[str, _V2Type]:
+    """``(type, (payload $id, allowed actors, required scope))`` for one ``x-envelope: 2`` file."""
     if rel.parts[:-2] != _PAYLOADS_DIR or not rel.stem.isdigit() or rel.stem.startswith("0"):
         raise ValueError(
             f"{rel}: an x-envelope 2 schema must be {'/'.join(_PAYLOADS_DIR)}/<type>/<n>.json"
@@ -100,13 +107,17 @@ def _event_v2_type(rel: Path, schema: dict[str, Any]) -> tuple[str, tuple[str, l
     actors = schema.get("x-actors")
     if not isinstance(actors, list) or not actors:
         raise ValueError(f"{rel}: x-actors must be a non-empty list")
+    scope = schema.get("x-scope", [])
+    if scope not in _SCOPES:
+        raise ValueError(f"{rel}: x-scope must be one of {_SCOPES[1:]}")
     n = int(rel.stem)
     event_type = rel.parts[-2] if n == 1 else f"{rel.parts[-2]}.v{n}"
-    return event_type, (str(schema["$id"]), actors)
+    return event_type, (str(schema["$id"]), actors, scope)
 
 
-def _event_v2_dispatch(types: Mapping[str, tuple[str, list[str]]]) -> Resource[Any]:
-    """Per-type rules for the v2 envelope: known ``type``, allowed ``actor``, payload schema."""
+def _event_v2_dispatch(types: Mapping[str, _V2Type]) -> Resource[Any]:
+    """Per-type rules for the v2 envelope: known ``type``, allowed ``actor``,
+    required scope ids, payload schema."""
     return Resource.from_contents(
         {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -115,9 +126,12 @@ def _event_v2_dispatch(types: Mapping[str, tuple[str, list[str]]]) -> Resource[A
             "allOf": [
                 {
                     "if": {"properties": {"type": {"const": t}}, "required": ["type"]},
-                    "then": {"properties": {"actor": {"enum": actors}, "payload": {"$ref": pid}}},
+                    "then": {
+                        "required": scope,
+                        "properties": {"actor": {"enum": actors}, "payload": {"$ref": pid}},
+                    },
                 }
-                for t, (pid, actors) in sorted(types.items())
+                for t, (pid, actors, scope) in sorted(types.items())
             ],
         }
     )
@@ -129,7 +143,7 @@ class ContractSchemas:
     def __init__(self, contracts_dir: Path) -> None:
         self.contracts_dir = contracts_dir
         resources: list[tuple[str, Resource[Any]]] = []
-        v2_types: dict[str, tuple[str, list[str]]] = {}
+        v2_types: dict[str, _V2Type] = {}
         for path in sorted(contracts_dir.rglob("*.json")):
             contents = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(contents, dict) or "$id" not in contents:
@@ -141,7 +155,7 @@ class ContractSchemas:
             resource_id = resource.id()
             if resource_id is not None:
                 resources.append((resource_id, resource))
-        self.event_types_v2: Mapping[str, str] = {t: pid for t, (pid, _) in v2_types.items()}
+        self.event_types_v2: Mapping[str, str] = {t: spec[0] for t, spec in v2_types.items()}
         """v2 event type -> payload schema ``$id``, as discovered by the scan."""
         resources.append((EVENT_V2_DISPATCH_ID, _event_v2_dispatch(v2_types)))
         self._ids = frozenset(resource_id for resource_id, _ in resources)

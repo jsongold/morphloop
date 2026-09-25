@@ -145,6 +145,10 @@ class EventTransactionV2(ViewDocumentStore, Protocol):
         """
         ...
 
+    def get(self, event_id: str) -> StoredEventV2 | None:
+        """The stored event with ``id`` ``event_id``, or ``None`` (idempotent replay lookup)."""
+        ...
+
 
 class EventStoreV2(Protocol):
     """The append-only v2 event log plus view documents."""

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/artifact.output/1.json",
+  "title": "artifact.output payload v1",
+  "description": "One chunk of output the artifact showed the learner (e.g. io:output for a terminal). base64 when the chunk is not clean UTF-8.",
+  "x-envelope": 2,
+  "x-actors": [
+    "system"
+  ],
+  "type": "object",
+  "required": [
+    "artifact_id",
+    "labels",
+    "sequence",
+    "data",
+    "encoding"
+  ],
+  "properties": {
+    "artifact_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/artifact_id"
+    },
+    "labels": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "What the data is, as 'io:<kind>' labels (e.g. io:command, io:output) instead of per-tool event types.",
+      "items": {
+        "type": "string",
+        "pattern": "^io:[a-z0-9][a-z0-9._-]{0,63}$"
+      }
+    },
+    "sequence": {
+      "description": "Display order within one artifact session, shared by input and output.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "data": {
+      "type": "string"
+    },
+    "encoding": {
+      "enum": [
+        "utf-8",
+        "base64"
+      ]
+    }
+  },
+  "additionalProperties": false
+}
