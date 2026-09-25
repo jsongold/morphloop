@@ -129,7 +129,7 @@ uv run lint-imports              # dependency-direction check
 Web UI against the API running in Docker:
 
 ```sh
-cd web
+cd apps/swe/web
 pnpm install
 pnpm dev                         # http://localhost:3000 (NEXT_PUBLIC_API_BASE_URL defaults to http://localhost:8000)
 pnpm typecheck && pnpm lint && pnpm build
