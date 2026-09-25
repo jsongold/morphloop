@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/ws.created/1.json",
+  "title": "ws.created payload v1",
+  "description": "A workspace (ws) was created. The ws's session lives on the envelope's session_id, not here (the envelope's ws_id is the new ws's id). labels always include an origin label: origin:learner when the learner created it directly, origin:app when the app created it on the learner's behalf (e.g. the first ws of a session).",
+  "x-envelope": 2,
+  "x-actors": ["learner", "system"],
+  "type": "object",
+  "properties": {
+    "labels": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]{0,63}(:[a-z0-9][a-z0-9._-]{0,127})?$"
+      }
+    }
+  },
+  "additionalProperties": false
+}
