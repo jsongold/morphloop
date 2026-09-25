@@ -10,7 +10,7 @@ export interface DrillItem {
 export interface Submission {
   wsId: string;
   itemId: string;
-  actual: string;
+  body: { actual: string } | { artifact_id: string };
   key: string;
 }
 
@@ -22,8 +22,10 @@ export function drillPath(labels: string[]): string {
 
 export function answerRequest(wsId: string, item: DrillItem, value: string, previous: Submission | null, newKey: () => string): Submission | null {
   const actual = item.answer_mode === "text" ? value.trim() : value;
-  if (!actual || item.answer_mode === "artifact" || (item.answer_mode === "choice" && !item.choices?.includes(actual))) return null;
-  const key = previous?.wsId === wsId && previous.itemId === item.id && previous.actual === actual
+  if (!actual || (item.answer_mode === "choice" && !item.choices?.includes(actual))) return null;
+  if (item.answer_mode === "artifact" && !/^art_[0-9A-Za-z]{1,64}$/.test(actual)) return null;
+  const body = item.answer_mode === "artifact" ? { artifact_id: actual } : { actual };
+  const key = previous?.wsId === wsId && previous.itemId === item.id && JSON.stringify(previous.body) === JSON.stringify(body)
     ? previous.key : newKey();
-  return { wsId, itemId: item.id, actual, key };
+  return { wsId, itemId: item.id, body, key };
 }

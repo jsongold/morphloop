@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { get, newIdempotencyKey, post } from "@/v2/api";
 import { useWorkspace } from "@/v2/state";
 import type { StoredEvent } from "@/v2/types";
+import { renderMarkdown } from "./markdown";
 import { answerRequest, drillPath, type DrillItem, type Submission } from "./request";
 
 export default function DrillPane() {
@@ -46,9 +47,15 @@ function Drills({ wsId }: { wsId: string | null }) {
     setBusy(item.id);
     setError(null);
     try {
+      if ("artifact_id" in request.body) {
+        const artifact = await get<{ spec_id: string }>(`/ws/${encodeURIComponent(wsId)}/artifacts/${encodeURIComponent(request.body.artifact_id)}`);
+        if (item.artifact_ref && artifact.spec_id !== item.artifact_ref) {
+          throw new Error("That artifact belongs to a different lab.");
+        }
+      }
       const { body } = await post<StoredEvent>(
         `/ws/${encodeURIComponent(wsId)}/drills/${encodeURIComponent(item.id)}/answers`,
-        { actual: request.actual },
+        request.body,
         request.key,
       );
       setAnswers((previous) => ({ ...previous, [item.id]: body.id }));
@@ -81,20 +88,26 @@ function Drills({ wsId }: { wsId: string | null }) {
         <ol>
           {items.map((item) => (
             <li key={item.id} style={{ marginBottom: 12 }}>
-              <p style={{ whiteSpace: "pre-wrap" }}>{item.question}</p>
-              {answers[item.id] ? <p className="muted" role="status">Answered</p> : item.answer_mode === "artifact" ? (
-                <p className="muted">Answer in artifact {item.artifact_ref}.</p>
-              ) : (
+              <div dangerouslySetInnerHTML={{ __html: renderMarkdown(item.question) }} />
+              {answers[item.id] ? <p className="muted" role="status">Answered</p> : (
                 <form onSubmit={(event) => void submit(item, event)}>
                   {item.answer_mode === "choice" ? (
                     <fieldset>
                       <legend>Choose an answer</legend>
-                      {item.choices?.map((choice) => (
-                        <label key={choice} style={{ display: "block" }}>
-                          <input type="radio" name={`drill-${item.id}`} value={choice} checked={values[item.id] === choice} onChange={() => setValues((v) => ({ ...v, [item.id]: choice }))} /> {choice}
-                        </label>
+                      {item.choices?.map((choice, index) => (
+                        <div key={choice} className="row">
+                          <input type="radio" name={`drill-${item.id}`} value={choice} aria-labelledby={`drill-${item.id}-choice-${index}`} checked={values[item.id] === choice} onChange={() => setValues((v) => ({ ...v, [item.id]: choice }))} />
+                          <div id={`drill-${item.id}-choice-${index}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(choice) }} />
+                        </div>
                       ))}
                     </fieldset>
+                  ) : item.answer_mode === "artifact" ? (
+                    <>
+                      <p className="muted">Finish the lab first. Started artifacts cannot be listed yet; enter its ID if you have it.</p>
+                      <label>Artifact ID from this workspace<br />
+                        <input value={values[item.id] ?? ""} required pattern="art_[0-9A-Za-z]{1,64}" onChange={(event) => setValues((v) => ({ ...v, [item.id]: event.target.value }))} placeholder="art_…" />
+                      </label>
+                    </>
                   ) : (
                     <label>
                       Your answer<br />
