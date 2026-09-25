@@ -9,11 +9,13 @@ import pytest
 from harness.core.contract_schemas import ContractSchemas, ContractValidationError
 from harness.core.ports.events_v2 import EventIdConflictError
 from harness.core.ws import (
+    ThreadsView,
     WsNotFoundError,
     WsView,
     create_thread,
     create_ws,
     get_ws,
+    list_threads,
     list_ws,
 )
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
@@ -228,3 +230,81 @@ def test_a_targeted_thread_does_not_claim_the_main_thread_slot(
 
 def test_ws_view_is_registered() -> None:
     assert WsView.name == "ws"
+
+
+def test_list_threads_is_creation_order_with_target_and_labels(
+    store: InMemoryEventStoreV2,
+) -> None:
+    with store.transaction() as tx:
+        ws = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
+    with store.transaction() as tx:
+        main = create_thread(tx, event_id=str(uuid.uuid4()), user_id=USER, ws_id=ws.ws_id)
+    with store.transaction() as tx:
+        targeted = create_thread(
+            tx,
+            event_id=str(uuid.uuid4()),
+            user_id=USER,
+            ws_id=ws.ws_id,
+            target={"kind": "textbook_block", "doc_id": "d", "block_id": "b"},
+            labels=["mode:hint"],
+        )
+    with store.transaction() as tx:
+        threads = list_threads(tx, ws.ws_id, user_id=USER)
+    assert [t["thread_id"] for t in threads] == [
+        main.payload["thread_id"],
+        targeted.payload["thread_id"],
+    ]
+    assert threads[0]["target"] is None
+    assert threads[0]["labels"] == []
+    assert threads[0]["created_at"] == main.to_dict()["created_at"]
+    assert threads[1]["target"] == {"kind": "textbook_block", "doc_id": "d", "block_id": "b"}
+    assert threads[1]["labels"] == ["mode:hint"]
+
+
+def test_list_threads_filters_by_target_highlight_id(store: InMemoryEventStoreV2) -> None:
+    with store.transaction() as tx:
+        ws = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
+    with store.transaction() as tx:
+        create_thread(
+            tx,
+            event_id=str(uuid.uuid4()),
+            user_id=USER,
+            ws_id=ws.ws_id,
+            target={
+                "kind": "textbook_block",
+                "doc_id": "d",
+                "block_id": "b",
+                "highlight_id": "hl_1",
+            },
+        )
+    with store.transaction() as tx:
+        other = create_thread(
+            tx,
+            event_id=str(uuid.uuid4()),
+            user_id=USER,
+            ws_id=ws.ws_id,
+            target={
+                "kind": "textbook_block",
+                "doc_id": "d",
+                "block_id": "b",
+                "highlight_id": "hl_2",
+            },
+        )
+    with store.transaction() as tx:
+        threads = list_threads(tx, ws.ws_id, user_id=USER, target_highlight_id="hl_2")
+    assert [t["thread_id"] for t in threads] == [other.payload["thread_id"]]
+
+
+def test_list_threads_on_missing_or_other_users_ws_raises(store: InMemoryEventStoreV2) -> None:
+    with pytest.raises(WsNotFoundError):
+        with store.transaction() as tx:
+            list_threads(tx, "ws_nope", user_id=USER)
+    with store.transaction() as tx:
+        ws = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
+    with pytest.raises(WsNotFoundError):
+        with store.transaction() as tx:
+            list_threads(tx, ws.ws_id, user_id="usr_other")
+
+
+def test_threads_view_is_registered() -> None:
+    assert ThreadsView.name == "ws.threads"
