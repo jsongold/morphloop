@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/chat.replied/1.json",
+  "title": "chat.replied payload v1",
+  "description": "The assistant answered one chat.sent message (chat resource, #63), possibly after calling notebook tools. tool_calls lists every tool it ran, in order; tool results are not recorded (the tools' own events are). The full prompt is a system log (ADR-0016).",
+  "x-envelope": 2,
+  "x-actors": ["assistant"],
+  "type": "object",
+  "required": ["thread_id", "message_id", "in_reply_to", "text", "tool_calls", "llm"],
+  "properties": {
+    "thread_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/thread_id"
+    },
+    "message_id": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/message_id"
+    },
+    "in_reply_to": {
+      "description": "message_id of the chat.sent this answers.",
+      "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/message_id"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool_calls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "arguments"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "arguments": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "llm": {
+      "$ref": "https://morphloop.dev/contracts/schemas/common/provenance.json#/$defs/llm"
+    }
+  },
+  "additionalProperties": false
+}
