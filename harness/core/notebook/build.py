@@ -10,7 +10,12 @@ from harness.core.drill.service import DrillService
 from harness.core.drill.store import generated_items, pack_items
 from harness.core.labels import check_labels
 from harness.core.pack.v2 import PackV2
-from harness.core.ports.events_v2 import EventIdConflictError, EventTransactionV2, EventV2
+from harness.core.ports.events_v2 import (
+    EventIdConflictError,
+    EventTransactionV2,
+    EventV2,
+    StoredEventV2,
+)
 from harness.core.ports.generated_documents import GeneratedDocumentStore
 from harness.core.session.model import TopicNotFoundError, find_topic
 from harness.core.session.service import PackMismatchError, get_session
@@ -22,6 +27,22 @@ BUILT = "notebook.built"
 
 def _selection_id(event_id: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{BUILT}:{event_id}"))
+
+
+def _ws_event_conflicts(
+    existing: StoredEventV2,
+    *,
+    user_id: str,
+    session_id: str,
+    labels: Sequence[str],
+) -> bool:
+    """Whether ``existing`` is not the ``ws.created`` this build would have made."""
+    return (
+        existing.type != "ws.created"
+        or existing.user_id != user_id
+        or existing.session_id != session_id
+        or existing.payload.get("labels") != list(labels)
+    )
 
 
 def build_workspace(
@@ -39,22 +60,25 @@ def build_workspace(
     session = get_session(tx, session_id, user_id=user_id)
     if session is None:
         raise LookupError(f"no session {session_id!r}")
-    if session["pack_id"] != pack.pack_id or session["pack_content_hash"] != pack.pack_hash:
+    if (
+        session["pack_id"] != pack.pack_id
+        or session["pack_version"] != pack.pack_version
+        or session["pack_content_hash"] != pack.pack_hash
+    ):
         raise PackMismatchError(
             f"session {session_id!r} pins pack {session['pack_id']!r} "
-            f"with hash {session['pack_content_hash']!r}; loaded pack is "
-            f"{pack.pack_id!r} with hash {pack.pack_hash!r}"
+            f"version {session['pack_version']!r} with hash {session['pack_content_hash']!r}; "
+            f"loaded pack is {pack.pack_id!r} version {pack.pack_version!r} "
+            f"with hash {pack.pack_hash!r}"
         )
     if (topic is None) == (not labels):
         raise ValueError("provide exactly one of topic or labels")
     selected_labels = [f"topic:{topic}"] if topic is not None else list(labels)
     selector = "topic" if topic is not None else "labels"
+    expected_labels = [*selected_labels, "origin:learner"]
     existing = tx.get(event_id)
-    if existing is not None and (
-        existing.type != "ws.created"
-        or existing.user_id != user_id
-        or existing.session_id != session_id
-        or existing.payload.get("labels") != [*selected_labels, "origin:learner"]
+    if existing is not None and _ws_event_conflicts(
+        existing, user_id=user_id, session_id=session_id, labels=expected_labels
     ):
         raise EventIdConflictError(existing)
     if existing is None:
@@ -70,10 +94,33 @@ def build_workspace(
     textbook = Textbook(pack, generated)
     drills = DrillService([*pack_items(pack), *generated_items(generated.list("drill"))])
     selection = tx.get(_selection_id(event_id))
-    if existing is not None and selection is None:
-        raise RuntimeError(f"missing notebook selection for ws event {event_id!r}")
-    if selection is not None:
+    if selection is None:
+        if existing is not None:
+            # The same Idempotency-Key created this ws through another
+            # operation (e.g. POST /v2/ws) with no paired notebook.built
+            # selection: the key is reused, not a replay of this request.
+            raise EventIdConflictError(existing)
+        if topic is not None:
+            documents = textbook.reading_list(topic)
+        else:
+            wanted = set(labels)
+            documents = []
+            for doc in textbook.list_docs():
+                doc_labels = doc.get("labels")
+                if isinstance(doc_labels, list) and wanted <= set(
+                    str(label) for label in doc_labels
+                ):
+                    documents.append(doc)
+        items = [item.for_learner() for item in drills.list_items(selected_labels)]
+    else:
         if existing is None:
+            # A concurrent build of the same body can commit both events while
+            # this request loads content. Under READ COMMITTED this re-read
+            # sees the now-committed workspace event instead of 409ing a replay.
+            existing = tx.get(event_id)
+        if existing is None or _ws_event_conflicts(
+            existing, user_id=user_id, session_id=session_id, labels=expected_labels
+        ):
             raise EventIdConflictError(selection)
         if (
             selection.type != BUILT
@@ -93,19 +140,6 @@ def build_workspace(
             doc = textbook.doc(str(doc_id))
             documents.append({key: doc[key] for key in ("id", "title", "labels")})
         items = [drills.get_item(str(item_id)).for_learner() for item_id in item_ids]
-    else:
-        if topic is not None:
-            documents = textbook.reading_list(topic)
-        else:
-            wanted = set(labels)
-            documents = []
-            for doc in textbook.list_docs():
-                doc_labels = doc.get("labels")
-                if isinstance(doc_labels, list) and wanted <= set(
-                    str(label) for label in doc_labels
-                ):
-                    documents.append(doc)
-        items = [item.for_learner() for item in drills.list_items(selected_labels)]
     workspace = create_ws(
         tx, event_id=event_id, user_id=user_id, session_id=session_id, labels=selected_labels
     )

@@ -1,6 +1,8 @@
 """Notebook workspace composition on the event transaction."""
 
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -9,12 +11,44 @@ from pack_artifact_types import PACK_ARTIFACT_TYPES
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.notebook.build import build_workspace
 from harness.core.pack.v2 import import_pack_v2
+from harness.core.ports.events_v2 import EventTransactionV2, StoredEventV2
 from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.session.service import create_session
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 
 PACK = Path(__file__).parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
+
+
+class _HideFirstWsGet:
+    """Transaction whose first ``get(ws_event_id)`` reports the committed ws
+    event absent, modelling a concurrent build committing between the replay
+    lookup and the content load (the window #117 flagged)."""
+
+    def __init__(self, inner: EventTransactionV2, ws_event_id: str) -> None:
+        self._inner = inner
+        self._ws_event_id = ws_event_id
+        self._hidden = False
+
+    def get(self, event_id: str) -> StoredEventV2 | None:
+        if event_id == self._ws_event_id and not self._hidden:
+            self._hidden = True
+            return None
+        return self._inner.get(event_id)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._inner, name)
+
+
+class _HideFirstWsGetStore:
+    def __init__(self, inner: InMemoryEventStoreV2, ws_event_id: str) -> None:
+        self._inner = inner
+        self._ws_event_id = ws_event_id
+
+    @contextmanager
+    def transaction(self) -> Iterator[EventTransactionV2]:
+        with self._inner.transaction() as tx:
+            yield _HideFirstWsGet(tx, self._ws_event_id)
 
 
 def test_build_selects_generated_docs_and_checks_session_owner() -> None:
@@ -54,3 +88,33 @@ def test_build_selects_generated_docs_and_checks_session_owner() -> None:
         assert any(doc["id"] == "generated-doc" for doc in result["documents"])
         with pytest.raises(LookupError):
             build_workspace(tx, user_id="usr_other", **{**params, "event_id": str(uuid.uuid4())})
+
+
+def test_build_replay_is_race_safe_when_selection_appears() -> None:
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    generated = InMemoryGeneratedDocumentStore()
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    event_id = str(uuid.uuid4())
+    with store.transaction() as tx:
+        session = create_session(
+            tx,
+            pack=pack,
+            user_id="usr_local",
+            event_id=str(uuid.uuid4()),
+            pack_id=pack.pack_id,
+            topic_id="network.dns",
+        )
+        params = {
+            "pack": pack,
+            "generated": generated,
+            "event_id": event_id,
+            "session_id": str(session["id"]),
+            "labels": ["concept"],
+        }
+        first = build_workspace(tx, user_id="usr_local", **params)
+    # The resend's first lookup misses the (concurrently committed) ws event,
+    # but the paired notebook.built selection is visible: a re-read must
+    # recover the replay instead of 409ing an identical request.
+    with _HideFirstWsGetStore(store, event_id).transaction() as tx:
+        replay = build_workspace(tx, user_id="usr_local", **params)
+    assert replay == first

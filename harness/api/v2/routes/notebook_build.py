@@ -37,6 +37,11 @@ class BuildBody(V2Model):
             or ("labels" in present and not self.labels)
         ):
             raise ValueError("provide exactly one of topic or labels")
+        # `labels` is `uniqueItems: true` in the contract and in the
+        # `ws.created` payload, so a repeated label would otherwise reach the
+        # event append and fail there (422) for a body this schema calls valid.
+        if len(self.labels) != len(set(self.labels)):
+            raise ValueError("labels must not repeat")
         return self
 
 

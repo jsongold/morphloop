@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.problems import install_handlers
@@ -117,6 +117,12 @@ def test_search_hits_block_memo_and_drill_without_leaking_other_user(
     assert client.get(SEARCH, params={"q": "secret-needle"}).json()["results"] == []
 
 
+def _build_response_schema() -> dict[str, object]:
+    return load_merged_openapi_v2_spec()["paths"]["/notebook/workspace/build"]["post"]["responses"][
+        "201"
+    ]["content"]["application/json"]["schema"]
+
+
 def test_build_replay_conflict_and_selection(setup: tuple[TestClient, str, str]) -> None:
     client, session_id, _ = setup
     body = {"session_id": session_id, "topic": "network.dns.resolution"}
@@ -124,6 +130,24 @@ def test_build_replay_conflict_and_selection(setup: tuple[TestClient, str, str])
     first = client.post(BUILD, json=body, headers=headers)
     assert first.status_code == 201
     assert any(doc["id"] == "dns-resolution" for doc in first.json()["documents"])
+    schema = _build_response_schema()
+    Draft202012Validator(schema).validate(first.json())
+    # The published response schema is closed, so a drill's `expected` leaking
+    # into the selection is a response-validation failure (not silently valid).
+    leaky = {
+        **first.json(),
+        "drills": [
+            {
+                "id": "x",
+                "question": "q",
+                "answer_mode": "text",
+                "labels": [],
+                "expected": "sneaky",
+            }
+        ],
+    }
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(leaky)
     assert client.post(BUILD, json=body, headers=headers).json() == first.json()
     conflict = client.post(
         BUILD, json={"session_id": session_id, "labels": ["concept"]}, headers=headers
@@ -204,10 +228,23 @@ def test_build_rejects_other_session_and_invalid_selectors(
         {"session_id": session_id, "topic": None},
         {"session_id": session_id, "labels": []},
         {"session_id": session_id, "topic": None, "labels": ["concept"]},
+        {"session_id": session_id, "labels": ["concept", "concept"]},
     ):
         response = client.post(BUILD, json=body)
         assert response.status_code == 422
         assert response.json()["code"] == "validation-failed"
+
+
+def test_build_key_already_used_by_ws_route_is_a_conflict(
+    setup: tuple[TestClient, str, str],
+) -> None:
+    client, session_id, _ = setup
+    body = {"session_id": session_id, "labels": ["concept"]}
+    headers = {"Idempotency-Key": str(uuid.uuid4())}
+    assert client.post("/v2/ws", json=body, headers=headers).status_code == 201
+    conflict = client.post(BUILD, json=body, headers=headers)
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "idempotency-key-reused"
 
 
 def _assert_pack_mismatch(client: TestClient, session_id: str, changed_pack: object) -> None:
@@ -222,6 +259,7 @@ def test_build_rejects_pack_mismatch_and_unknown_labels(setup: tuple[TestClient,
     client, session_id, _ = setup
     pack = client.app.dependency_overrides[pack_v2_of]()
     _assert_pack_mismatch(client, session_id, replace(pack, pack_id="different-pack"))
+    _assert_pack_mismatch(client, session_id, replace(pack, pack_version="different-version"))
     _assert_pack_mismatch(client, session_id, replace(pack, pack_hash="changed"))
     client.app.dependency_overrides[pack_v2_of] = lambda: pack
     invalid = client.post(BUILD, json={"session_id": session_id, "labels": ["unknown"]})
