@@ -23,6 +23,7 @@ from harness.core.ports.llm import (
 from harness.testing.contracts import CONTRACTS_DIR
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
 
+SESSION = "ses_1"
 WS = "ws_1"
 THREAD = "thr_1"
 USER = "usr_local"  # MORPHLOOP_USER_ID default
@@ -91,6 +92,7 @@ def store_with_thread(
                 type="thread.created",
                 actor="learner",
                 user_id=USER,
+                session_id=SESSION,
                 ws_id=WS,
                 payload=payload,  # type: ignore[arg-type]
             )
