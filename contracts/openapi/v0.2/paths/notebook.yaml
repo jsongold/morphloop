@@ -8,6 +8,58 @@
 #
 # Notebook: functions only, no children of its own (ADR-0018: a resource has children; a function-only surface is not a resource). Chat drives the notebook through this function surface.
 #
+/notebook/search:
+  get:
+    tags: [notebook]
+    operationId: searchNotebook
+    summary: Search textbook, memo, and drill content.
+    parameters:
+      - {name: q, in: query, required: true, schema: {type: string, minLength: 1}}
+      - {name: session_id, in: query, required: false, schema: {type: string}}
+    responses:
+      '200':
+        description: Matching notebook content.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [results]
+              properties:
+                results: {type: array, items: {type: object}}
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+/notebook/workspace/build:
+  post:
+    tags: [notebook]
+    operationId: buildNotebookWorkspace
+    summary: Create a workspace with related textbook docs and drill items.
+    parameters:
+      - {name: Idempotency-Key, in: header, required: false, schema: {type: string, format: uuid}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [session_id]
+            properties:
+              session_id: {type: string}
+              topic: {type: string}
+              labels: {type: array, items: {type: string}}
+            oneOf:
+              - required: [topic]
+                properties: {labels: {maxItems: 0}}
+              - required: [labels]
+                properties: {topic: {not: {type: string}}}
+            additionalProperties: false
+    responses:
+      '201':
+        description: Workspace and selected content.
+        content:
+          application/json:
+            schema: {type: object, required: [workspace, documents, drills]}
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
 /notebook/generate:
   post:
     tags: [notebook]

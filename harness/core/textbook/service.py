@@ -70,6 +70,15 @@ class Textbook:
     def _pack_docs(self) -> dict[str, JsonObject]:
         return {str(d["id"]): d for d in self.pack.documents["textbooks"].values()}
 
+    def list_docs(self) -> list[dict[str, PlainJson]]:
+        """All visible doc summaries, including generated docs without pack-id shadows."""
+        pack_docs = self._pack_docs()
+        docs = [_with_origin(doc, ORIGIN_PACK) for doc in pack_docs.values()]
+        docs.extend(
+            _generated(doc) for doc in self.generated.list(RESOURCE) if doc.id not in pack_docs
+        )
+        return [_summary(doc) for doc in docs]
+
     def reading_list(self, topic_id: str) -> list[dict[str, PlainJson]]:
         """Summaries (id, title, labels) of a topic's docs: base first, then generated."""
         topic = next((t for t in _walk(self.pack.topics) if t["id"] == topic_id), None)
