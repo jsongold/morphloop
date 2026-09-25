@@ -6,14 +6,15 @@ import uuid
 from pathlib import Path
 from typing import Annotated, Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from harness.api.problems import install_handlers
-from harness.api.v2.deps import EventIdDep, EventTransactionV2Dep
+from harness.api.v2.deps import EventIdDep, EventTransactionV2Dep, replay_or_conflict
 from harness.api.v2.models import Text, V2Model
-from harness.core.ports.events_v2 import EventV2
+from harness.core.ports.events_v2 import EventIdConflictError, EventV2
 from harness.testing.fakes_v2 import (
     PROBE_EVENT_TYPE,
     InMemoryEventStoreV2,
@@ -85,3 +86,44 @@ def test_reused_idempotency_key_with_other_content_is_409(tmp_path: Path) -> Non
     assert response.status_code == 409
     assert response.json()["code"] == "idempotency-key-reused"
     assert _count(store) == 1
+
+
+def test_text_rejects_unpaired_surrogate_but_accepts_pairs(tmp_path: Path) -> None:
+    app, store = _app(tmp_path)
+    client = TestClient(app)
+    headers = {"Content-Type": "application/json"}
+    lone = client.post("/notes", content='{"note": "a\\ud800"}', headers=headers)
+    assert lone.status_code == 422
+    pair = client.post("/notes", content='{"note": "\\ud83d\\ude00"}', headers=headers)
+    assert pair.status_code == 201
+    assert _count(store) == 1
+
+
+class Measure(V2Model):
+    value: float
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_v2model_rejects_non_finite_floats(value: float) -> None:
+    with pytest.raises(ValidationError):
+        Measure(value=value)
+    assert Measure(value=1.5).value == 1.5
+
+
+def _probe(event_id: str, note: str, user_id: str = "usr_01") -> EventV2:
+    return EventV2(
+        id=event_id, type=PROBE_EVENT_TYPE, actor="learner", user_id=user_id, payload={"note": note}
+    )
+
+
+def test_replay_or_conflict(tmp_path: Path) -> None:
+    store = InMemoryEventStoreV2(contract_schemas_with_probe(tmp_path))
+    event_id = str(uuid.uuid4())
+    with store.transaction() as tx:
+        assert replay_or_conflict(tx, _probe(event_id, "one")) is None
+        stored = tx.append(_probe(event_id, "one")).event
+    with store.transaction() as tx:
+        assert replay_or_conflict(tx, _probe(event_id, "one")) == stored
+        for other in (_probe(event_id, "two"), _probe(event_id, "one", user_id="usr_02")):
+            with pytest.raises(EventIdConflictError):
+                replay_or_conflict(tx, other)
