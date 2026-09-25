@@ -9,12 +9,13 @@ from harness.core.chat.service import (
     send_message,
 )
 from harness.core.chat.tools import ChatTool, ToolContext, offered_tools
-from harness.core.chat.view import ChatMessagesView
+from harness.core.chat.view import ChatMessagesView, ChatThreadView
 
 __all__ = [
     "AssistantConfig",
     "AssistantError",
     "ChatMessagesView",
+    "ChatThreadView",
     "ChatTool",
     "Reply",
     "SendResult",

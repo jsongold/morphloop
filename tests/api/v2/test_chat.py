@@ -23,6 +23,7 @@ from harness.api.v2.deps import event_store_v2_of
 from harness.api.v2.routes.chat import chat_llm_of
 from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.llm import LLMError
+from harness.testing.fakes_v2 import ConnectionTrackingStore
 
 URL = f"/v2/ws/{WS}/threads/{THREAD}/messages"
 PACK_DIR = Path(__file__).parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
@@ -35,7 +36,9 @@ def llm() -> FakeToolProvider:
 
 @pytest.fixture
 def client(tmp_path: Path, llm: FakeToolProvider) -> Iterator[TestClient]:
-    store = store_with_thread(tmp_path)
+    # ConnectionTrackingStore: fails the test if a route opens a second
+    # pooled connection (`store.read`) while a transaction is open (#104).
+    store = ConnectionTrackingStore(store_with_thread(tmp_path))
     app, _ = build_app()
     app.dependency_overrides[event_store_v2_of] = lambda: store
     app.dependency_overrides[chat_llm_of] = lambda: llm
