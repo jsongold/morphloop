@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -11,12 +12,8 @@ from typer.testing import CliRunner
 
 from harness.cli.main import app, main
 from harness.cli.rebuild import format_result, rebuild
-from harness.core.contract_schemas import ContractSchemas
 from harness.core.loop import LOOP_PROJECTIONS
-from harness.core.ports.events_v2 import EventV2
-from harness.core.view import dispatch, registered_views
 from harness.testing.fakes import InMemoryEventStore
-from harness.testing.fakes_v2 import InMemoryEventStoreV2
 
 runner = CliRunner()
 
@@ -46,62 +43,48 @@ def test_rebuild_does_not_touch_the_pack_projection() -> None:
         assert tx.get_projection("pack", "software-engineering/0.1.0/sha256:0") == {"kept": True}
 
 
-def test_rebuild_restores_registered_v2_views_without_running_chat() -> None:
-    store_v2 = InMemoryEventStoreV2(ContractSchemas.load())
-    events = [
-        EventV2(
-            id="0190f5a2-7c3e-7d4b-8a1f-000000000001",
-            type="ws.created",
-            actor="learner",
-            user_id="usr_01",
-            session_id="ses_01",
-            ws_id="ws_01",
-            payload={"labels": ["origin:learner"]},
-        ),
-        EventV2(
-            id="0190f5a2-7c3e-7d4b-8a1f-000000000002",
-            type="thread.created",
-            actor="learner",
-            user_id="usr_01",
-            session_id="ses_01",
-            ws_id="ws_01",
-            payload={"thread_id": "thr_01"},
-        ),
-        EventV2(
-            id="0190f5a2-7c3e-7d4b-8a1f-000000000003",
-            type="chat.sent",
-            actor="learner",
-            user_id="usr_01",
-            session_id="ses_01",
-            ws_id="ws_01",
-            payload={
-                "thread_id": "thr_01",
-                "message_id": "msg_0190f5a27c3e7d4b8a1f000000000003",
-                "text": "hello",
-                "allow_writes": False,
-            },
-        ),
-        EventV2(
-            id="0190f5a2-7c3e-7d4b-8a1f-000000000004",
-            type="memo.appended",
-            actor="learner",
-            user_id="usr_01",
-            session_id="ses_01",
-            ws_id="ws_01",
-            payload={"entry_id": "ent_0190f5a27c3e7d4b8a1f000000000004", "body": "remember"},
-        ),
-    ]
-    with store_v2.transaction() as tx:
-        for event in events:
-            dispatch(tx.append(event).event, tx)
-        before = {name: view.list(tx) for name, view in registered_views().items()}
-        for name in registered_views():
-            tx.clear_view(name)
+_V2_REBUILD_SCRIPT = """
+import json
+from harness.cli.rebuild import rebuild
+from harness.core.contract_schemas import ContractSchemas
+from harness.core.ports.events_v2 import EventV2
+from harness.core.view import registered_views
+from harness.testing.fakes import InMemoryEventStore
+from harness.testing.fakes_v2 import InMemoryEventStoreV2
 
-    rebuild(InMemoryEventStore(), store_v2)
+store_v2 = InMemoryEventStoreV2(ContractSchemas.load())
+common = dict(actor="learner", user_id="usr_01", session_id="ses_01", ws_id="ws_01")
+events = [
+    ("ws.created", {"labels": ["origin:learner"]}),
+    ("thread.created", {"thread_id": "thr_01"}),
+    ("chat.sent", {"thread_id": "thr_01", "message_id": "msg_0190f5a27c3e7d4b8a1f000000000003",
+                   "text": "hello", "allow_writes": False}),
+    ("memo.appended", {"entry_id": "ent_0190f5a27c3e7d4b8a1f000000000004", "body": "remember"}),
+]
+with store_v2.transaction() as tx:
+    for n, (type_, payload) in enumerate(events, start=1):
+        event_id = f"0190f5a2-7c3e-7d4b-8a1f-{n:012d}"
+        tx.append(EventV2(id=event_id, type=type_, payload=payload, **common))
+    assert registered_views() == {}, "views registered before rebuild; the test would prove nothing"
 
-    with store_v2.transaction() as tx:
-        assert {name: view.list(tx) for name, view in registered_views().items()} == before
+rebuild(InMemoryEventStore(), store_v2)
+
+with store_v2.transaction() as tx:
+    print(json.dumps({name: view.list(tx) for name, view in registered_views().items()}))
+"""
+
+
+def test_rebuild_registers_and_rebuilds_v2_views_from_the_log() -> None:
+    # A fresh interpreter: the view registry is process-global, so other test
+    # modules importing views would otherwise make this pass vacuously.
+    # Events are appended without dispatch, so every document comes from rebuild.
+    done = subprocess.run(
+        [sys.executable, "-c", _V2_REBUILD_SCRIPT], capture_output=True, text=True, check=False
+    )
+    assert done.returncode == 0, done.stderr
+    views = json.loads(done.stdout)
+    for name in ("ws", "chat.thread", "chat.messages", "memo_entries"):
+        assert views.get(name), f"{name} not rebuilt: {views}"
 
 
 def _params(argv: list[str]) -> dict[str, object]:

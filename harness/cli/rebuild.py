@@ -27,7 +27,7 @@ def rebuild(store: EventStore, store_v2: EventStoreV2 | None = None) -> int:
     if store_v2 is not None:
         # Importing the /v2 route modules registers every SDK view, exactly as
         # the API does. Views an app registers are rebuilt by that app.
-        discover_routers()
+        list(discover_routers())
         events = store_v2.read()
         with store_v2.transaction() as tx:
             for view in registered_views().values():
