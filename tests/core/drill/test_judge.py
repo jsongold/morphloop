@@ -181,7 +181,7 @@ def test_artifact_gap_uses_only_prior_matching_check_facts() -> None:
         _judge(item, answer, llm, artifact_events=[_check(2)])
     with pytest.raises(DrillJudgeError, match="no artifact.checked"):
         _judge(item, answer, llm, artifact_events=[STARTED])
-    _judge(item, answer, llm, artifact_events=[STARTED, _check(2), _check(9)])
+    _judge(item, answer, llm, artifact_events=[STARTED, _check(2, passed=True), _check(9)])
     assert llm.request is not None
     assert '"observed": {"p": 2}' in llm.request.messages[1].content
     assert '"p": 9' not in llm.request.messages[1].content  # after the answer
@@ -223,6 +223,58 @@ def test_artifact_checks_before_a_reset_are_dropped_and_latest_per_check_wins() 
     assert llm.request is not None
     sent = json.loads(llm.request.messages[1].content)["artifact_checks"]
     assert sent == [{"check_id": "dns.check", "passed": True, "observed": {"p": 5}}]
+
+
+def test_artifact_gap_cannot_be_empty_when_a_check_failed() -> None:
+    # #124 review: a failed deterministic check is a gap whatever the model says,
+    # so a schema-valid `{"missing": []}` must not be recorded as no gap.
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    item = next(i for i in pack_items(pack) if i.id == "dns-fix-resolver-lab")
+    answer = _event(item.id, "artifact", position=5, artifact_id="art_1")
+    events = [STARTED, _check(2)]
+    with pytest.raises(DrillJudgeError, match="cannot be empty"):
+        _judge(item, answer, FakeLLM({"missing": []}), artifact_events=events)
+    gap, _ = _judge(
+        item,
+        answer,
+        FakeLLM(
+            {
+                "missing": [
+                    {"description": "Review resolver configuration.", "labels": ["troubleshooting"]}
+                ]
+            }
+        ),
+        artifact_events=events,
+    )
+    assert gap["missing"]
+    _judge(
+        item,
+        answer,
+        FakeLLM({"missing": []}),
+        artifact_events=[STARTED, _check(2, passed=True)],
+    )
+
+
+def test_gap_labels_must_belong_to_the_answered_item() -> None:
+    # #124 review: a pack-valid label that is not on this item must not be
+    # recorded, or gap scheduling targets a dimension the item never asked about.
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    item = next(i for i in pack_items(pack) if i.id == "dns-resolver-text")
+    answer = _event(item.id, "text", actual="I do not know")
+    off_item = {
+        "missing": [
+            {"description": "Review resolver configuration.", "labels": ["troubleshooting"]}
+        ]
+    }
+    with pytest.raises(DrillJudgeError, match="not labels of this item"):
+        _judge(item, answer, FakeLLM(off_item))
+    on_item = {
+        "missing": [
+            {"description": "Review resolver configuration.", "labels": ["difficulty:easy"]}
+        ]
+    }
+    gap, _ = _judge(item, answer, FakeLLM(on_item))
+    assert gap["missing"]
 
 
 def test_leak_guard_rejects_partial_and_normalized_disclosure() -> None:

@@ -152,6 +152,17 @@ def answer_drill(
                 )
                 event = replay_or_conflict(tx, candidate)
                 assert event is not None
+                # A pre-rollout answer (or one written by an older worker) has no
+                # snapshot view, so backfill it from the current pack instead of
+                # pending forever. A pack that no longer has the item stays pending.
+                if (
+                    stored_judgment(tx, event_id) is None
+                    and load_judge_inputs(tx, event_id) is None
+                ):
+                    try:
+                        save_judge_inputs(tx, event, service.get_item(item_id), pack)
+                    except DrillError:
+                        pass
             else:
                 ws = ws_or_404(tx, ws_id, user_id=user_id)
                 try:

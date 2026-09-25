@@ -253,14 +253,16 @@ def compute_gap(
         "expected": item.expected,
         "labels": labels,
     }
+    artifact_checks: list[dict[str, object]] | None = None
     if item.answer_mode == "text":
         if not isinstance(actual, str):
             raise DrillJudgeError("text answer has no actual value")
         context["actual"] = actual
     else:
-        context["artifact_checks"] = artifact_evidence(
+        artifact_checks = artifact_evidence(
             artifact_events, answer=answer, spec_id=item.artifact_ref
         )
+        context["artifact_checks"] = artifact_checks
     try:
         response = llm.complete_structured(
             LLMRequest(
@@ -303,6 +305,15 @@ def compute_gap(
             )
         except LabelError as exc:
             raise DrillJudgeError(f"missing[{index}].labels are not in the pack: {exc}") from exc
+        outside = sorted(set(cast(list[str], entry_labels)) - set(labels))
+        if outside:
+            raise DrillJudgeError(f"missing[{index}].labels are not labels of this item: {outside}")
+    if artifact_checks is not None and not missing_output:
+        failed = [str(check["check_id"]) for check in artifact_checks if not bool(check["passed"])]
+        if failed:
+            raise DrillJudgeError(
+                f"artifact checks failed ({', '.join(failed)}); the gap cannot be empty"
+            )
     return gap, response.provenance
 
 

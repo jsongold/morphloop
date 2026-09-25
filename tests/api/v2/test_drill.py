@@ -19,6 +19,7 @@ from harness.core.contract_schemas import ContractSchemas
 from harness.core.drill import DrillItem, DrillService
 from harness.core.drill.judge import judgment_id_of
 from harness.core.pack.v2 import import_pack_v2
+from harness.core.ports.events_v2 import EventV2
 from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.ports.llm import LLMProvenance, LLMRequest, LLMResponse
 from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
@@ -250,6 +251,38 @@ def test_pending_retry_judges_the_item_as_answered_not_as_the_pack_now_has_it(cl
     assert again.json()["judgment_status"] == "complete" and fake.calls == 2
     sent = json.loads(fake.requests[1].messages[1].content)
     assert sent["expected"] == original and "CHANGED" not in sent["expected"]
+
+
+def test_resend_backfills_judge_inputs_for_a_legacy_answer(client: Any) -> None:
+    # #124 review: an answer stored before the snapshot view existed (or by an
+    # older worker) must judge on retry instead of staying pending forever.
+    fake = FakeLLM(
+        client.store, [{"missing": [{"description": "Review the concept.", "labels": []}]}]
+    )
+    client.app.state.drill_llm = fake
+    client.app.dependency_overrides[drill_judge_config_of] = lambda: (LLM, "Judge the gap.")
+    url = URL.replace("dns-record-choice", "dns-resolver-text")
+    key = str(uuid.uuid4())
+    with client.store.transaction() as tx:
+        tx.append(
+            EventV2(
+                id=key,
+                type="drill.answered",
+                actor="learner",
+                user_id="usr_local",
+                session_id="ses_1",
+                ws_id="ws_1",
+                payload={
+                    "item_id": "dns-resolver-text",
+                    "answer_mode": "text",
+                    "actual": "?",
+                },
+            )
+        )
+    response = client.post(url, json={"actual": "?"}, headers={"Idempotency-Key": key})
+    assert response.status_code == 201 and response.json()["judgment_status"] == "complete"
+    assert fake.calls == 1
+    assert [e.type for e in client.store.read(ws_id="ws_1")].count("drill.judged") == 1
 
 
 def test_concurrent_retry_of_a_pending_judgment_calls_the_llm_once(client: Any) -> None:
