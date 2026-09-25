@@ -1,8 +1,8 @@
 """`/v2` artifact routes (#62): start, read, reset, stop and check lab artifacts.
 
 The wired :class:`LabArtifactService` is built once and cached on
-`app.state.artifact_lab` (tests set it there first): the Docker lab runtime
-and the DNS domain adapter. Artifact specs come from the shared
+`app.state.artifact_lab` (tests set it there first): the Docker lab runtime,
+its PTY bridge and the DNS domain adapter. Artifact specs come from the shared
 `PackV2Dep`; the user and event id from `UserIdDep` / `EventIdDep`. A background
 task started with the app stops labs idle past their spec's `idle_seconds`.
 """
@@ -43,6 +43,7 @@ def build_artifact_service(app: Any) -> LabArtifactService:
 
     import domains.dns  # noqa: PLC0415
     from harness.adapters.docker_lab import DockerLabRuntime  # noqa: PLC0415
+    from harness.adapters.pty import DockerTerminalBridge  # noqa: PLC0415
 
     adapters = DomainAdapterRegistry()
     adapters.register(domains.dns.adapter())
@@ -51,12 +52,13 @@ def build_artifact_service(app: Any) -> LabArtifactService:
     return LabArtifactService(
         store=store,
         labs=DockerLabRuntime(docker.from_env()),
+        terminals=DockerTerminalBridge(),
         adapters=adapters,
     )
 
 
 def artifact_service_of(connection: HTTPConnection) -> LabArtifactService:
-    """The wired service; built and cached on first use."""
+    """The wired service (HTTP or WebSocket); built and cached on first use."""
     service: LabArtifactService | None = getattr(connection.app.state, "artifact_lab", None)
     if service is None:
         try:
