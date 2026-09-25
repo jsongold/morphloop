@@ -15,11 +15,11 @@ without needing to look anything up first.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import cast
 
 from harness.core.pack.v2.importer import PackV2
-from harness.core.ports import JsonObject
+from harness.core.ports import JsonObject, PlainJson, to_plain_json
 from harness.core.ports.events_v2 import EventIdConflictError, EventTransactionV2, EventV2
 from harness.core.session.model import SessionView, TopicNotFoundError, find_topic
 from harness.core.view import dispatch
@@ -29,6 +29,7 @@ __all__ = [
     "TopicNotFoundError",
     "create_session",
     "get_session",
+    "learner_topic_tree",
     "list_sessions",
     "session_id_for",
 ]
@@ -36,6 +37,29 @@ __all__ = [
 
 class PackMismatchError(LookupError):
     """``pack_id`` does not name the pack currently loaded by the server."""
+
+
+def _learner_topic(topic: JsonObject) -> dict[str, PlainJson]:
+    visible = {
+        key: to_plain_json(topic[key])
+        for key in ("id", "title", "description", "labels", "docs")
+        if key in topic
+    }
+    children = topic.get("topics")
+    if isinstance(children, Sequence) and not isinstance(children, str | bytes):
+        visible["topics"] = [
+            _learner_topic(child) for child in children if isinstance(child, Mapping)
+        ]
+    return visible
+
+
+def learner_topic_tree(pack: PackV2) -> dict[str, PlainJson]:
+    """The loaded pack's topic tree, restricted to learner-visible fields."""
+    return {
+        "pack_id": pack.pack_id,
+        "pack_hash": pack.pack_hash,
+        "topics": [_learner_topic(topic) for topic in pack.topics],
+    }
 
 
 def session_id_for(event_id: str) -> str:
