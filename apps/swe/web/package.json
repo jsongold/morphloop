@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "node --test \"src/**/*.test.mjs\""
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
