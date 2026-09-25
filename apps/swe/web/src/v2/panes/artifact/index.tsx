@@ -1,11 +1,30 @@
 "use client";
 
+// The artifact pane (#115): the inline slot starts/reuses a lab and draws a
+// diagram; the bottom pane shows the active lab's terminal, status, reset/stop
+// and the named check's result.
+//
+// A pane only touches its own directory (panes/types.ts). The workbook's
+// `::artifact{type=... ref=...}` directive renders <ArtifactSlot/> inline; the
+// module registry below maps a type to its renderer. The bottom slot mounts
+// <ArtifactPane/> independently, so what the inline slot starts is published to
+// a tiny module store both read.
+
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import TerminalPane, { type TerminalHandle } from "@/components/TerminalPane";
 import { get, post } from "../../api";
 import { useWorkspace } from "../../state";
 import type { ArtifactDirective } from "../types";
-import specs from "./specs.json";
+import {
+  artifactSpec,
+  checkRequest,
+  labAction,
+  openArtifact,
+  runCheck,
+  startLab,
+  type Artifact,
+  type CheckResult,
+} from "./artifacts";
 
 export type ArtifactRenderer = (directive: ArtifactDirective) => ReactNode;
 const renderers = new Map<string, ArtifactRenderer>();
@@ -14,43 +33,93 @@ export function ArtifactSlot({ directive }: { directive: ArtifactDirective }) {
   return renderers.get(directive.type)?.(directive) ?? <p className="muted">Unsupported artifact: {directive.type}</p>;
 }
 
-type Artifact = { artifact_id: string; type: string; spec_id: string; ws_id: string; status: "running" | "stopped"; lab: { lab_instance_id: string } | null };
-type Check = { artifact_id: string; check_id: string; passed: boolean; observed: Record<string, unknown> };
-type Active = { artifact: Artifact; result: Check | null } | null;
-// ponytail: one active lab per page; keep per-artifact state if a pack embeds several labs.
+// One active lab per page is shown; the inline slot publishes what it starts or
+// reuses and the bottom pane renders it. ponytail: per-artifact state if a pack
+// embeds several labs at once.
+type Active = { artifact: Artifact; result: CheckResult | null } | null;
 let active: Active = null;
 const listeners = new Set<() => void>();
 function publish(next: Active) { active = next; listeners.forEach((listener) => listener()); }
 function subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
-function useActive() { return useSyncExternalStore(subscribe, () => active, () => null); }
+function useActive(): Active { return useSyncExternalStore(subscribe, () => active, () => null); }
 
 function LabView({ directive }: { directive: ArtifactDirective }) {
   const { ws } = useWorkspace();
-  const current = useActive();
+  const active = useActive();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const selected = current?.artifact.ws_id === ws?.ws_id && current?.artifact.spec_id === directive.ref;
+  const wsId = ws?.ws_id ?? null;
+  const running =
+    active?.artifact.ws_id === wsId &&
+    active.artifact.spec_id === directive.ref &&
+    active.artifact.status === "running";
+
+  // Reuse a lab already started for this directive instead of starting another.
+  useEffect(() => {
+    if (!wsId || running) return;
+    let cancelled = false;
+    openArtifact(get, wsId, directive.ref).then(
+      (artifact) => { if (!cancelled && artifact) publish({ artifact, result: null }); },
+      (cause: unknown) => { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); },
+    );
+    return () => { cancelled = true; };
+  }, [wsId, directive.ref, running]);
+
   async function start() {
-    if (!ws || busy) return;
-    setBusy(true); setError(null);
+    if (!wsId || busy) return;
+    setBusy(true);
+    setError(null);
     try {
-      const { body } = await post<Artifact>(`/ws/${ws.ws_id}/artifacts`, { spec_id: directive.ref });
-      publish({ artifact: body, result: null });
-      sessionStorage.setItem(`artifact:${ws.ws_id}:${directive.ref}`, body.artifact_id);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setBusy(false); }
+      publish({ artifact: await startLab(post, wsId, directive.ref), result: null });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
   }
-  return <div className="row"><strong>Lab</strong> <span role="status">{selected ? current?.artifact.status : "not started"}</span>
-    <button onClick={start} disabled={!ws || busy || (selected && current?.artifact.status === "running")}>Start lab</button>
-    {error && <span role="alert">{error}</span>}
-  </div>;
+
+  return (
+    <div className="row">
+      <strong>Lab</strong>{" "}
+      <span role="status">{running ? active?.artifact.status : "not started"}</span>
+      <button onClick={() => void start()} disabled={!wsId || busy || running}>Start lab</button>
+      {error && <span role="alert">{error}</span>}
+    </div>
+  );
 }
 
+type Observation = { argv: string[]; purpose: string; look_for?: string };
+type Observable = { kind: string; locator: string; description: string };
+type DiagramStep = {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+  explanation: string;
+  reality?: { mechanism: string; observe: Observation[]; artifacts?: Observable[] };
+};
+type Diagram = {
+  title: string;
+  diagram: { actors: { id: string; label: string }[]; steps: DiagramStep[] };
+};
+
 function DiagramView({ directive }: { directive: ArtifactDirective }) {
+  const [spec, setSpec] = useState<ArtifactSpecView | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
-  if (directive.ref !== specs.diagram.id) return <p role="alert">Diagram {directive.ref} is unavailable.</p>;
-  const { title, diagram } = specs.diagram.spec;
-  const x = (id: string) => (diagram.actors.findIndex((actor) => actor.id === id) + 0.5) * 190;
+  useEffect(() => {
+    let cancelled = false;
+    artifactSpec(get, directive.ref).then(
+      (loaded) => { if (!cancelled) setSpec({ type: loaded.type, spec: loaded.spec as unknown as Diagram }); },
+      (cause: unknown) => { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); },
+    );
+    return () => { cancelled = true; };
+  }, [directive.ref]);
+  if (error) return <p role="alert">{error}</p>;
+  if (!spec) return <p className="muted">Loading diagram…</p>;
+  if (spec.type !== "diagram") return <p role="alert">Artifact {directive.ref} is not a diagram.</p>;
+  const { title, diagram } = spec.spec;
+  const x = (actorId: string) => (diagram.actors.findIndex((actor) => actor.id === actorId) + 0.5) * 190;
   const step = diagram.steps[selected];
   return <section className="viz"><h3>{title}</h3>
     <svg className="viz-svg" viewBox={`0 0 ${diagram.actors.length * 190} ${40 + diagram.steps.length * 45}`} role="img" aria-label={`Sequence diagram: ${title}`}>
@@ -63,58 +132,84 @@ function DiagramView({ directive }: { directive: ArtifactDirective }) {
     </svg>
     <ol className="viz-steps" aria-label="Diagram steps">{diagram.steps.map((item, i) => <li key={item.id}><button className={i === selected ? "link selected" : "link"} aria-pressed={i === selected} onClick={() => setSelected(i)}>{item.label}</button></li>)}</ol>
     <div className="viz-detail" aria-live="polite"><h4>{step.label}</h4><p>{step.explanation}</p>
-      {"reality" in step && step.reality && <><h5>Real mechanism</h5><p>{step.reality.mechanism}</p><h5>Observe it</h5><ul>{step.reality.observe.map((item, i) => <li key={i}><code>{item.argv.join(" ")}</code> — {item.purpose}{"look_for" in item && <p>Look for: {item.look_for}</p>}</li>)}</ul>
-        {"artifacts" in step.reality && step.reality.artifacts && <><h5>Observable state</h5><ul>{step.reality.artifacts.map((item, i) => <li key={i}><code>{item.locator}</code> ({item.kind}) — {item.description}</li>)}</ul></>}
+      {step.reality && <><h5>Real mechanism</h5><p>{step.reality.mechanism}</p><h5>Observe it</h5><ul>{step.reality.observe.map((item, i) => <li key={i}><code>{item.argv.join(" ")}</code> — {item.purpose}{item.look_for && <p>Look for: {item.look_for}</p>}</li>)}</ul>
+        {step.reality.artifacts && <><h5>Observable state</h5><ul>{step.reality.artifacts.map((item, i) => <li key={i}><code>{item.locator}</code> ({item.kind}) — {item.description}</li>)}</ul></>}
       </>}
     </div>
   </section>;
 }
+
+type ArtifactSpecView = { type: string; spec: Diagram };
+
 registerArtifactRenderer("lab", (directive) => <LabView directive={directive} />);
 registerArtifactRenderer("diagram", (directive) => <DiagramView directive={directive} />);
 
 export default function ArtifactPane() {
   const { ws } = useWorkspace();
-  const current = useActive();
+  const active = useActive();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [checkId, setCheckId] = useState<string>(specs.lab.checks[0].id);
+  const [checkId, setCheckId] = useState("");
+  const [params, setParams] = useState("{}");
   const terminalHandle = useRef<TerminalHandle | null>(null);
+  const wsId = ws?.ws_id ?? null;
+  const artifact = active?.artifact.ws_id === wsId ? active.artifact : null;
+
+  // On reload the inline slot may not have rendered yet; restore the ws's own
+  // running lab so its terminal and controls are shown.
   useEffect(() => {
-    if (!ws || current?.artifact.ws_id === ws.ws_id) return;
-    const id = sessionStorage.getItem(`artifact:${ws.ws_id}:${specs.lab.id}`);
-    if (!id) return;
+    if (!wsId || artifact) return;
     let cancelled = false;
-    get<Artifact>(`/ws/${ws.ws_id}/artifacts/${id}`).then(
-      (artifact) => { if (!cancelled) publish({ artifact, result: null }); },
-      () => { if (!cancelled) sessionStorage.removeItem(`artifact:${ws.ws_id}:${specs.lab.id}`); },
+    openArtifact(get, wsId).then(
+      (found) => { if (!cancelled && found) publish({ artifact: found, result: null }); },
+      () => {},
     );
     return () => { cancelled = true; };
-  }, [ws, current]);
-  const artifact = current?.artifact.ws_id === ws?.ws_id ? current?.artifact : null;
-  async function action(kind: "reset" | "stop" | "check") {
-    if (!ws || !artifact || busy) return;
-    setBusy(true); setError(null);
+  }, [wsId, artifact]);
+
+  async function action(kind: "reset" | "stop") {
+    if (!wsId || !artifact || busy) return;
+    setBusy(true);
+    setError(null);
     try {
-      const path = `/ws/${ws.ws_id}/artifacts/${artifact.artifact_id}/${kind}`;
-      if (kind === "check") {
-        const choice = specs.lab.checks.find((item) => item.id === checkId)!;
-        const { body } = await post<Check>(path, { check_id: checkId, params: choice.params });
-        publish({ artifact, result: body });
-      } else {
-        const { body } = await post<Artifact>(path);
-        publish({ artifact: body, result: null });
-      }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setBusy(false); }
+      publish({ artifact: await labAction(post, wsId, artifact.artifact_id, kind), result: null });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
   }
+
+  async function check() {
+    if (!wsId || !artifact || busy) return;
+    const request = checkRequest(checkId, params);
+    if (!request.body) {
+      setError(request.error ?? "Invalid check.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      publish({ artifact, result: await runCheck(post, wsId, artifact.artifact_id, request.body) });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <section style={{ padding: "6px 12px", height: "100%", display: "flex", flexDirection: "column" }} aria-label="Lab terminal">
     <div className="row"><strong>Lab terminal</strong> <span role="status">{artifact?.status ?? "not started"}</span>
-      {artifact?.status === "running" && <><button disabled={busy} onClick={() => action("reset")}>Reset</button><button disabled={busy} onClick={() => action("stop")}>Stop</button>
-        <label>Check <select value={checkId} onChange={(event) => setCheckId(event.target.value)}>{specs.lab.checks.map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}</select></label>
-        <button disabled={busy} onClick={() => action("check")}>Run check</button></>}
+      {artifact?.status === "running" && <>
+        <button disabled={busy} onClick={() => void action("reset")}>Reset</button>
+        <button disabled={busy} onClick={() => void action("stop")}>Stop</button>
+        <label>Check <input value={checkId} onChange={(event) => setCheckId(event.target.value)} placeholder="check id" /></label>
+        <label>Params <input value={params} onChange={(event) => setParams(event.target.value)} placeholder="{}" /></label>
+        <button disabled={busy || !checkId.trim()} onClick={() => void check()}>Run check</button>
+      </>}
     </div>
     {error && <p role="alert">{error}</p>}
-    {current?.result && artifact?.artifact_id === current.result.artifact_id && <div role="status"><strong>{current.result.check_id}: {current.result.passed ? "passed" : "failed"}</strong><pre>{JSON.stringify(current.result.observed, null, 2)}</pre></div>}
+    {active?.result && artifact?.artifact_id === active.result.artifact_id && <div role="status"><strong>{active.result.check_id}: {active.result.passed ? "passed" : "failed"}</strong><pre>{JSON.stringify(active.result.observed, null, 2)}</pre></div>}
     {artifact?.status === "running" && artifact.lab && <TerminalPane
       key={artifact.lab.lab_instance_id}
       lab={{ lab_instance_id: artifact.lab.lab_instance_id, attempt_id: "", status: "ready", terminal_id: null,
