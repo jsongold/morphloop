@@ -1,29 +1,63 @@
-# URL -> Path Item map for the memo resource (ADR-0018). Owned by the
-# memo resource PR: this file is the only file that PR edits (plus an
-# optional new components/memo.yaml for memo-specific schemas).
+# URL -> Path Item map for the memo resource (ADR-0018, issue #59). Owned by
+# the memo resource PR: this file and components/memo.yaml are the only files
+# it edits.
 # Never edit ../root.yaml or another resource's paths/*.yaml — new URLs are
 # just new top-level keys in this file, merged into the document by
 # harness.testing.openapi_v2.load_merged_openapi_v2_spec (duplicate URLs
 # across files are a load-time error). See ../README.md.
 #
-# Memo: entries, a child of ws. Append-only log; corrections are new entries, not edits. No automatic summarization (the learner writes, or chat is told to).
-#
-# `/memo/_stub` below is a placeholder with no meaning; replace or
-# extend it with the resource's real paths.
-/memo/_stub:
-  get:
+# Memo: entries, a child of ws. Append-only log; corrections are new entries,
+# not edits. No automatic summarization (the learner writes, or chat is told
+# to).
+/ws/{ws_id}/memo/entries:
+  parameters:
+    - name: ws_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^ws_[0-9A-Za-z]{1,64}$'
+  post:
     tags: [memo]
-    operationId: getMemoStub
-    summary: Placeholder for the memo resource.
+    operationId: appendMemoEntry
+    summary: Append a memo entry.
     description: |
-      No behavior yet. Real endpoints for memo land in a follow-up PR
-      that edits only this file (ADR-0018, issue #34).
+      Appends `memo.appended`. There is no edit or delete: a correction is a
+      new entry. A resend of the same `Idempotency-Key` returns the entry
+      already stored for it instead of appending again.
+    parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        description: A UUID; the server generates one when absent.
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/memo.yaml#/MemoEntryCreate'
     responses:
-      '200':
-        description: Stub response.
+      '201':
+        description: The stored entry.
         content:
           application/json:
             schema:
-              $ref: '../components/common.yaml#/Stub'
+              $ref: '../components/memo.yaml#/MemoEntry'
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+  get:
+    tags: [memo]
+    operationId: listMemoEntries
+    summary: List a ws's memo entries, in append order.
+    responses:
+      '200':
+        description: The ws's memo entries.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/memo.yaml#/MemoEntryList'
       default:
         $ref: '../root.yaml#/components/responses/Problem'

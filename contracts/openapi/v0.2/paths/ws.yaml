@@ -8,22 +8,193 @@
 #
 # Workspace (ws): threads, memo. The learner's work area; one learner can hold several. A thread is a topic-of-conversation unit with an optional target and is the LLM context split unit.
 #
-# `/ws/_stub` below is a placeholder with no meaning; replace or
-# extend it with the resource's real paths.
-/ws/_stub:
+/ws:
+  post:
+    tags: [ws]
+    operationId: createWs
+    summary: Create a workspace (`ws.created`).
+    description: |
+      A learner may hold several ws at once. `labels` are ordinary
+      classification labels (e.g. a topic label); the server always adds an
+      `origin:learner` label of its own, since this endpoint is always
+      called on the learner's behalf.
+    parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        description: |
+          Client-generated UUID, used as the event id. A resend with the same
+          key and body returns the stored event; the same key with another
+          body is 409. The server assigns a fresh UUID when absent.
+        schema: {type: string, format: uuid}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [session_id]
+            properties:
+              session_id:
+                type: string
+                pattern: '^ses_[0-9A-Za-z]{1,64}$'
+              labels: &labels
+                type: array
+                uniqueItems: true
+                items: {type: string, pattern: '^[a-z0-9][a-z0-9._-]{0,63}(:[a-z0-9][a-z0-9._-]{0,127})?$'}
+            additionalProperties: false
+    responses:
+      '201':
+        description: |
+          The stored `ws.created` event; its full shape is
+          `contracts/schemas/events/envelope/v2/stored.json` with payload
+          `contracts/schemas/events/payloads/ws.created/1.json`.
+        content:
+          application/json:
+            schema: &ws_created_event
+              type: object
+              required: [id, position, type, created_at, actor, user_id, session_id, ws_id, payload]
+              properties:
+                id: {type: string}
+                position: {type: integer, minimum: 1}
+                type: {const: ws.created}
+                created_at: {type: string, format: date-time}
+                actor: {const: learner}
+                user_id: {type: string}
+                session_id: {type: string}
+                ws_id: {type: string}
+                payload: {type: object}
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
   get:
     tags: [ws]
-    operationId: getWsStub
-    summary: Placeholder for the ws resource.
-    description: |
-      No behavior yet. Real endpoints for ws land in a follow-up PR
-      that edits only this file (ADR-0018, issue #34).
+    operationId: listWs
+    summary: The learner's workspaces, most recently created first.
+    parameters:
+      - name: session_id
+        in: query
+        required: false
+        description: Restrict to the ws's of one session; omit to list every ws of the learner.
+        schema: {type: string, pattern: '^ses_[0-9A-Za-z]{1,64}$'}
     responses:
       '200':
-        description: Stub response.
+        description: Matching workspaces.
         content:
           application/json:
             schema:
-              $ref: '../components/common.yaml#/Stub'
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items: &ws_object
+                    type: object
+                    required:
+                      [
+                        ws_id,
+                        user_id,
+                        session_id,
+                        labels,
+                        created_at,
+                        position,
+                        main_thread_event_id,
+                      ]
+                    properties:
+                      ws_id: {type: string}
+                      user_id: {type: string}
+                      session_id: {type: string}
+                      labels: {type: array, items: {type: string}}
+                      created_at: {type: string, format: date-time}
+                      position:
+                        type: integer
+                        minimum: 1
+                        description: The creating event's position; used to sort by creation order.
+                      main_thread_event_id:
+                        type: [string, "null"]
+                        description: |
+                          The id of the event that created this ws's main
+                          (targetless) thread, or null before one exists.
+                    additionalProperties: false
+              additionalProperties: false
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+
+/ws/{ws_id}:
+  get:
+    tags: [ws]
+    operationId: getWs
+    summary: One workspace.
+    parameters:
+      - {name: ws_id, in: path, required: true, schema: {type: string}}
+    responses:
+      '200':
+        description: The workspace.
+        content:
+          application/json:
+            schema: *ws_object
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
+
+/ws/{ws_id}/threads:
+  post:
+    tags: [ws]
+    operationId: createThread
+    summary: Create a thread in a ws (`thread.created`).
+    description: |
+      A thread is the topic-of-conversation unit inside a ws and the LLM
+      context split unit (chat, issue #63). `target` says what it discusses;
+      omit it for the ws's main thread (a `null` target is a client error).
+      `target.kind` is one of `textbook_block`, `memo_entry`, `drill_item`,
+      `artifact`; validating the id(s) it carries is that named resource's
+      job, not this one's. `mode:hint` and similar are ordinary labels. The
+      ws must exist (404). A ws has at most one main thread: a targetless
+      request when one already exists returns that thread's stored event
+      instead of creating another one.
+    parameters:
+      - {name: ws_id, in: path, required: true, schema: {type: string}}
+      - name: Idempotency-Key
+        in: header
+        required: false
+        description: |
+          Client-generated UUID, used as the event id. A resend with the same
+          key and body returns the stored event; the same key with another
+          body is 409. The server assigns a fresh UUID when absent.
+        schema: {type: string, format: uuid}
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              target:
+                type: object
+                required: [kind]
+                properties:
+                  kind:
+                    enum: [textbook_block, memo_entry, drill_item, artifact]
+              labels: *labels
+            additionalProperties: false
+    responses:
+      '201':
+        description: |
+          The stored `thread.created` event; its full shape is
+          `contracts/schemas/events/envelope/v2/stored.json` with payload
+          `contracts/schemas/events/payloads/thread.created/1.json`.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, position, type, created_at, actor, user_id, session_id, ws_id, payload]
+              properties:
+                id: {type: string}
+                position: {type: integer, minimum: 1}
+                type: {const: thread.created}
+                created_at: {type: string, format: date-time}
+                actor: {const: learner}
+                user_id: {type: string}
+                session_id: {type: string}
+                ws_id: {type: string}
+                payload: {type: object}
       default:
         $ref: '../root.yaml#/components/responses/Problem'
