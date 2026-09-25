@@ -57,3 +57,38 @@ def test_directive_in_code_block_is_ignored(tmp_path: Path, body: str) -> None:
     doc["blocks"][2]["body"] = body
     (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
     import_pack_v2(pack)
+
+
+def test_multiline_code_span_directive_is_ignored(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    shutil.copytree(SE_PACK, pack)
+    doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
+    doc["blocks"][2]["body"] = "Try `\n::artifact{type=lab ref=missing}\n` here."
+    (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
+    import_pack_v2(pack)
+
+
+def test_duplicate_block_id_is_refused(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    shutil.copytree(SE_PACK, pack)
+    doc = json.loads((pack / DOC).read_text(encoding="utf-8"))
+    doc["blocks"][1]["id"] = doc["blocks"][0]["id"]
+    (pack / DOC).write_text(json.dumps(doc), encoding="utf-8")
+    with pytest.raises(PackV2ImportError) as info:
+        import_pack_v2(pack)
+    assert any(f"{DOC}: block id 'summary' appears 2 times" in p for p in info.value.problems)
+
+
+def test_duplicate_doc_id_is_refused(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    shutil.copytree(SE_PACK, pack)
+    other = pack / "textbooks/network.dns.answers.json"
+    doc = json.loads(other.read_text(encoding="utf-8"))
+    doc["id"] = "network.dns.lookup-path"
+    other.write_text(json.dumps(doc), encoding="utf-8")
+    with pytest.raises(PackV2ImportError) as info:
+        import_pack_v2(pack)
+    assert any(
+        "textbook doc id 'network.dns.lookup-path' appears 2 times" in p
+        for p in info.value.problems
+    )

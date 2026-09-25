@@ -20,18 +20,17 @@ Rules (the body is parsed as CommonMark by markdown-it-py's ``commonmark`` prese
   decoded, surrounding whitespace stripped); an HTML block with no text produces nothing;
 - a paragraph line that is an ``::artifact{...}`` directive produces nothing (so a
   block that is only a directive has plaintext ``""``; ``"A\\n::artifact{..}\\nB"`` is
-  ``"A\\nB"``). Lines inside code blocks are never directives.
+  ``"A\\nB"``). Lines inside code blocks or inline code spans are never directives.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from html.parser import HTMLParser
-from typing import Any
 
 from markdown_it.token import Token
 
-from harness.core.pack.v2.validators.textbook import ARTIFACT_DIRECTIVE, MD
+from harness.core.pack.v2.validators.textbook import ARTIFACT_DIRECTIVE, MD, inline_lines, line_text
 
 
 class _HtmlText(HTMLParser):
@@ -50,15 +49,14 @@ def _html_text(html: str) -> str:
     return "".join(parser.parts).strip()
 
 
-def _paragraph(token: Token, env: dict[str, Any]) -> str | None:
+def _paragraph(token: Token) -> str | None:
     """Inline text without directive lines; ``None`` if every line is a directive."""
-    lines = token.content.split("\n")
-    kept = [line for line in lines if not ARTIFACT_DIRECTIVE.fullmatch(line.strip())]
-    if len(kept) == len(lines):
-        return _inline(token.children or ())
-    if not kept:
-        return None
-    return _inline(MD.parseInline("\n".join(kept), env)[0].children or ())
+    kept = [
+        _inline(line)
+        for line in inline_lines(token.children or ())
+        if not ARTIFACT_DIRECTIVE.fullmatch(line_text(line) or "")
+    ]
+    return "\n".join(kept) if kept else None
 
 
 def _inline(children: Sequence[Token]) -> str:
@@ -76,10 +74,9 @@ def _inline(children: Sequence[Token]) -> str:
 def block_plaintext(body: str) -> str:
     """The plaintext of one block body (CommonMark)."""
     chunks: list[str] = []
-    env: dict[str, Any] = {}
-    for token in MD.parse(body, env):
+    for token in MD.parse(body):
         if token.type == "inline":
-            if (text := _paragraph(token, env)) is not None:
+            if (text := _paragraph(token)) is not None:
                 chunks.append(text)
         elif token.type in ("fence", "code_block"):
             chunks.append(token.content.removesuffix("\n"))

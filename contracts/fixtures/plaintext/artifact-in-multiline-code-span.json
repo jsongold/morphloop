@@ -1,0 +1,4 @@
+{
+  "markdown": "Try `\n::artifact{type=lab ref=x}\n` here.",
+  "plaintext": "Try ::artifact{type=lab ref=x} here."
+}
