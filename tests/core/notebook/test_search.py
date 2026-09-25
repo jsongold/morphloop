@@ -1,5 +1,6 @@
 """Notebook search over pack and generated resources."""
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from pack_artifact_types import PACK_ARTIFACT_TYPES
@@ -14,9 +15,26 @@ from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 PACK = Path(__file__).parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
 
 
+class CountingDocuments(InMemoryGeneratedDocumentStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.textbook_lists = 0
+        self.textbook_gets = 0
+
+    def list(self, resource: str, *, label: str | None = None) -> Sequence[GeneratedDocument]:
+        if resource == "textbook":
+            self.textbook_lists += 1
+        return super().list(resource, label=label)
+
+    def get(self, resource: str, id: str) -> GeneratedDocument | None:
+        if resource == "textbook":
+            self.textbook_gets += 1
+        return super().get(resource, id)
+
+
 def test_generated_textbook_block_is_searchable_without_answer_leakage() -> None:
     pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
-    generated = InMemoryGeneratedDocumentStore()
+    generated = CountingDocuments()
     generated.add(
         GeneratedDocument(
             resource="textbook",
@@ -49,3 +67,5 @@ def test_generated_textbook_block_is_searchable_without_answer_leakage() -> None
         secret = search("hidden-answer", pack=pack, generated=generated, tx=tx, user_id="usr_local")
     assert any(r["kind"] == "textbook_block" and r["id"] == "generated-doc" for r in found)
     assert secret == []
+    assert generated.textbook_lists == 2  # one corpus read per search
+    assert generated.textbook_gets == 0  # no per-document fetches

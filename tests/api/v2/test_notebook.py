@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.problems import install_handlers
@@ -20,6 +22,7 @@ from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.session.service import create_session
 from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
+from harness.testing.openapi_v2 import load_merged_openapi_v2_spec
 
 PACK = Path(__file__).parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
 BUILD = "/v2/notebook/workspace/build"
@@ -97,12 +100,20 @@ def test_search_hits_block_memo_and_drill_without_leaking_other_user(
     response = client.get(SEARCH, params={"q": "nameserver", "session_id": session_id})
     assert response.status_code == 200
     results = response.json()["results"]
+    schema = load_merged_openapi_v2_spec()["paths"]["/notebook/search"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    Draft202012Validator(schema).validate(response.json())
     assert {r["kind"] for r in results} >= {"textbook_block", "memo_entry"}
     assert any(r["text"] == "nameserver local note" for r in results)
     assert all(r.get("text") != "nameserver other note" for r in results)
     drill = client.get(SEARCH, params={"q": "IPv4"}).json()["results"]
     assert any(r["kind"] == "drill_item" and r["id"] == "dns-record-choice" for r in drill)
     assert "expected" not in json.dumps(drill)
+    Draft202012Validator(schema).validate({"results": drill})
+    title = client.get(SEARCH, params={"q": "resolved"}).json()
+    assert any(r["kind"] == "textbook_doc" for r in title["results"])
+    Draft202012Validator(schema).validate(title)
     assert client.get(SEARCH, params={"q": "secret-needle"}).json()["results"] == []
 
 
@@ -119,10 +130,59 @@ def test_build_replay_conflict_and_selection(setup: tuple[TestClient, str, str])
     )
     assert conflict.status_code == 409
     assert conflict.json()["code"] == "idempotency-key-reused"
+    same_label_different_selector = client.post(
+        BUILD,
+        json={"session_id": session_id, "labels": ["topic:network.dns.resolution"]},
+        headers=headers,
+    )
+    assert same_label_different_selector.status_code == 409
+    assert same_label_different_selector.json()["code"] == "idempotency-key-reused"
     by_label = client.post(BUILD, json={"session_id": session_id, "labels": ["concept"]})
     assert by_label.status_code == 201
     assert any(doc["id"] == "dns-resolution" for doc in by_label.json()["documents"])
     assert all("expected" not in item for item in by_label.json()["drills"])
+
+
+def test_build_replay_keeps_original_selection_after_generation(
+    setup: tuple[TestClient, str, str],
+) -> None:
+    client, session_id, _ = setup
+    body = {"session_id": session_id, "topic": "network.dns.resolution"}
+    headers = {"Idempotency-Key": str(uuid.uuid4())}
+    first = client.post(BUILD, json=body, headers=headers)
+    assert first.status_code == 201
+    generated = client.app.dependency_overrides[generated_documents_of]()
+    generated.add(
+        GeneratedDocument(
+            resource="textbook",
+            id="generated-after-build",
+            body={
+                "id": "generated-after-build",
+                "title": "Late lesson",
+                "labels": ["concept"],
+                "blocks": [{"id": "b1", "body": "Later text", "labels": []}],
+            },
+            labels=("topic:network.dns.resolution",),
+            provenance={},
+        )
+    )
+    generated.add(
+        GeneratedDocument(
+            resource="drill",
+            id="generated-late-drill",
+            body={
+                "id": "generated-late-drill",
+                "question": "Late question",
+                "expected": "secret",
+                "answer_mode": "text",
+                "labels": ["topic:network.dns.resolution"],
+            },
+            provenance={},
+        )
+    )
+    replay = client.post(BUILD, json=body, headers=headers)
+    assert replay.status_code == 201
+    assert replay.json() == first.json()
 
 
 def test_build_rejects_other_session_and_invalid_selectors(
@@ -139,3 +199,32 @@ def test_build_rejects_other_session_and_invalid_selectors(
         ).status_code
         == 422
     )
+    for body in (
+        {"session_id": session_id, "topic": "network.dns", "labels": []},
+        {"session_id": session_id, "topic": None},
+        {"session_id": session_id, "labels": []},
+        {"session_id": session_id, "topic": None, "labels": ["concept"]},
+    ):
+        response = client.post(BUILD, json=body)
+        assert response.status_code == 422
+        assert response.json()["code"] == "validation-failed"
+
+
+def _assert_pack_mismatch(client: TestClient, session_id: str, changed_pack: object) -> None:
+    client.app.dependency_overrides[pack_v2_of] = lambda: changed_pack
+    response = client.post(BUILD, json={"session_id": session_id, "labels": ["concept"]})
+    assert response.status_code == 409
+    assert response.json()["code"] == "state-conflict"
+    assert "pins pack" in response.json()["detail"]
+
+
+def test_build_rejects_pack_mismatch_and_unknown_labels(setup: tuple[TestClient, str, str]) -> None:
+    client, session_id, _ = setup
+    pack = client.app.dependency_overrides[pack_v2_of]()
+    _assert_pack_mismatch(client, session_id, replace(pack, pack_id="different-pack"))
+    _assert_pack_mismatch(client, session_id, replace(pack, pack_hash="changed"))
+    client.app.dependency_overrides[pack_v2_of] = lambda: pack
+    invalid = client.post(BUILD, json={"session_id": session_id, "labels": ["unknown"]})
+    assert invalid.status_code == 422
+    assert invalid.json()["code"] == "validation-failed"
+    assert invalid.json()["errors"][0]["path"] == "$.labels"

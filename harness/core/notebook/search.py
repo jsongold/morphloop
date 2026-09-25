@@ -28,11 +28,12 @@ def search(
         return []
     results: list[dict[str, PlainJson]] = []
     textbook = Textbook(pack, generated)
-    for summary in textbook.list_docs():
-        doc_id = str(summary["id"])
-        if needle in str(summary["title"]).casefold():
-            results.append({"kind": "textbook_doc", "id": doc_id, "text": str(summary["title"])})
-        blocks = textbook.doc(doc_id).get("blocks")
+    for doc in textbook.all_docs():
+        doc_id = str(doc["id"])
+        title = str(doc["title"])
+        if needle in title.casefold():
+            results.append({"kind": "textbook_doc", "id": doc_id, "text": title})
+        blocks = doc.get("blocks")
         if not isinstance(blocks, list):
             continue
         for block in blocks:

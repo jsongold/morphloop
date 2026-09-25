@@ -62,6 +62,20 @@ def _summary(doc: dict[str, PlainJson]) -> dict[str, PlainJson]:
     return {k: doc[k] for k in ("id", "title", "labels")}
 
 
+def _with_plaintext(doc: dict[str, PlainJson]) -> dict[str, PlainJson]:
+    blocks = doc.get("blocks")
+    if not isinstance(blocks, list):
+        raise ValueError("textbook doc has no blocks array")
+    for block in blocks:
+        if not isinstance(block, dict):
+            raise ValueError("textbook block has no text body")
+        body = block.get("body")
+        if not isinstance(body, str):
+            raise ValueError("textbook block has no text body")
+        block["plaintext"] = block_plaintext(body)
+    return doc
+
+
 @dataclass(frozen=True, slots=True)
 class Textbook:
     pack: PackV2
@@ -70,14 +84,21 @@ class Textbook:
     def _pack_docs(self) -> dict[str, JsonObject]:
         return {str(d["id"]): d for d in self.pack.documents["textbooks"].values()}
 
+    def _all(self) -> Iterator[dict[str, PlainJson]]:
+        pack_docs = self._pack_docs()
+        for doc in pack_docs.values():
+            yield _with_origin(doc, ORIGIN_PACK)
+        for generated_doc in self.generated.list(RESOURCE):
+            if generated_doc.id not in pack_docs:
+                yield _generated(generated_doc)
+
     def list_docs(self) -> list[dict[str, PlainJson]]:
         """All visible doc summaries, including generated docs without pack-id shadows."""
-        pack_docs = self._pack_docs()
-        docs = [_with_origin(doc, ORIGIN_PACK) for doc in pack_docs.values()]
-        docs.extend(
-            _generated(doc) for doc in self.generated.list(RESOURCE) if doc.id not in pack_docs
-        )
-        return [_summary(doc) for doc in docs]
+        return [_summary(doc) for doc in self._all()]
+
+    def all_docs(self) -> list[dict[str, PlainJson]]:
+        """Full pack and generated docs, each read once, with block plaintext."""
+        return [_with_plaintext(doc) for doc in self._all()]
 
     def reading_list(self, topic_id: str) -> list[dict[str, PlainJson]]:
         """Summaries (id, title, labels) of a topic's docs: base first, then generated."""
@@ -103,9 +124,4 @@ class Textbook:
             if generated is None:
                 raise TextbookNotFoundError(f"no textbook doc {doc_id!r}")
             out = _generated(generated)
-        blocks = out["blocks"]
-        assert isinstance(blocks, list)
-        for block in blocks:
-            assert isinstance(block, dict)
-            block["plaintext"] = block_plaintext(str(block["body"]))
-        return out
+        return _with_plaintext(out)

@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import Field, model_validator
 
+from harness.api.problems import problem
 from harness.api.v2.deps import (
     EventIdDep,
     EventTransactionV2Dep,
@@ -15,7 +16,9 @@ from harness.api.v2.deps import (
     UserIdDep,
 )
 from harness.api.v2.models import Text, V2Model
+from harness.core.labels import LabelError
 from harness.core.notebook.build import build_workspace
+from harness.core.session.service import PackMismatchError
 
 router = APIRouter(tags=["notebook"])
 
@@ -27,7 +30,12 @@ class BuildBody(V2Model):
 
     @model_validator(mode="after")
     def _selector(self) -> BuildBody:
-        if (self.topic is None) == (not self.labels):
+        present = self.model_fields_set & {"topic", "labels"}
+        if (
+            len(present) != 1
+            or ("topic" in present and self.topic is None)
+            or ("labels" in present and not self.labels)
+        ):
             raise ValueError("provide exactly one of topic or labels")
         return self
 
@@ -40,7 +48,7 @@ def build_notebook_workspace(
     user_id: UserIdDep,
     pack: PackV2Dep,
     generated: GeneratedDocumentsDep,
-) -> dict[str, Any]:
+) -> Any:
     try:
         return build_workspace(
             tx,
@@ -52,7 +60,19 @@ def build_notebook_workspace(
             topic=body.topic,
             labels=body.labels,
         )
+    except PackMismatchError as exc:
+        return problem(status=409, code="state-conflict", detail=str(exc))
+    except LabelError as exc:
+        return problem(
+            status=422,
+            code="validation-failed",
+            detail=str(exc),
+            errors=[
+                {"path": "$.labels", "message": f"{label}: {reason}"}
+                for label, reason in exc.offending.items()
+            ],
+        )
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
+        return problem(status=422, code="validation-failed", detail=str(exc))

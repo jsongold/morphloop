@@ -25,7 +25,41 @@
               type: object
               required: [results]
               properties:
-                results: {type: array, items: {type: object}}
+                results:
+                  type: array
+                  items:
+                    discriminator: {propertyName: kind}
+                    oneOf:
+                      - type: object
+                        required: [kind, id, text]
+                        properties:
+                          kind: {const: textbook_doc}
+                          id: {type: string}
+                          text: {type: string}
+                        additionalProperties: false
+                      - type: object
+                        required: [kind, id, block_id, text]
+                        properties:
+                          kind: {const: textbook_block}
+                          id: {type: string}
+                          block_id: {type: string}
+                          text: {type: string}
+                        additionalProperties: false
+                      - type: object
+                        required: [kind, id, text]
+                        properties:
+                          kind: {const: memo_entry}
+                          id: {type: string}
+                          text: {type: string}
+                        additionalProperties: false
+                      - type: object
+                        required: [kind, id, text]
+                        properties:
+                          kind: {const: drill_item}
+                          id: {type: string}
+                          text: {type: string}
+                        additionalProperties: false
+              additionalProperties: false
       default:
         $ref: '../root.yaml#/components/responses/Problem'
 /notebook/workspace/build:
@@ -48,9 +82,10 @@
               labels: {type: array, items: {type: string}}
             oneOf:
               - required: [topic]
-                properties: {labels: {maxItems: 0}}
+                not: {required: [labels]}
               - required: [labels]
-                properties: {topic: {not: {type: string}}}
+                not: {required: [topic]}
+                properties: {labels: {minItems: 1}}
             additionalProperties: false
     responses:
       '201':
