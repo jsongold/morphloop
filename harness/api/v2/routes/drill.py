@@ -6,14 +6,16 @@ Items are the pack's drill items plus generated documents of resource
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import Field, model_validator
 
+from harness.api.backend import harness_version
 from harness.api.v2.deps import (
     EventIdDep,
-    EventTransactionV2Dep,
+    EventStoreV2Dep,
     GeneratedDocumentsDep,
     PackV2Dep,
     UserIdDep,
@@ -21,6 +23,7 @@ from harness.api.v2.deps import (
     ws_or_404,
 )
 from harness.api.v2.models import Text, V2Model, reject_null
+from harness.core.contract_schemas import ContractSchemas
 from harness.core.drill import (
     ANSWERED,
     DrillError,
@@ -28,8 +31,10 @@ from harness.core.drill import (
     generated_items,
     pack_items,
 )
+from harness.core.drill.judge import GAP_SCHEMA_ID, DrillJudgeError, compute_gap, record_judgment
 from harness.core.ports.events_v2 import EventV2
 from harness.core.ports.json_types import PlainJson
+from harness.core.ports.llm import LLMProvenance, LLMProvider
 
 router = APIRouter(tags=["drill"])
 
@@ -39,6 +44,36 @@ def drill_service_of(pack: PackV2Dep, generated: GeneratedDocumentsDep) -> Drill
 
 
 DrillServiceDep = Annotated[DrillService, Depends(drill_service_of)]
+
+
+def drill_llm_of(request: Request) -> LLMProvider:
+    provider: LLMProvider | None = getattr(request.app.state, "drill_llm", None)
+    if provider is None:
+        from harness.adapters.litellm import LiteLLMProvider
+
+        provider = LiteLLMProvider()
+        request.app.state.drill_llm = provider
+    return provider
+
+
+def drill_judge_config_of(pack: PackV2Dep) -> tuple[LLMProvenance, str] | None:
+    role = pack.llm_roles.get("judge")
+    if role is None or role.output_schema != GAP_SCHEMA_ID:
+        return None
+    parameters = {"temperature": role.temperature, "max_tokens": role.max_tokens}
+    return (
+        LLMProvenance(
+            provider="litellm",
+            model=role.model,
+            prompt_id=role.role,
+            prompt_version=pack.pack_version,
+            generation_parameters={k: v for k, v in parameters.items() if v is not None},
+        ),
+        role.prompt_text,
+    )
+
+
+DrillJudgeConfigDep = Annotated[tuple[LLMProvenance, str] | None, Depends(drill_judge_config_of)]
 
 
 class AnswerRequest(V2Model):
@@ -71,7 +106,10 @@ def get_drill(service: DrillServiceDep, item_id: str) -> dict[str, PlainJson]:
 @router.post("/ws/{ws_id}/drills/{item_id}/answers", status_code=201)
 def answer_drill(
     service: DrillServiceDep,
-    tx: EventTransactionV2Dep,
+    store: EventStoreV2Dep,
+    pack: PackV2Dep,
+    llm: Annotated[LLMProvider, Depends(drill_llm_of)],
+    judge_config: DrillJudgeConfigDep,
     user_id: UserIdDep,
     event_id: EventIdDep,
     ws_id: str,
@@ -81,40 +119,73 @@ def answer_drill(
     # Replay first (#93): a resend must return the stored event even if the
     # pack changed since (e.g. the item was replaced), before any item lookup
     # or answer-mode validation that could differ on retry.
-    existing = tx.get(event_id)
-    if existing is not None:
-        payload: dict[str, PlainJson] = {
-            "item_id": item_id,
-            "answer_mode": str(existing.payload.get("answer_mode")),
-        }
-        if body.actual is not None:
-            payload["actual"] = body.actual
-        if body.artifact_id is not None:
-            payload["artifact_id"] = body.artifact_id
-        candidate = EventV2(
-            id=event_id,
-            type=ANSWERED,
-            actor="learner",
-            user_id=user_id,
-            session_id=existing.session_id,
-            ws_id=ws_id,
-            payload=payload,
-        )
-        result = replay_or_conflict(tx, candidate)
-        assert result is not None
-        return result.to_dict()
-    ws = ws_or_404(tx, ws_id, user_id=user_id)
+    judgment_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"drill.judged:{event_id}"))
+    with store.transaction() as tx:
+        existing = tx.get(event_id)
+        if existing is not None:
+            payload: dict[str, PlainJson] = {
+                "item_id": item_id,
+                "answer_mode": str(existing.payload.get("answer_mode")),
+            }
+            if body.actual is not None:
+                payload["actual"] = body.actual
+            if body.artifact_id is not None:
+                payload["artifact_id"] = body.artifact_id
+            candidate = EventV2(
+                id=event_id,
+                type=ANSWERED,
+                actor="learner",
+                user_id=user_id,
+                session_id=existing.session_id,
+                ws_id=ws_id,
+                payload=payload,
+            )
+            event = replay_or_conflict(tx, candidate)
+            assert event is not None
+        else:
+            ws = ws_or_404(tx, ws_id, user_id=user_id)
+            try:
+                event = service.answer(
+                    tx,
+                    event_id=event_id,
+                    user_id=user_id,
+                    session_id=str(ws["session_id"]),
+                    ws_id=ws_id,
+                    item_id=item_id,
+                    actual=body.actual,
+                    artifact_id=body.artifact_id,
+                )
+            except DrillError as exc:
+                raise HTTPException(exc.status, str(exc)) from exc
+        judged = tx.get(judgment_id) is not None
+    if judged:
+        return {**event.to_dict(), "judgment_status": "complete"}
     try:
-        event = service.answer(
-            tx,
-            event_id=event_id,
-            user_id=user_id,
-            session_id=str(ws["session_id"]),
-            ws_id=ws_id,
-            item_id=item_id,
-            actual=body.actual,
-            artifact_id=body.artifact_id,
+        item = service.get_item(item_id)
+        if item.answer_mode != "choice" and judge_config is None:
+            raise DrillJudgeError("the pack declares no drill gap judge")
+        checks = store.read(user_id=user_id, ws_id=ws_id) if item.answer_mode == "artifact" else ()
+        gap, provenance = compute_gap(
+            answer=event,
+            item=item,
+            pack=pack,
+            schemas=ContractSchemas.load(),
+            llm=llm if judge_config is not None else None,
+            llm_provenance=judge_config[0] if judge_config is not None else None,
+            prompt=judge_config[1] if judge_config is not None else None,
+            artifact_checks=checks,
         )
-    except DrillError as exc:
-        raise HTTPException(exc.status, str(exc)) from exc
-    return event.to_dict()
+    except (DrillError, DrillJudgeError):
+        return {**event.to_dict(), "judgment_status": "pending"}
+    with store.transaction() as tx:
+        if tx.get(judgment_id) is None:
+            record_judgment(
+                tx,
+                event_id=judgment_id,
+                answer=event,
+                gap=gap,
+                pack=pack,
+                harness_version=harness_version(),
+                llm_provenance=provenance,
+            )
+    return {**event.to_dict(), "judgment_status": "complete"}

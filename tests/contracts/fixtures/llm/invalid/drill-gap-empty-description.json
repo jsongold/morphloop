@@ -1,0 +1,6 @@
+{
+  "description": "A missing concept needs a description",
+  "schema": "schemas/llm/drill.gap/1.json",
+  "expected_error_paths": ["$.missing[0].description"],
+  "instance": {"missing": [{"description": "", "labels": []}]}
+}

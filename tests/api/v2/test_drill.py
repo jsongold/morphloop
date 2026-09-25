@@ -12,9 +12,11 @@ from fastapi.testclient import TestClient
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.v2.deps import event_store_v2_of, user_id_of
+from harness.api.v2.routes.drill import drill_judge_config_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.generated_documents import GeneratedDocument
+from harness.core.ports.llm import LLMProvenance, LLMRequest, LLMResponse
 from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 
@@ -32,6 +34,25 @@ PACK = (
 )
 GEN_ID = "0b6f9a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b"
 URL = "/v2/ws/ws_1/drills/dns-record-choice/answers"
+LLM = LLMProvenance(
+    provider="fake",
+    model="fake/model",
+    prompt_id="judge",
+    prompt_version="1",
+    generation_parameters={},
+)
+
+
+class FakeLLM:
+    def __init__(self, store: ConnectionTrackingStore, outputs: list[dict[str, Any]]) -> None:
+        self.store = store
+        self.outputs = outputs
+        self.calls = 0
+
+    def complete_structured(self, request: LLMRequest) -> LLMResponse:
+        assert not self.store.tx_open
+        self.calls += 1
+        return LLMResponse(output=self.outputs.pop(0), provenance=LLM)
 
 
 @pytest.fixture
@@ -86,8 +107,21 @@ def test_answer_is_recorded_as_event(client: Any) -> None:
         "usr_local",
     )
     assert event["id"] == key["Idempotency-Key"]
+    assert event["judgment_status"] == "complete"
     assert client.post(URL, json={"actual": "A"}, headers=key).json() == event
-    assert len(client.store.read(ws_id="ws_1")) == 2  # ws.created + one answer
+    assert [e.type for e in client.store.read(ws_id="ws_1")] == [
+        "ws.created",
+        "drill.answered",
+        "drill.judged",
+    ]
+
+
+def test_wrong_choice_judgment_does_not_reveal_expected(client: Any) -> None:
+    response = client.post(URL, json={"actual": "AAAA"})
+    assert response.status_code == 201 and response.json()["judgment_status"] == "complete"
+    judged = client.store.read(ws_id="ws_1")[-1]
+    assert judged.type == "drill.judged"
+    assert "A" not in str(judged.payload["gap"])
 
 
 def test_answer_errors(client: Any) -> None:
@@ -103,7 +137,7 @@ def test_answer_errors(client: Any) -> None:
     finally:
         del client.app.dependency_overrides[user_id_of]
     assert other_user.status_code == 404
-    assert len(client.store.read(ws_id="ws_1")) == 2  # ws.created + the first answer only
+    assert len(client.store.read(ws_id="ws_1")) == 3  # ws, answer, judgment
     assert client.post(URL, json={"actual": "A", "user_id": "usr_x"}).status_code == 422
 
 
@@ -146,4 +180,39 @@ def test_answer_resend_after_pack_change_returns_stored_result(client: Any) -> N
         del client.app.dependency_overrides[drill_service_of]
     assert resend.status_code == 201, resend.text
     assert resend.json() == first.json()
-    assert len(client.store.read(ws_id="ws_1")) == 2  # ws.created + one answer
+    assert len(client.store.read(ws_id="ws_1")) == 3  # ws, answer, judgment
+
+
+def test_text_judgment_runs_after_answer_commit_and_resend_is_singleton(client: Any) -> None:
+    fake = FakeLLM(
+        client.store, [{"missing": [{"description": "Review the concept.", "labels": []}]}]
+    )
+    client.app.state.drill_llm = fake
+    client.app.dependency_overrides[drill_judge_config_of] = lambda: (LLM, "Judge the gap.")
+    url = URL.replace("dns-record-choice", "dns-resolver-text")
+    key = {"Idempotency-Key": str(uuid.uuid4())}
+    first = client.post(url, json={"actual": "I do not know"}, headers=key)
+    assert first.status_code == 201 and first.json()["judgment_status"] == "complete"
+    assert client.post(url, json={"actual": "I do not know"}, headers=key).json() == first.json()
+    assert fake.calls == 1
+    assert [e.type for e in client.store.read(ws_id="ws_1")].count("drill.judged") == 1
+
+
+def test_invalid_llm_output_leaves_answer_pending_then_retries(client: Any) -> None:
+    fake = FakeLLM(
+        client.store,
+        [
+            {"missing": [{"description": "", "labels": []}]},
+            {"missing": []},
+        ],
+    )
+    client.app.state.drill_llm = fake
+    client.app.dependency_overrides[drill_judge_config_of] = lambda: (LLM, "Judge the gap.")
+    url = URL.replace("dns-record-choice", "dns-resolver-text")
+    key = {"Idempotency-Key": str(uuid.uuid4())}
+    first = client.post(url, json={"actual": "I do not know"}, headers=key)
+    assert first.status_code == 201 and first.json()["judgment_status"] == "pending"
+    assert [e.type for e in client.store.read(ws_id="ws_1")] == ["ws.created", "drill.answered"]
+    again = client.post(url, json={"actual": "I do not know"}, headers=key)
+    assert again.json()["judgment_status"] == "complete" and fake.calls == 2
+    assert [e.type for e in client.store.read(ws_id="ws_1")].count("drill.judged") == 1
