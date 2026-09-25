@@ -10,11 +10,10 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
-from pack_artifact_types import PACK_ARTIFACT_TYPES
+from pack_artifact_types import PACK_ARTIFACT_TYPES, LabStub
 
 from harness.core import artifact as artifact_module
 from harness.core.artifact import Artifact
-from harness.core.artifact_lab import LabArtifact
 from harness.core.pack.v2 import PackV2, PackV2ImportError, import_pack_v2, validators
 from harness.core.ports.json_types import JsonObject
 
@@ -152,7 +151,7 @@ LAB = "artifacts/dns-broken-resolver-lab.json"
 
 def test_artifact_types_are_what_the_caller_passes(pack: Path) -> None:
     with pytest.raises(PackV2ImportError) as info:
-        import_pack_v2(pack, artifact_types=[LabArtifact])
+        import_pack_v2(pack, artifact_types=[LabStub])
     problems = "\n".join(info.value.problems)
     assert (
         "artifacts/dns-resolution-flow.json: artifact type 'diagram' is not registered (lab)"
@@ -192,11 +191,11 @@ def test_validator_runs_only_on_a_schema_valid_spec_and_sees_the_pack(
             return [f"{len(spec['actors'])} actors rejected"]
 
     with pytest.raises(PackV2ImportError) as info:
-        import_pack_v2(pack, artifact_types=[LabArtifact, Picky])
+        import_pack_v2(pack, artifact_types=[LabStub, Picky])
     assert info.value.problems == ("artifacts/dns-resolution-flow.json: 3 actors rejected",)
     assert seen == ["software-engineering"]
     _edit(pack / "artifacts" / "dns-resolution-flow.json", lambda d: d["spec"].pop("actors"))
     seen.clear()
     with pytest.raises(PackV2ImportError) as info:
-        import_pack_v2(pack, artifact_types=[LabArtifact, Picky])
+        import_pack_v2(pack, artifact_types=[LabStub, Picky])
     assert "$.spec: 'actors' is a required property" in info.value.problems[0] and not seen

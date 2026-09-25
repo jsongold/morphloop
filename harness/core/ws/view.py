@@ -1,10 +1,9 @@
 """The ``ws`` view: one document per workspace (#34, #57).
 
 Other resources need a ws's session without importing this package's service
-(ADR-0009: ids are opaque, resolved through events or a view). Once this view
-exists, ``WsView.get(tx, ws_id)`` is the canonical way to do that -- callers
-that today scan ``ws.created`` events by hand (drill, chat, artifact_lab) can
-switch to it (each in its own PR; not done here, ADR-0018 wave rule).
+(ADR-0009: ids are opaque, resolved through events or a view). ``WsView.get(tx,
+ws_id)`` (``ws_or_404`` in the API layer) is the canonical way to do that; chat
+still scans ``ws.created`` events by hand and switches in its own PR.
 
 ``position`` is the creating event's DB-assigned position, kept so callers
 can sort several ws documents by creation order (``list_view`` sorts by the
