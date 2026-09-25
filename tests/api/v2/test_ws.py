@@ -156,6 +156,7 @@ def test_resend_of_the_main_thread_key_with_different_labels_is_409(client: Any)
         f"/v2/ws/{ws['ws_id']}/threads", json={"labels": ["mode:hint"]}, headers=key
     )
     assert second.status_code == 409
+    assert second.json()["code"] == "idempotency-key-reused"
 
 
 def test_a_second_targetless_thread_returns_the_existing_main_thread(client: Any) -> None:
