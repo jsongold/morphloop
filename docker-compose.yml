@@ -19,6 +19,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    # The SWE app (apps/swe): the SDK server plus the lab and diagram artifacts,
+    # serving the SE pack under apps/swe/pack (ADR-0018 s19). The image's own CMD
+    # is the bare SDK server.
+    command: ["sh", "-c", "alembic upgrade head && uvicorn --factory swe.app:create_swe_app --host 0.0.0.0 --port 8000"]
     depends_on:
       db:
         condition: service_healthy

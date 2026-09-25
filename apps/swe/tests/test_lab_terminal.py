@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from pathlib import Path
 
-from artifact_lab.lab_fixture import USER_ID, WS_ID, build, start
+from lab_fixture import USER_ID, WS_ID, build, start
 
-from harness.core.artifact_lab.terminal import encode_chunk
-from harness.core.ports.terminal_bridge import TerminalSize
+from harness.sdk import TerminalSize
+from swe.artifacts.lab.terminal import encode_chunk
 
 
 def test_encode_chunk() -> None:
@@ -19,8 +18,8 @@ def test_encode_chunk() -> None:
     assert encode_chunk(b"a\x00")[1] == "base64"
 
 
-def test_terminal_records_commands_and_output(tmp_path: Path) -> None:
-    f = build(tmp_path)
+def test_terminal_records_commands_and_output() -> None:
+    f = build()
     artifact_id = start(f)
 
     async def run() -> list[dict[str, str | int]]:

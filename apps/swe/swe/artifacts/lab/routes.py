@@ -1,10 +1,16 @@
-"""`/v2` artifact routes (#62): start, read, reset, stop and check lab artifacts.
+"""`/v2` lab artifact routes (#62, #95): start, read, reset, stop and check labs.
 
 The wired :class:`LabArtifactService` is built once and cached on
 `app.state.artifact_lab` (tests set it there first): the Docker lab runtime,
 its PTY bridge and the DNS domain adapter. Artifact specs come from the shared
-`PackV2Dep`; the user and event id from `UserIdDep` / `EventIdDep`. A background
-task started with the app stops labs idle past their spec's `idle_seconds`.
+`PackV2Dep`; the learner from `UserIdDep` (never from the request: auth later
+swaps what that dependency returns), the event id from `EventIdDep`.
+
+Each request runs on its own `EventTransactionV2Dep`: the ws is resolved through
+the ``ws`` view on it (`ws_or_404`, 404 unless it is this learner's) and the
+service reads and appends on the same connection (#103). A background task
+started with the app stops labs idle past their spec's `idle_seconds`; it is
+idempotent, so several API workers may run it (`LabArtifactService.reap_idle`).
 """
 
 from __future__ import annotations
@@ -20,12 +26,23 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.requests import HTTPConnection
 
-from harness.api.problems import problem
-from harness.api.v2.deps import EventIdDep, PackV2Dep, UserIdDep, build_event_store_v2
-from harness.core.artifact_lab import ArtifactError, LabArtifactService
-from harness.core.domain_adapter import DomainAdapterRegistry
-from harness.core.pack.v2 import PackV2
-from harness.core.ports.json_types import JsonObject, to_plain_json
+from harness.sdk import (
+    DockerLabRuntime,
+    DockerTerminalBridge,
+    DomainAdapterRegistry,
+    EventIdDep,
+    EventTransactionV2,
+    EventTransactionV2Dep,
+    JsonObject,
+    PackV2,
+    PackV2Dep,
+    UserIdDep,
+    build_event_store_v2,
+    problem,
+    to_plain_json,
+    ws_or_404,
+)
+from swe.artifacts.lab.service import ArtifactError, LabArtifactService
 
 REAP_INTERVAL_SECONDS = 30.0
 
@@ -41,9 +58,7 @@ def build_artifact_service(app: Any) -> LabArtifactService:
     """The real service; raises when Docker or the database cannot be reached."""
     import docker  # noqa: PLC0415 - only a real service needs the daemon
 
-    import domains.dns  # noqa: PLC0415
-    from harness.adapters.docker_lab import DockerLabRuntime  # noqa: PLC0415
-    from harness.adapters.pty import DockerTerminalBridge  # noqa: PLC0415
+    import domains.dns  # noqa: PLC0415 - SWE's domain adapter; moves here with #69
 
     adapters = DomainAdapterRegistry()
     adapters.register(domains.dns.adapter())
@@ -112,6 +127,13 @@ def _run(
     return JSONResponse(to_plain_json(result), status_code=status_code)
 
 
+def _session_of(tx: EventTransactionV2, ws_id: str, user_id: str) -> str | None:
+    """The ws's session; 404 unless the ws is this learner's. Always runs first,
+    resend or not: the learner's ws is the boundary, not the event id."""
+    session_id = ws_or_404(tx, ws_id, user_id=user_id)["session_id"]
+    return None if session_id is None else str(session_id)
+
+
 @router.post("/ws/{ws_id}/artifacts", status_code=201)
 def start_artifact(
     request: Request,
@@ -120,12 +142,20 @@ def start_artifact(
     pack: PackV2Dep,
     user_id: UserIdDep,
     event_id: EventIdDep,
+    tx: EventTransactionV2Dep,
 ) -> JSONResponse:
     specs = lab_specs(pack)
+    session_id = _session_of(tx, ws_id, user_id)
     return _run(
         request,
         lambda s: s.start(
-            specs, user_id=user_id, ws_id=ws_id, spec_id=body.spec_id, event_id=event_id
+            tx,
+            specs,
+            user_id=user_id,
+            session_id=session_id,
+            ws_id=ws_id,
+            spec_id=body.spec_id,
+            event_id=event_id,
         ),
         201,
     )
@@ -133,9 +163,9 @@ def start_artifact(
 
 @router.get("/ws/{ws_id}/artifacts/{artifact_id}")
 def get_artifact(
-    request: Request, ws_id: str, artifact_id: str, user_id: UserIdDep
+    request: Request, ws_id: str, artifact_id: str, user_id: UserIdDep, tx: EventTransactionV2Dep
 ) -> JSONResponse:
-    return _run(request, lambda s: s.get(artifact_id, user_id=user_id, ws_id=ws_id))
+    return _run(request, lambda s: s.get(tx, artifact_id, user_id=user_id, ws_id=ws_id))
 
 
 @router.post("/ws/{ws_id}/artifacts/{artifact_id}/reset")
@@ -146,20 +176,27 @@ def reset_artifact(
     pack: PackV2Dep,
     user_id: UserIdDep,
     event_id: EventIdDep,
+    tx: EventTransactionV2Dep,
 ) -> JSONResponse:
     specs = lab_specs(pack)
     return _run(
         request,
-        lambda s: s.reset(specs, artifact_id, event_id=event_id, user_id=user_id, ws_id=ws_id),
+        lambda s: s.reset(tx, specs, artifact_id, event_id=event_id, user_id=user_id, ws_id=ws_id),
     )
 
 
 @router.post("/ws/{ws_id}/artifacts/{artifact_id}/stop")
 def stop_artifact(
-    request: Request, ws_id: str, artifact_id: str, user_id: UserIdDep, event_id: EventIdDep
+    request: Request,
+    ws_id: str,
+    artifact_id: str,
+    user_id: UserIdDep,
+    event_id: EventIdDep,
+    tx: EventTransactionV2Dep,
 ) -> JSONResponse:
     return _run(
-        request, lambda s: s.stop(artifact_id, event_id=event_id, user_id=user_id, ws_id=ws_id)
+        request,
+        lambda s: s.stop(tx, artifact_id, event_id=event_id, user_id=user_id, ws_id=ws_id),
     )
 
 
@@ -172,11 +209,13 @@ def check_artifact(
     pack: PackV2Dep,
     user_id: UserIdDep,
     event_id: EventIdDep,
+    tx: EventTransactionV2Dep,
 ) -> JSONResponse:
     specs = lab_specs(pack)
     return _run(
         request,
         lambda s: s.check(
+            tx,
             specs,
             artifact_id,
             body.check_id,

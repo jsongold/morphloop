@@ -6,14 +6,16 @@
 # harness.testing.openapi_v2.load_merged_openapi_v2_spec (duplicate URLs
 # across files are a load-time error). See ../README.md.
 #
-# Artifact: observations. Base type for anything operable/displayable; core defines only the base type, subclasses (LabArtifact, DiagramArtifact) live in the domain adapter layer.
+# Artifact: the type-neutral base only. The SDK defines the base type; the
+# concrete types (lab, diagram, ...) and their state belong to the app built
+# on the SDK (ADR-0018 s19), so this document fixes the identity and status
+# fields and leaves type-specific state open (`additionalProperties: true`).
+# The SWE app's lab shape (`lab` object, `/check`) is apps/swe/swe/openapi/
+# artifact-lab.yaml; an app-specific operation is not declared here.
 #
-# Lab artifacts (#62). Every POST takes an optional `Idempotency-Key` (UUID) header:
-# it becomes the event id, and a resend returns the stored result. The terminal is a WebSocket at
-# `/artifacts/{artifact_id}/terminal` speaking contracts/schemas/websocket/
-# (lab.status, terminal.input/resize/output/exit, ping/pong, error); OpenAPI
-# has no WebSocket operation. Commands and output are recorded as
-# artifact.input / artifact.output events labelled io:command / io:output.
+# Every POST takes an optional `Idempotency-Key` (UUID) header: it becomes
+# the event id, and a resend by the same learner in the same ws returns the
+# stored result (another learner's key: 409 idempotency-key-reused).
 /ws/{ws_id}/artifacts:
   parameters:
     - &ws_id {name: ws_id, in: path, required: true, schema: {type: string, pattern: '^ws_[0-9A-Za-z]{1,64}$'}}
@@ -34,12 +36,12 @@
             additionalProperties: false
     responses:
       '201': &artifact
-        description: The artifact's current state.
+        description: The artifact's current state; type-specific state is app-owned.
         content:
           application/json:
             schema:
               type: object
-              required: [artifact_id, type, spec_id, user_id, session_id, ws_id, status, lab]
+              required: [artifact_id, type, spec_id, user_id, session_id, ws_id, status]
               properties:
                 artifact_id: {type: string, pattern: '^art_[0-9A-Za-z]{1,64}$'}
                 type: {type: string}
@@ -48,17 +50,7 @@
                 session_id: {type: [string, 'null']}
                 ws_id: {type: string}
                 status: {enum: [running, stopped]}
-                lab:
-                  description: The running lab of a `lab` artifact; `runtime_ref` is opaque.
-                  type: [object, 'null']
-                  required: [lab_instance_id, runtime_ref, image_digest, fixture_id]
-                  properties:
-                    lab_instance_id: {type: string}
-                    runtime_ref: {type: string}
-                    image_digest: {type: string}
-                    fixture_id: {type: string}
-                  additionalProperties: false
-              additionalProperties: false
+              additionalProperties: true
       default: &problem
         $ref: '../root.yaml#/components/responses/Problem'
 /ws/{ws_id}/artifacts/{artifact_id}:
@@ -76,7 +68,7 @@
     tags: [artifact]
     operationId: resetArtifact
     parameters: [*key]
-    summary: Replace the lab with a fresh one from the same spec (records artifact.reset).
+    summary: Replace the artifact's runtime state with a fresh one from the same spec (records artifact.reset).
     responses: {'200': *artifact, default: *problem}
 /ws/{ws_id}/artifacts/{artifact_id}/stop:
   parameters: *ids
@@ -84,39 +76,5 @@
     tags: [artifact]
     operationId: stopArtifact
     parameters: [*key]
-    summary: Stop the artifact and destroy its lab (records artifact.stopped).
-    description: A lab is also stopped when its ws has had no learner activity for the configured idle limit.
+    summary: Stop the artifact and release its runtime state (records artifact.stopped).
     responses: {'200': *artifact, default: *problem}
-/ws/{ws_id}/artifacts/{artifact_id}/check:
-  parameters: *ids
-  post:
-    tags: [artifact]
-    operationId: checkArtifact
-    parameters: [*key]
-    summary: Run one of the spec's allowed_checks against the lab (records artifact.checked).
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            type: object
-            required: [check_id]
-            properties:
-              check_id: {type: string, minLength: 1}
-              params: {type: object}
-            additionalProperties: false
-    responses:
-      '200':
-        description: The observation, as recorded in artifact.checked.
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [artifact_id, check_id, passed, observed]
-              properties:
-                artifact_id: {type: string}
-                check_id: {type: string}
-                passed: {type: boolean}
-                observed: {type: object}
-              additionalProperties: false
-      default: *problem

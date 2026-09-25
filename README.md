@@ -156,10 +156,21 @@ The wheel ships `contracts/` as package data (`harness/contracts/`), so
 `MORPHLOOP_CONTRACTS_DIR` still overrides it. Inside this repository the root
 `pyproject.toml` is a uv workspace whose members are `apps/*`: an app under
 `apps/<app>/` with its own `pyproject.toml` (depending on `morphloop`) and tests
-is picked up by `uv sync`, and later moves out to its own repository unchanged.
-The SDK's own tests use only the minimal fixture pack under
-`tests/contracts/fixtures/pack-v2/valid/dns-pack/`; a real pack and its tests
-belong to the app.
+is installed by `uv sync` (the root dev group depends on it), and later moves out
+to its own repository unchanged. The SDK's own tests use only the minimal fixture
+pack under `tests/contracts/fixtures/pack-v2/valid/dns-pack/` with test-only stub
+types; a real pack and its tests belong to the app.
+
+The first app is `apps/swe/` (package `swe`): the `lab` and `diagram` artifact
+types with their routes, the SE pack under `apps/swe/pack/`, and
+`swe.app.create_swe_app`, which `docker compose` serves. Its tests are a separate
+run, since the SDK tests register stand-ins under the same type names:
+
+```sh
+uv run pytest -q                  # SDK
+uv run pytest -q apps/swe/tests   # the app (apps/swe/pyproject.toml configures it)
+uv run mypy harness domains apps && uv run lint-imports   # `swe` imports harness.sdk only
+```
 
 An app imports `harness.sdk` only:
 
@@ -181,8 +192,12 @@ app = create_app(extensions=[AppExtension(routers=(router,), artifact_types=(Lab
 
 Routers mount under `/v2`. The pack importer accepts only the registered types and
 validates every artifact `spec` with the type's schema and validator; a pack that
-names another type is refused. `harness must not import apps` is enforced by
-`lint-imports`.
+names another type is refused. `harness must not import apps` and `swe imports
+harness.sdk only` are enforced by `lint-imports`. `harness.sdk` also exports what
+an artifact type with routes needs (the v2 event store Port and value types, the
+`View` base, the `/v2` request dependencies, `problem()`, the lab and terminal
+Ports with their Docker adapters, the domain adapter registry); test support
+(fakes, the in-memory store, contract validation) is `harness.testing`.
 
 ## Core idea
 
