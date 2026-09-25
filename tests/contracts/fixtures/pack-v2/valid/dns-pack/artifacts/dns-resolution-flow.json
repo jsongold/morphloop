@@ -3,7 +3,31 @@
   "type": "diagram",
   "labels": ["topic:network.dns.resolution"],
   "spec": {
-    "actors": ["client", "resolver", "nameserver"],
-    "steps": [{ "from": "client", "to": "resolver", "label": "query api.internal" }]
+    "title": "How api.internal becomes an address",
+    "diagram": {
+      "type": "sequence",
+      "actors": [
+        { "id": "client", "label": "Client" },
+        { "id": "resolver", "label": "Stub resolver" },
+        { "id": "nameserver", "label": "Nameserver" }
+      ],
+      "steps": [
+        {
+          "id": "query",
+          "from": "client",
+          "to": "resolver",
+          "label": "query api.internal",
+          "reality": {
+            "mechanism": "The client calls getaddrinfo(), which the stub resolver handles.",
+            "observe": [
+              {
+                "argv": ["getent", "hosts", "api.internal"],
+                "purpose": "Run the same lookup the client performs."
+              }
+            ]
+          }
+        }
+      ]
+    }
   }
 }
