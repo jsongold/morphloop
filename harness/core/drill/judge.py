@@ -108,11 +108,21 @@ def discloses_expected(expected: str, descriptions: Sequence[str]) -> bool:
 
 
 def artifact_evidence(
-    events: Sequence[StoredEventV2], *, answer: StoredEventV2, spec_id: str | None
+    events: Sequence[StoredEventV2],
+    *,
+    answer: StoredEventV2,
+    spec_id: str | None,
+    required: Sequence[str] = (),
 ) -> list[dict[str, object]]:
     """The check facts the judge may see for an artifact answer: the latest result
-    of each check on the answer's artifact, made after its last reset and before
-    the answer, and only if that artifact was started from the item's own spec.
+    of each check on the answer's artifact, made after its last reset or learner
+    command and before the answer, and only if that artifact was started from the
+    item's own spec.
+
+    A check that predates the last ``artifact.input`` (a learner command that may
+    have changed the lab) is stale and does not count (#124 review). Every
+    ``required`` check must have a current result, so a subset of checks cannot
+    stand in for the item's full check set.
     """
     artifact_id = answer.payload.get("artifact_id")
     own = [
@@ -125,10 +135,12 @@ def artifact_evidence(
     ]
     if not any(e.type == "artifact.started" and e.payload.get("spec_id") == spec_id for e in own):
         raise DrillJudgeError("the artifact was not started from the item's artifact_ref")
-    since = max((e.position for e in own if e.type == "artifact.reset"), default=0)
+    fresh_after = max(
+        (e.position for e in own if e.type in {"artifact.reset", "artifact.input"}), default=0
+    )
     latest: dict[str, dict[str, object]] = {}
     for e in own:
-        if e.type == "artifact.checked" and e.position > since:
+        if e.type == "artifact.checked" and e.position > fresh_after:
             latest[str(e.payload["check_id"])] = {
                 "check_id": e.payload["check_id"],
                 "passed": e.payload["passed"],
@@ -136,6 +148,11 @@ def artifact_evidence(
             }
     if not latest:
         raise DrillJudgeError("no artifact.checked facts for this answer")
+    not_run = sorted(set(required) - set(latest))
+    if not_run:
+        raise DrillJudgeError(
+            f"artifact checks not run since the last lab change: {', '.join(not_run)}"
+        )
     return list(latest.values())
 
 
@@ -172,6 +189,7 @@ def save_judge_inputs(
                 "labels": list(item.labels),
                 "choices": list(item.choices) if item.choices is not None else None,
                 "artifact_ref": item.artifact_ref,
+                "required_checks": list(item.required_checks),
             },
             "pack": {
                 "pack_id": pack.pack_id,
@@ -192,6 +210,7 @@ def load_judge_inputs(tx: EventTransactionV2, answer_id: str) -> tuple[DrillItem
     raw_item = cast(JsonObject, doc["item"])
     raw_pack = cast(JsonObject, doc["pack"])
     choices = raw_item["choices"]
+    required = raw_item.get("required_checks")
     item = DrillItem(
         id=str(raw_item["id"]),
         question=str(raw_item["question"]),
@@ -202,6 +221,9 @@ def load_judge_inputs(tx: EventTransactionV2, answer_id: str) -> tuple[DrillItem
         artifact_ref=str(raw_item["artifact_ref"])
         if raw_item["artifact_ref"] is not None
         else None,
+        required_checks=tuple(cast(Sequence[str], required))
+        if isinstance(required, Sequence)
+        else (),
     )
     pack = JudgePack(
         pack_id=str(raw_pack["pack_id"]),
@@ -260,7 +282,10 @@ def compute_gap(
         context["actual"] = actual
     else:
         artifact_checks = artifact_evidence(
-            artifact_events, answer=answer, spec_id=item.artifact_ref
+            artifact_events,
+            answer=answer,
+            spec_id=item.artifact_ref,
+            required=item.required_checks,
         )
         context["artifact_checks"] = artifact_checks
     try:

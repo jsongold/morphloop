@@ -16,7 +16,9 @@ from harness.core.drill.judge import (
     compute_gap,
     discloses_expected,
     judgment_id_of,
+    load_judge_inputs,
     record_judgment,
+    save_judge_inputs,
     stored_judgment,
 )
 from harness.core.drill.store import pack_items
@@ -76,9 +78,22 @@ def _artifact_event(
     )
 
 
-def _check(position: int, check_id: str = "dns.check", passed: bool = False) -> StoredEventV2:
+def _check(
+    position: int, check_id: str = "dns.name_resolves", passed: bool = False
+) -> StoredEventV2:
     return _artifact_event(
         "artifact.checked", position, check_id=check_id, passed=passed, observed={"p": position}
+    )
+
+
+def _command(position: int) -> StoredEventV2:
+    return _artifact_event(
+        "artifact.input",
+        position,
+        labels=["io:command"],
+        sequence=0,
+        data="rm -f x",
+        encoding="utf-8",
     )
 
 
@@ -181,9 +196,23 @@ def test_artifact_gap_uses_only_prior_matching_check_facts() -> None:
         _judge(item, answer, llm, artifact_events=[_check(2)])
     with pytest.raises(DrillJudgeError, match="no artifact.checked"):
         _judge(item, answer, llm, artifact_events=[STARTED])
-    _judge(item, answer, llm, artifact_events=[STARTED, _check(2, passed=True), _check(9)])
+    _judge(
+        item,
+        answer,
+        llm,
+        artifact_events=[
+            STARTED,
+            _check(2, "dns.name_resolves", passed=True),
+            _check(3, "dns.command_exit", passed=True),
+            _check(9, "dns.name_resolves", passed=True),  # after the answer
+        ],
+    )
     assert llm.request is not None
-    assert '"observed": {"p": 2}' in llm.request.messages[1].content
+    sent = json.loads(llm.request.messages[1].content)["artifact_checks"]
+    assert {c["check_id"]: c["observed"] for c in sent} == {
+        "dns.name_resolves": {"p": 2},
+        "dns.command_exit": {"p": 3},
+    }
     assert '"p": 9' not in llm.request.messages[1].content  # after the answer
 
 
@@ -218,11 +247,21 @@ def test_artifact_checks_before_a_reset_are_dropped_and_latest_per_check_wins() 
         item,
         answer,
         llm,
-        artifact_events=[STARTED, _check(2, passed=True), reset, _check(4), _check(5, passed=True)],
+        artifact_events=[
+            STARTED,
+            _check(2, "dns.name_resolves", passed=True),
+            reset,
+            _check(4, "dns.name_resolves"),
+            _check(5, "dns.name_resolves", passed=True),
+            _check(6, "dns.command_exit", passed=True),
+        ],
     )
     assert llm.request is not None
     sent = json.loads(llm.request.messages[1].content)["artifact_checks"]
-    assert sent == [{"check_id": "dns.check", "passed": True, "observed": {"p": 5}}]
+    assert sent == [
+        {"check_id": "dns.name_resolves", "passed": True, "observed": {"p": 5}},
+        {"check_id": "dns.command_exit", "passed": True, "observed": {"p": 6}},
+    ]
 
 
 def test_artifact_gap_cannot_be_empty_when_a_check_failed() -> None:
@@ -231,7 +270,11 @@ def test_artifact_gap_cannot_be_empty_when_a_check_failed() -> None:
     pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
     item = next(i for i in pack_items(pack) if i.id == "dns-fix-resolver-lab")
     answer = _event(item.id, "artifact", position=5, artifact_id="art_1")
-    events = [STARTED, _check(2)]
+    events = [
+        STARTED,
+        _check(2, "dns.name_resolves"),
+        _check(3, "dns.command_exit", passed=True),
+    ]
     with pytest.raises(DrillJudgeError, match="cannot be empty"):
         _judge(item, answer, FakeLLM({"missing": []}), artifact_events=events)
     gap, _ = _judge(
@@ -251,8 +294,62 @@ def test_artifact_gap_cannot_be_empty_when_a_check_failed() -> None:
         item,
         answer,
         FakeLLM({"missing": []}),
-        artifact_events=[STARTED, _check(2, passed=True)],
+        artifact_events=[
+            STARTED,
+            _check(2, "dns.name_resolves", passed=True),
+            _check(3, "dns.command_exit", passed=True),
+        ],
     )
+
+
+def test_judge_inputs_snapshot_carries_the_items_required_checks() -> None:
+    # #124 review: the retry path judges from the snapshot, so the item's check
+    # set must be persisted with it or the full-set rule is lost.
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    item = next(i for i in pack_items(pack) if i.id == "dns-fix-resolver-lab")
+    answer = _event(item.id, "artifact", position=5, artifact_id="art_1")
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    with store.transaction() as tx:
+        save_judge_inputs(tx, answer, item, pack)
+        loaded = load_judge_inputs(tx, answer.id)
+    assert loaded is not None
+    assert loaded[0].required_checks == ("dns.name_resolves", "dns.command_exit")
+
+
+def test_artifact_judgment_requires_every_check_the_item_expects() -> None:
+    # #124 review: an item's artifact declares all its checks; submitting with
+    # only some of them leaves the rest unverified and must not be judged.
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    item = next(i for i in pack_items(pack) if i.id == "dns-fix-resolver-lab")
+    answer = _event(item.id, "artifact", position=5, artifact_id="art_1")
+    events = [STARTED, _check(2, "dns.name_resolves", passed=True)]
+    with pytest.raises(
+        DrillJudgeError, match="not run since the last lab change: dns.command_exit"
+    ):
+        _judge(item, answer, FakeLLM({"missing": []}), artifact_events=events)
+
+
+def test_artifact_checks_after_the_last_learner_command_are_the_only_ones_trusted() -> None:
+    # #124 review: a check run before the learner's last command may describe a
+    # lab that command changed, so it does not count and submission is rejected.
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    item = next(i for i in pack_items(pack) if i.id == "dns-fix-resolver-lab")
+    answer = _event(item.id, "artifact", position=9, artifact_id="art_1")
+    stale = [
+        STARTED,
+        _check(2, "dns.name_resolves", passed=True),
+        _check(3, "dns.command_exit", passed=True),
+        _command(4),
+    ]
+    with pytest.raises(DrillJudgeError, match="no artifact.checked"):
+        _judge(item, answer, FakeLLM({"missing": []}), artifact_events=stale)
+    fresh = [
+        STARTED,
+        _command(2),
+        _check(3, "dns.name_resolves", passed=True),
+        _check(4, "dns.command_exit", passed=True),
+    ]
+    _judge(item, answer, FakeLLM({"missing": []}), artifact_events=fresh)
 
 
 def test_gap_labels_must_belong_to_the_answered_item() -> None:

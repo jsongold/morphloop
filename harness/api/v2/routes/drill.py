@@ -48,7 +48,12 @@ router = APIRouter(tags=["drill"])
 
 
 def drill_service_of(pack: PackV2Dep, generated: GeneratedDocumentsDep) -> DrillService:
-    return DrillService([*pack_items(pack), *generated_items(generated.list("drill"))])
+    return DrillService(
+        [
+            *pack_items(pack),
+            *generated_items(generated.list("drill"), generated.list("artifact")),
+        ]
+    )
 
 
 DrillServiceDep = Annotated[DrillService, Depends(drill_service_of)]

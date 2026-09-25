@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import cast
 
 from harness.core.drill.model import ANSWERED, DrillItem
@@ -20,19 +20,49 @@ from harness.core.ports.json_types import JsonObject
 from harness.core.view import View
 
 
+def _artifact_checks(specs: Iterable[Mapping[str, object]]) -> dict[str, tuple[str, ...]]:
+    """``artifact id -> spec.allowed_checks``, the checks an item must have run (#124)."""
+    out: dict[str, tuple[str, ...]] = {}
+    for spec in specs:
+        body = spec.get("spec")
+        if not isinstance(body, Mapping):
+            continue
+        checks = body.get("allowed_checks")
+        if isinstance(checks, Sequence) and not isinstance(checks, str | bytes):
+            out[str(spec.get("id"))] = tuple(str(check) for check in checks)
+    return out
+
+
+def _required(doc: JsonObject, specs: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
+    return specs.get(str(doc.get("artifact_ref")), ())
+
+
 def pack_items(pack: PackV2) -> list[DrillItem]:
     """Every drill item bundled in ``pack``, in file path order."""
+    required = _artifact_checks(pack.documents.get("artifacts", {}).values())
     drills = pack.documents.get("drills", {})
-    return [DrillItem.from_document(drills[path], origin="pack") for path in sorted(drills)]
+    return [
+        DrillItem.from_document(
+            drills[path], origin="pack", required_checks=_required(drills[path], required)
+        )
+        for path in sorted(drills)
+    ]
 
 
-def generated_items(documents: Iterable[GeneratedDocument]) -> list[DrillItem]:
+def generated_items(
+    documents: Iterable[GeneratedDocument], artifacts: Iterable[GeneratedDocument] = ()
+) -> list[DrillItem]:
     """Generated items (``resource = 'drill'``, drill-item shaped bodies).
 
+    ``artifacts`` are the generated artifact specs an ``artifact`` item may
+    reference; their ``allowed_checks`` become the item's required checks (#124).
     One labelled ``sys:holdout`` is never served: holdout is pack-only.
     """
+    required = _artifact_checks(artifact.body for artifact in artifacts)
     return [
-        DrillItem.from_document(doc.body, origin="generated")
+        DrillItem.from_document(
+            doc.body, origin="generated", required_checks=_required(doc.body, required)
+        )
         for doc in documents
         if HOLDOUT not in (*doc.labels, *cast(Sequence[str], doc.body.get("labels", ())))
     ]

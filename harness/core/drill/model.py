@@ -32,9 +32,18 @@ class DrillItem:
     labels: tuple[str, ...]
     choices: tuple[str, ...] | None = None
     artifact_ref: str | None = None
+    required_checks: tuple[str, ...] = ()
+    """The artifact spec's ``allowed_checks`` for an ``artifact`` item: every one
+    must have a current result before the judge accepts the answer (#124)."""
 
     @classmethod
-    def from_document(cls, doc: JsonObject, *, origin: Origin) -> DrillItem:
+    def from_document(
+        cls,
+        doc: JsonObject,
+        *,
+        origin: Origin,
+        required_checks: Sequence[str] = (),
+    ) -> DrillItem:
         """Build from a schema-valid drill-item document."""
         labels = doc["labels"]
         choices = doc.get("choices")
@@ -48,6 +57,7 @@ class DrillItem:
             labels=(*(str(label) for label in labels), f"origin:{origin}"),
             choices=tuple(str(c) for c in choices) if isinstance(choices, Sequence) else None,
             artifact_ref=None if artifact_ref is None else str(artifact_ref),
+            required_checks=tuple(required_checks),
         )
 
     def for_learner(self) -> dict[str, PlainJson]:
