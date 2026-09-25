@@ -94,7 +94,22 @@ def _minimal_instance(schema: dict[str, Any], *, index: int = 0) -> PlainJson:
         return schema["enum"][0]  # type: ignore[no-any-return]
     for combinator in ("anyOf", "oneOf"):
         if combinator in schema:
-            return _minimal_instance(schema[combinator][0], index=index)
+            branches = schema[combinator]
+            # Prefer a null branch: null is the minimal instance of an optional
+            # value. Choosing a non-null branch instead makes the generator's
+            # drill output carry a lab candidate whose item's `answer_mode`
+            # (minimized to its first enum value, 'text') does not match, so the
+            # runtime rejects the pair.
+            null_branch = next(
+                (
+                    branch
+                    for branch in branches
+                    if branch.get("type") == "null"
+                    or (isinstance(branch.get("type"), list) and "null" in branch["type"])
+                ),
+                branches[0],
+            )
+            return _minimal_instance(null_branch, index=index)
 
     kind = schema.get("type")
     if isinstance(kind, list):

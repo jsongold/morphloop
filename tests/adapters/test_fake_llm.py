@@ -94,6 +94,45 @@ def test_complete_with_tools_returns_text_and_no_tool_calls() -> None:
     assert response.provenance.provider == "fake"
 
 
-def test_minimal_instance_picks_the_first_anyof_branch() -> None:
+def test_minimal_instance_prefers_a_null_anyof_branch() -> None:
     schema = {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]}
+    assert _minimal_instance(schema) is None
+
+
+def test_minimal_instance_falls_back_to_the_first_anyof_branch() -> None:
+    schema = {"anyOf": [{"type": "string", "minLength": 1}, {"type": "integer"}]}
     assert _minimal_instance(schema) == "fake"
+
+
+def test_drill_output_gets_a_null_lab(schemas: ContractSchemas) -> None:
+    # The generator's drill output schema (PreGenerator.output_schema) makes `lab`
+    # a required-but-nullable candidate. The minimal instance must take the null
+    # branch: a synthesized lab candidate comes with an item whose `answer_mode`
+    # is 'text', which the runtime rejects ("a lab variant needs an 'artifact'
+    # item"), so fake-backed drill generation would never complete.
+    schema = {
+        "type": "object",
+        "required": ["item", "lab"],
+        "properties": {
+            "item": schemas.bundle(ContractSchemas.id_for("schemas/pack/v2/drill-item.json")),
+            "lab": {
+                "anyOf": [
+                    schemas.bundle(
+                        ContractSchemas.id_for("schemas/llm/generator.activity_candidate/1.json")
+                    ),
+                    {"type": "null"},
+                ]
+            },
+        },
+        "additionalProperties": False,
+    }
+    request = LLMRequest(
+        role="generator",
+        llm=PROVENANCE,
+        messages=(LLMMessage(role="user", content="go"),),
+        output_schema_id="urn:test",
+        output_schema=schema,
+    )
+    response = FakeDevLLMProvider().complete_structured(request)
+    jsonschema.Draft202012Validator(schema).validate(response.output)
+    assert response.output["lab"] is None
