@@ -5,14 +5,21 @@
 ``GET /v2/ws/{ws_id}/highlights`` -> ``HighlightView`` (current highlights only).
 
 Request bodies mirror the payload contract's shape constraints (length,
-pattern, required fields) in the pydantic model, so a malformed request is a
-422 and never reaches ``tx.append`` (common rule, issue #34). The one
-constraint JSON Schema cannot express -- a ``TextPositionSelector``'s
+pattern, required fields, strict types) in the pydantic model, so a malformed
+request is a 422 and never reaches ``tx.append`` (common rule, issue #34/#92).
+The one constraint JSON Schema cannot express -- a ``TextPositionSelector``'s
 ``start < end`` -- is checked by :mod:`harness.core.highlight.anchor` from a
 pydantic validator, so it is also a 422 raised here, not a stored event that
-silently violates the invariant. Everything else (labels vocabulary, the
-event append, the view read) is :mod:`harness.core.highlight.service`; this
-module does request/response shape and dependency wiring only.
+silently violates the invariant. Everything else (labels vocabulary,
+idempotent replay, the event append, the view read) is
+:mod:`harness.core.highlight.service`; this module does request/response
+shape and dependency wiring only.
+
+Responses strip the view's internal ``removed``/``position`` fields (see
+:func:`_public`): the ``Highlight`` contract schema forbids additional
+properties, and both endpoints here only ever return active highlights, so
+``removed`` would always read ``false`` -- dead weight on the wire, not
+information (issue #60 review).
 """
 
 from __future__ import annotations
@@ -21,10 +28,11 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, StrictInt, model_validator
 
 from harness.api.problems import problem
 from harness.api.v2.deps import EventIdDep, EventTransactionV2Dep, PackV2Dep, UserIdDep
+from harness.api.v2.models import Text, V2Model
 from harness.core.highlight.anchor import check_text_position
 from harness.core.highlight.service import (
     HighlightNotFoundError,
@@ -46,33 +54,38 @@ _DEFINITION_ID_PATTERN = r"^[a-z0-9][a-z0-9._-]{0,127}$"  # common/ids.json#/$de
 WsIdPath = Annotated[str, Path(pattern=_WS_ID_PATTERN)]
 HighlightIdPath = Annotated[str, Path(pattern=_HIGHLIGHT_ID_PATTERN)]
 
+# Fields the view stores for its own bookkeeping but the Highlight contract
+# schema does not declare (additionalProperties: false) -- stripped by
+# _public() before a doc leaves this module (issue #60 review).
+_INTERNAL_VIEW_FIELDS = frozenset({"removed", "position"})
 
-class _Body(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+
+def _public(doc: JsonObject) -> JsonObject:
+    return {key: value for key, value in doc.items() if key not in _INTERNAL_VIEW_FIELDS}
 
 
-class TextQuoteSelectorIn(_Body):
+class TextQuoteSelectorIn(V2Model):
     """``components/highlight.yaml#/TextQuoteSelector``."""
 
     type: Literal["TextQuoteSelector"]
-    exact: str = Field(min_length=1)
-    prefix: str | None = None
-    suffix: str | None = None
+    exact: Annotated[Text, Field(min_length=1)]
+    prefix: Text | None = None
+    suffix: Text | None = None
 
 
-class TextPositionSelectorIn(_Body):
+class TextPositionSelectorIn(V2Model):
     """``components/highlight.yaml#/TextPositionSelector``."""
 
     type: Literal["TextPositionSelector"]
-    start: int = Field(ge=0)
-    end: int = Field(ge=0)
+    start: Annotated[StrictInt, Field(ge=0)]
+    end: Annotated[StrictInt, Field(ge=0)]
 
 
-class AnchorIn(_Body):
+class AnchorIn(V2Model):
     """``components/highlight.yaml#/HighlightAnchor``. v0.2.0: one block only."""
 
-    doc_id: str = Field(pattern=_DEFINITION_ID_PATTERN)
-    block_id: str = Field(pattern=_DEFINITION_ID_PATTERN)
+    doc_id: Annotated[Text, Field(pattern=_DEFINITION_ID_PATTERN)]
+    block_id: Annotated[Text, Field(pattern=_DEFINITION_ID_PATTERN)]
     selector: tuple[TextQuoteSelectorIn, TextPositionSelectorIn]
 
     @model_validator(mode="after")
@@ -91,11 +104,11 @@ class AnchorIn(_Body):
         return anchor
 
 
-class HighlightCreateRequest(_Body):
+class HighlightCreateRequest(V2Model):
     """``components/highlight.yaml#/HighlightCreateRequest``."""
 
     anchor: AnchorIn
-    labels: list[str] = Field(default_factory=list)
+    labels: list[Text] = Field(default_factory=list)
 
 
 def _label_problem(exc: LabelError) -> JSONResponse:
@@ -132,12 +145,12 @@ def create(
         )
     except LabelError as exc:
         return _label_problem(exc)
-    return JSONResponse(dict(doc), status_code=201)
+    return JSONResponse(dict(_public(doc)), status_code=201)
 
 
 @router.get("", response_model=None)
 def list_(ws_id: WsIdPath, tx: EventTransactionV2Dep) -> dict[str, list[JsonObject]]:
-    return {"highlights": list_highlights(tx, ws_id)}
+    return {"highlights": [_public(doc) for doc in list_highlights(tx, ws_id)]}
 
 
 @router.delete("/{highlight_id}", status_code=204, response_model=None)

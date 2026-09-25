@@ -10,7 +10,7 @@ so ``highlight.removed`` is a tombstone: the document is overwritten with
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, cast
 
 from harness.core.ports.events_v2 import StoredEventV2, ViewDocumentStore
 from harness.core.ports.json_types import JsonObject, JsonValue, format_timestamp
@@ -42,6 +42,10 @@ class HighlightView(View):
                 "created_event_id": event.id,
                 "created_at": format_timestamp(event.created_at),
                 "removed": False,
+                # Internal only (stripped before the wire, common rule): the
+                # highlight_id key is a uuid-derived id, not creation order,
+                # so list() sorts by this instead (issue #60 review).
+                "position": event.position,
             }
         else:
             doc = {"highlight_id": highlight_id, "ws_id": event.ws_id, "removed": True}
@@ -49,6 +53,8 @@ class HighlightView(View):
 
 
 def active_highlights(tx: ViewDocumentStore, ws_id: str) -> list[JsonObject]:
-    """Current (non-removed) highlights of ``ws_id``, in key (id) order."""
+    """Current (non-removed) highlights of ``ws_id``, in creation order (the
+    creating event's ``position`` -- never the highlight_id/uuid key order)."""
     prefix = f"{ws_id}:"
-    return [doc for _, doc in HighlightView.list(tx, key_prefix=prefix) if not doc.get("removed")]
+    docs = [doc for _, doc in HighlightView.list(tx, key_prefix=prefix) if not doc.get("removed")]
+    return sorted(docs, key=lambda doc: cast(int, doc["position"]))

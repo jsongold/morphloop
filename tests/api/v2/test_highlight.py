@@ -8,14 +8,38 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT202012
 
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
 from harness.api.v2.deps import event_store_v2_of, pack_v2_of
 from harness.core.pack.v2.importer import import_pack_v2
 from harness.testing.fakes_v2 import InMemoryEventStoreV2, contract_schemas_with_probe
+from harness.testing.openapi_v2 import load_merged_openapi_v2_spec
+
+PATHS = load_merged_openapi_v2_spec()["paths"]
+
+
+def _retrieve_component_file(uri: str) -> Resource[Any]:
+    # `load_merged_openapi_v2_spec` rewrites relative $refs (e.g.
+    # `../components/highlight.yaml#/Highlight`) into absolute `file://` URIs;
+    # resolve those on demand from disk instead of duplicating the schemas.
+    path = Path(uri.removeprefix("file://"))
+    return DRAFT202012.create_resource(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+_REGISTRY: Registry[Any] = Registry(retrieve=_retrieve_component_file)
+
+
+def _check(body: Any, url: str, method: str, status: str) -> None:
+    schema = PATHS[url][method]["responses"][status]["content"]["application/json"]["schema"]
+    Draft202012Validator(schema, registry=_REGISTRY).validate(body)
+
 
 PACK_DIR = Path(__file__).parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
 
@@ -58,14 +82,17 @@ def test_create_list_remove_flow(client: TestClient) -> None:
     )
     assert created.status_code == 201, created.text
     body = created.json()
+    _check(body, "/ws/{ws_id}/highlights", "post", "201")
     assert body["ws_id"] == WS_ID
     assert body["anchor"] == _anchor()
     assert body["labels"] == ["concept"]
+    assert "removed" not in body
     highlight_id = body["highlight_id"]
     assert highlight_id.startswith("hl_")
 
     listed = client.get(f"/v2/ws/{WS_ID}/highlights")
     assert listed.status_code == 200
+    _check(listed.json(), "/ws/{ws_id}/highlights", "get", "200")
     assert listed.json() == {"highlights": [body]}
 
     removed = client.delete(f"/v2/ws/{WS_ID}/highlights/{highlight_id}")
@@ -128,3 +155,49 @@ def test_highlights_are_scoped_to_their_ws(client: TestClient) -> None:
     client.post("/v2/ws/ws_a/highlights", json={"anchor": _anchor()})
     other_ws = client.get("/v2/ws/ws_b/highlights")
     assert other_ws.json() == {"highlights": []}
+
+
+def test_create_resend_with_same_key_replays(client: TestClient) -> None:
+    headers = {"Idempotency-Key": "0190f5a2-7c3e-7d4b-8a1f-0000000000aa"}
+    first = client.post(
+        f"/v2/ws/{WS_ID}/highlights",
+        json={"anchor": _anchor(), "labels": ["concept"]},
+        headers=headers,
+    )
+    assert first.status_code == 201, first.text
+    second = client.post(
+        f"/v2/ws/{WS_ID}/highlights",
+        json={"anchor": _anchor(), "labels": ["concept"]},
+        headers=headers,
+    )
+    assert second.status_code == 201, second.text
+    assert second.json() == first.json()
+
+
+def test_create_resend_with_same_key_different_body_is_conflict(client: TestClient) -> None:
+    headers = {"Idempotency-Key": "0190f5a2-7c3e-7d4b-8a1f-0000000000ab"}
+    first = client.post(f"/v2/ws/{WS_ID}/highlights", json={"anchor": _anchor()}, headers=headers)
+    assert first.status_code == 201, first.text
+    second = client.post(
+        f"/v2/ws/{WS_ID}/highlights", json={"anchor": _anchor(start=1, end=6)}, headers=headers
+    )
+    assert second.status_code == 409, second.text
+    assert second.json()["code"] == "idempotency-key-reused"
+
+
+def test_remove_resend_with_same_key_replays_after_tombstone(client: TestClient) -> None:
+    created = client.post(f"/v2/ws/{WS_ID}/highlights", json={"anchor": _anchor()})
+    highlight_id = created.json()["highlight_id"]
+    headers = {"Idempotency-Key": "0190f5a2-7c3e-7d4b-8a1f-0000000000ac"}
+    first = client.delete(f"/v2/ws/{WS_ID}/highlights/{highlight_id}", headers=headers)
+    assert first.status_code == 204
+    second = client.delete(f"/v2/ws/{WS_ID}/highlights/{highlight_id}", headers=headers)
+    assert second.status_code == 204
+
+
+@pytest.mark.parametrize("bad_start", ["0", True])
+def test_create_rejects_non_strict_int_offsets(client: TestClient, bad_start: Any) -> None:
+    anchor = _anchor()
+    anchor["selector"][1]["start"] = bad_start
+    response = client.post(f"/v2/ws/{WS_ID}/highlights", json={"anchor": anchor})
+    assert response.status_code == 422, response.text

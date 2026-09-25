@@ -176,6 +176,92 @@ def test_remove_highlight_twice_is_not_found(schemas: ContractSchemas) -> None:
         )
 
 
+def test_create_highlight_replays_a_retried_post(schemas: ContractSchemas) -> None:
+    """Same Idempotency-Key + same body twice must return the same doc, not
+    conflict on a random highlight_id (issue #60 review)."""
+    store = InMemoryEventStoreV2(schemas)
+    event_id = "0190f5a2-7c3e-7d4b-8a1f-00000000000b"
+    kwargs: dict[str, object] = dict(
+        event_id=event_id,
+        user_id="usr_01",
+        ws_id=WS_ID,
+        anchor=_anchor(),
+        labels=["concept"],
+        label_vocabulary=VOCAB,
+        topic_ids=TOPIC_IDS,
+    )
+    with store.transaction() as tx:
+        first = create_highlight(tx, **kwargs)  # type: ignore[arg-type]
+    with store.transaction() as tx:
+        second = create_highlight(tx, **kwargs)  # type: ignore[arg-type]
+    assert first == second
+
+
+def test_remove_highlight_replays_a_retried_delete_after_tombstone(
+    schemas: ContractSchemas,
+) -> None:
+    """Same Idempotency-Key resend of a DELETE must succeed again even though
+    the highlight is now tombstoned (issue #60 review)."""
+    store = InMemoryEventStoreV2(schemas)
+    with store.transaction() as tx:
+        doc = create_highlight(
+            tx,
+            event_id="0190f5a2-7c3e-7d4b-8a1f-00000000000c",
+            user_id="usr_01",
+            ws_id=WS_ID,
+            anchor=_anchor(),
+            labels=[],
+            label_vocabulary=VOCAB,
+            topic_ids=TOPIC_IDS,
+        )
+    highlight_id = doc["highlight_id"]
+    assert isinstance(highlight_id, str)
+    remove_event_id = "0190f5a2-7c3e-7d4b-8a1f-00000000000d"
+    with store.transaction() as tx:
+        remove_highlight(
+            tx, event_id=remove_event_id, user_id="usr_01", ws_id=WS_ID, highlight_id=highlight_id
+        )
+    # Resend: must not raise, even though the highlight is now tombstoned.
+    with store.transaction() as tx:
+        remove_highlight(
+            tx, event_id=remove_event_id, user_id="usr_01", ws_id=WS_ID, highlight_id=highlight_id
+        )
+
+
+def test_active_highlights_are_in_creation_order(schemas: ContractSchemas) -> None:
+    """List order is the event's position, never the highlight_id (uuid) key
+    order (common rule, issue #87/#92)."""
+    store = InMemoryEventStoreV2(schemas)
+    # Chosen so the derived highlight_id keys sort in the OPPOSITE order from
+    # creation: first-created has the lexically largest id.
+    first_event_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    second_event_id = "00000000-0000-4000-8000-000000000000"
+    with store.transaction() as tx:
+        first = create_highlight(
+            tx,
+            event_id=first_event_id,
+            user_id="usr_01",
+            ws_id=WS_ID,
+            anchor=_anchor(),
+            labels=[],
+            label_vocabulary=VOCAB,
+            topic_ids=TOPIC_IDS,
+        )
+        second = create_highlight(
+            tx,
+            event_id=second_event_id,
+            user_id="usr_01",
+            ws_id=WS_ID,
+            anchor=_anchor(),
+            labels=[],
+            label_vocabulary=VOCAB,
+            topic_ids=TOPIC_IDS,
+        )
+    with store.transaction() as tx:
+        ids = [doc["highlight_id"] for doc in list_highlights(tx, WS_ID)]
+    assert ids == [first["highlight_id"], second["highlight_id"]]
+
+
 def test_active_highlights_scoped_by_ws_id(schemas: ContractSchemas) -> None:
     store = InMemoryEventStoreV2(schemas)
     with store.transaction() as tx:
