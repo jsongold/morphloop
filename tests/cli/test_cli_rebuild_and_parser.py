@@ -11,8 +11,12 @@ from typer.testing import CliRunner
 
 from harness.cli.main import app, main
 from harness.cli.rebuild import format_result, rebuild
+from harness.core.contract_schemas import ContractSchemas
 from harness.core.loop import LOOP_PROJECTIONS
+from harness.core.ports.events_v2 import EventV2
+from harness.core.view import dispatch, registered_views
 from harness.testing.fakes import InMemoryEventStore
+from harness.testing.fakes_v2 import InMemoryEventStoreV2
 
 runner = CliRunner()
 
@@ -40,6 +44,64 @@ def test_rebuild_does_not_touch_the_pack_projection() -> None:
 
     with store.transaction() as tx:
         assert tx.get_projection("pack", "software-engineering/0.1.0/sha256:0") == {"kept": True}
+
+
+def test_rebuild_restores_registered_v2_views_without_running_chat() -> None:
+    store_v2 = InMemoryEventStoreV2(ContractSchemas.load())
+    events = [
+        EventV2(
+            id="0190f5a2-7c3e-7d4b-8a1f-000000000001",
+            type="ws.created",
+            actor="learner",
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id="ws_01",
+            payload={"labels": ["origin:learner"]},
+        ),
+        EventV2(
+            id="0190f5a2-7c3e-7d4b-8a1f-000000000002",
+            type="thread.created",
+            actor="learner",
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id="ws_01",
+            payload={"thread_id": "thr_01"},
+        ),
+        EventV2(
+            id="0190f5a2-7c3e-7d4b-8a1f-000000000003",
+            type="chat.sent",
+            actor="learner",
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id="ws_01",
+            payload={
+                "thread_id": "thr_01",
+                "message_id": "msg_0190f5a27c3e7d4b8a1f000000000003",
+                "text": "hello",
+                "allow_writes": False,
+            },
+        ),
+        EventV2(
+            id="0190f5a2-7c3e-7d4b-8a1f-000000000004",
+            type="memo.appended",
+            actor="learner",
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id="ws_01",
+            payload={"entry_id": "ent_0190f5a27c3e7d4b8a1f000000000004", "body": "remember"},
+        ),
+    ]
+    with store_v2.transaction() as tx:
+        for event in events:
+            dispatch(tx.append(event).event, tx)
+        before = {name: view.list(tx) for name, view in registered_views().items()}
+        for name in registered_views():
+            tx.clear_view(name)
+
+    rebuild(InMemoryEventStore(), store_v2)
+
+    with store_v2.transaction() as tx:
+        assert {name: view.list(tx) for name, view in registered_views().items()} == before
 
 
 def _params(argv: list[str]) -> dict[str, object]:
