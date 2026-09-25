@@ -20,8 +20,9 @@ from harness.core.ports.llm import (
     LLMToolRequest,
     LLMToolResponse,
 )
+from harness.core.view import dispatch
 from harness.testing.contracts import CONTRACTS_DIR
-from harness.testing.fakes_v2 import InMemoryEventStoreV2
+from harness.testing.fakes_v2 import InMemoryEventStoreV2, seed_ws
 
 SESSION = "ses_1"
 WS = "ws_1"
@@ -82,11 +83,12 @@ def store_with_thread(
             encoding="utf-8",
         )
     store = InMemoryEventStoreV2(ContractSchemas(contracts))
+    seed_ws(store, WS, user_id=USER, session_id=SESSION)
     payload: dict[str, object] = {"thread_id": THREAD, "labels": list(labels)}
     if target is not None:
         payload["target"] = target
     with store.transaction() as tx:
-        tx.append(
+        result = tx.append(
             EventV2(
                 id=str(uuid.uuid4()),
                 type="thread.created",
@@ -97,4 +99,6 @@ def store_with_thread(
                 payload=payload,  # type: ignore[arg-type]
             )
         )
+        if result.created:
+            dispatch(result.event, tx)
     return store
