@@ -154,6 +154,25 @@ def test_unknown_spec_artifact_ws_and_user() -> None:
     assert _status(f, lambda tx: f.service.get(tx, artifact_id, user_id="usr_other")) == 404
 
 
+def test_list_is_type_neutral_ordered_and_scoped() -> None:
+    f = build()
+    first = start(f)
+    second = start(f)
+    with f.tx() as tx:
+        f.service.stop(tx, first, event_id=new_key(), user_id=USER_ID, ws_id=WS_ID)
+    with f.tx() as tx:
+        items = f.service.list_artifacts(tx, user_id=USER_ID, ws_id=WS_ID)
+    assert items == [
+        {"artifact_id": first, "type": "lab", "spec_id": SPEC_ID, "status": "stopped"},
+        {"artifact_id": second, "type": "lab", "spec_id": SPEC_ID, "status": "running"},
+    ]
+
+    with f.tx() as tx:
+        assert f.service.list_artifacts(tx, user_id=USER_ID, ws_id=WS_ID, spec_id="nope") == []
+        assert f.service.list_artifacts(tx, user_id="usr_other", ws_id=WS_ID) == []
+        assert f.service.list_artifacts(tx, user_id=USER_ID, ws_id="ws_other") == []
+
+
 def test_check_runs_only_allowed_checks_in_the_lab() -> None:
     f = build()
     artifact_id = start(f)
