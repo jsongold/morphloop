@@ -14,24 +14,20 @@ pack files, not from the event log (ADR-0015), so ``import`` rebuilds that one.
 
 from __future__ import annotations
 
-from harness.core.artifact_lab.lab import ArtifactView as _ArtifactView  # noqa: F401
-from harness.core.chat.view import ChatMessagesView as _ChatMessagesView  # noqa: F401
-from harness.core.chat.view import ChatThreadView as _ChatThreadView  # noqa: F401
-from harness.core.drill.store import DrillAnswersView as _DrillAnswersView  # noqa: F401
-from harness.core.highlight.view import HighlightView as _HighlightView  # noqa: F401
+from harness.api.v2.routes import discover_routers
 from harness.core.loop import LOOP_PROJECTIONS, rebuild_projections
-from harness.core.memo.entries import MemoEntries as _MemoEntries  # noqa: F401
 from harness.core.ports import EventStore
 from harness.core.ports.events_v2 import EventStoreV2
-from harness.core.session.model import SessionView as _SessionView  # noqa: F401
 from harness.core.view import registered_views
-from harness.core.ws.view import WsView as _WsView  # noqa: F401
 
 
 def rebuild(store: EventStore, store_v2: EventStoreV2 | None = None) -> int:
     """Rebuild v0.1 projections and, when supplied, every registered v0.2 view."""
     replayed = rebuild_projections(store)
     if store_v2 is not None:
+        # Importing the /v2 route modules registers every SDK view, exactly as
+        # the API does. Views an app registers are rebuilt by that app.
+        discover_routers()
         events = store_v2.read()
         with store_v2.transaction() as tx:
             for view in registered_views().values():
