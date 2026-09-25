@@ -6,8 +6,6 @@ from harness.core.drill.service import (
     DrillError,
     DrillItemNotFoundError,
     DrillService,
-    WsNotFoundError,
-    ws_session_id,
 )
 from harness.core.drill.store import (
     DrillAnswersView,
@@ -23,8 +21,6 @@ __all__ = [
     "DrillItem",
     "DrillItemNotFoundError",
     "DrillService",
-    "WsNotFoundError",
     "generated_items",
     "pack_items",
-    "ws_session_id",
 ]

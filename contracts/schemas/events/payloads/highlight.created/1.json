@@ -5,6 +5,7 @@
   "description": "The learner created a highlight anchored to a range of one textbook block's plaintext (a single block only in v0.2.0; the plaintext rule itself is the SDK-defined block plaintext, issue #55). The anchor selector follows the W3C Web Annotation Data Model (TextQuoteSelector + TextPositionSelector). This schema checks shape only: JSON Schema cannot compare start and end, so that (and any later match against the block's actual text) is checked by harness.core.highlight (issue #34/#60).",
   "x-envelope": 2,
   "x-actors": ["learner"],
+  "x-scope": ["session_id", "ws_id"],
   "type": "object",
   "required": ["highlight_id", "anchor"],
   "properties": {

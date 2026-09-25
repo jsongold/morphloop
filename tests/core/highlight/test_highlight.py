@@ -61,6 +61,7 @@ def test_create_highlight_stores_a_view_document(schemas: ContractSchemas) -> No
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-000000000001",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             anchor=_anchor(),
             labels=["concept"],
@@ -88,6 +89,7 @@ def test_create_highlight_rejects_a_label_outside_the_vocabulary(
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-000000000002",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             anchor=_anchor(),
             labels=["not-a-real-label"],
@@ -105,6 +107,7 @@ def test_remove_highlight_tombstones_it(schemas: ContractSchemas) -> None:
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-000000000003",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             anchor=_anchor(),
             labels=[],
@@ -119,6 +122,7 @@ def test_remove_highlight_tombstones_it(schemas: ContractSchemas) -> None:
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-000000000004",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             highlight_id=highlight_id,
         )
@@ -138,6 +142,7 @@ def test_remove_highlight_unknown_id_is_not_found(schemas: ContractSchemas) -> N
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-000000000005",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             highlight_id="hl_missing",
         )
@@ -150,6 +155,7 @@ def test_remove_highlight_twice_is_not_found(schemas: ContractSchemas) -> None:
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-000000000006",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             anchor=_anchor(),
             labels=[],
@@ -163,6 +169,7 @@ def test_remove_highlight_twice_is_not_found(schemas: ContractSchemas) -> None:
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-000000000009",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             highlight_id=highlight_id,
         )
@@ -171,6 +178,7 @@ def test_remove_highlight_twice_is_not_found(schemas: ContractSchemas) -> None:
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-00000000000a",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             highlight_id=highlight_id,
         )
@@ -184,6 +192,7 @@ def test_create_highlight_replays_a_retried_post(schemas: ContractSchemas) -> No
     kwargs: dict[str, object] = dict(
         event_id=event_id,
         user_id="usr_01",
+        session_id="ses_01",
         ws_id=WS_ID,
         anchor=_anchor(),
         labels=["concept"],
@@ -208,6 +217,7 @@ def test_remove_highlight_replays_a_retried_delete_after_tombstone(
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-00000000000c",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             anchor=_anchor(),
             labels=[],
@@ -219,12 +229,22 @@ def test_remove_highlight_replays_a_retried_delete_after_tombstone(
     remove_event_id = "0190f5a2-7c3e-7d4b-8a1f-00000000000d"
     with store.transaction() as tx:
         remove_highlight(
-            tx, event_id=remove_event_id, user_id="usr_01", ws_id=WS_ID, highlight_id=highlight_id
+            tx,
+            event_id=remove_event_id,
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id=WS_ID,
+            highlight_id=highlight_id,
         )
     # Resend: must not raise, even though the highlight is now tombstoned.
     with store.transaction() as tx:
         remove_highlight(
-            tx, event_id=remove_event_id, user_id="usr_01", ws_id=WS_ID, highlight_id=highlight_id
+            tx,
+            event_id=remove_event_id,
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id=WS_ID,
+            highlight_id=highlight_id,
         )
 
 
@@ -241,6 +261,7 @@ def test_active_highlights_are_in_creation_order(schemas: ContractSchemas) -> No
             tx,
             event_id=first_event_id,
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             anchor=_anchor(),
             labels=[],
@@ -251,6 +272,7 @@ def test_active_highlights_are_in_creation_order(schemas: ContractSchemas) -> No
             tx,
             event_id=second_event_id,
             user_id="usr_01",
+            session_id="ses_01",
             ws_id=WS_ID,
             anchor=_anchor(),
             labels=[],
@@ -269,6 +291,7 @@ def test_active_highlights_scoped_by_ws_id(schemas: ContractSchemas) -> None:
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-000000000007",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id="ws_a",
             anchor=_anchor(),
             labels=[],
@@ -279,6 +302,7 @@ def test_active_highlights_scoped_by_ws_id(schemas: ContractSchemas) -> None:
             tx,
             event_id="0190f5a2-7c3e-7d4b-8a1f-000000000008",
             user_id="usr_01",
+            session_id="ses_01",
             ws_id="ws_b",
             anchor=_anchor(),
             labels=[],

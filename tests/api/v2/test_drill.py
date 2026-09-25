@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import shutil
 import sys
 import uuid
 from pathlib import Path
@@ -13,13 +11,11 @@ import pytest
 from fastapi.testclient import TestClient
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
-from harness.api.v2.deps import event_store_v2_of
+from harness.api.v2.deps import event_store_v2_of, user_id_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2 import import_pack_v2
-from harness.core.ports.events_v2 import EventV2
 from harness.core.ports.generated_documents import GeneratedDocument
-from harness.testing.contracts import CONTRACTS_DIR
-from harness.testing.fakes_v2 import InMemoryEventStoreV2
+from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -38,39 +34,12 @@ GEN_ID = "0b6f9a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b"
 URL = "/v2/ws/ws_1/drills/dns-record-choice/answers"
 
 
-def _schemas_with_ws_created(directory: Path) -> ContractSchemas:
-    """Real contracts plus a permissive ``ws.created`` until the ws resource (#57) ships it."""
-    contracts = directory / "contracts"
-    shutil.copytree(CONTRACTS_DIR, contracts)
-    path = contracts / "schemas/events/payloads/ws.created/1.json"
-    if not path.exists():
-        path.parent.mkdir(parents=True)
-        schema = {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "$id": "https://morphloop.dev/contracts/schemas/events/payloads/ws.created/1.json",
-            "x-envelope": 2,
-            "x-actors": ["learner"],
-            "type": "object",
-        }
-        path.write_text(json.dumps(schema), encoding="utf-8")
-    return ContractSchemas(contracts)
-
-
 @pytest.fixture
-def client(tmp_path: Path) -> Any:
-    store = InMemoryEventStoreV2(_schemas_with_ws_created(tmp_path))
-    with store.transaction() as tx:
-        tx.append(
-            EventV2(
-                id=str(uuid.uuid4()),
-                type="ws.created",
-                actor="learner",
-                user_id="usr_local",
-                session_id="ses_1",
-                ws_id="ws_1",
-                payload={},
-            )
-        )
+def client() -> Any:
+    # The tracker fails the test if the route opens a second connection
+    # (`store.read`) while the request transaction is open (#89 review).
+    store = ConnectionTrackingStore(InMemoryEventStoreV2(ContractSchemas.load()))
+    seed_ws(store, "ws_1", session_id="ses_1")
     generated = InMemoryGeneratedDocumentStore()
     body = {
         "id": GEN_ID,
@@ -128,6 +97,13 @@ def test_answer_errors(client: Any) -> None:
     assert client.post(URL, json={"actual": "X"}).status_code == 400
     missing_ws = client.post(URL.replace("ws_1", "ws_2"), json={"actual": "A"})
     assert missing_ws.status_code == 404
+    client.app.dependency_overrides[user_id_of] = lambda: "usr_other"
+    try:
+        other_user = client.post(URL, json={"actual": "A"})
+    finally:
+        del client.app.dependency_overrides[user_id_of]
+    assert other_user.status_code == 404
+    assert len(client.store.read(ws_id="ws_1")) == 2  # ws.created + the first answer only
     assert client.post(URL, json={"actual": "A", "user_id": "usr_x"}).status_code == 422
 
 

@@ -1,36 +1,35 @@
 """`/v2/ws/{ws_id}/memo/entries`: an append-only memo log (#34, #59).
 
-`ws_id` is an opaque path id, never verified against the ws resource (the
-wave 6 common rule: resources refer to each other by id, not by importing one
-another's package or store). There is no edit or delete route: a correction
-is posted as a new entry.
+`ws_id` is resolved through the `ws` view on the request's transaction
+(`ws_or_404`: 404 unless it exists and belongs to the learner); the memo
+package itself never imports the ws package (resources refer to each other
+by id). There is no edit or delete route: a correction is posted as a new
+entry.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, Path
 from pydantic import Field, model_validator
 
 from harness.api.problems import problem
 from harness.api.v2.deps import (
     EventIdDep,
-    EventStoreV2Dep,
     EventTransactionV2Dep,
     PackV2Dep,
     UserIdDep,
     replay_or_conflict,
+    ws_or_404,
 )
 from harness.api.v2.models import Text, V2Model
 from harness.core.labels import LabelError
 from harness.core.memo.entries import (
     MemoEntries,
-    WsNotFoundError,
     append_memo_entry,
     build_memo_appended,
     entry_for,
-    ws_session_id,
 )
 
 router = APIRouter(prefix="/ws/{ws_id}/memo", tags=["memo"])
@@ -69,13 +68,15 @@ def append_entry(
     event_id: EventIdDep,
     user_id: UserIdDep,
     pack: PackV2Dep,
-    store: EventStoreV2Dep,
     tx: EventTransactionV2Dep,
 ) -> Any:
-    try:
-        session_id = ws_session_id(ws_id, store.read(ws_id=ws_id))
-    except WsNotFoundError as exc:
-        raise HTTPException(404, str(exc)) from exc
+    # Replay first: a resend takes its session from the stored event, so the
+    # ws lookup below only runs for a genuinely new request.
+    existing = tx.get(event_id)
+    if existing is not None:
+        session_id = existing.session_id
+    else:
+        session_id = str(ws_or_404(tx, ws_id, user_id=user_id)["session_id"])
     source = body.source.model_dump(exclude_none=True) if body.source is not None else None
     candidate = build_memo_appended(
         event_id=event_id,
@@ -105,5 +106,6 @@ def append_entry(
 
 
 @router.get("/entries")
-def list_entries(ws_id: _WsId, tx: EventTransactionV2Dep) -> dict[str, Any]:
+def list_entries(ws_id: _WsId, tx: EventTransactionV2Dep, user_id: UserIdDep) -> dict[str, Any]:
+    ws_or_404(tx, ws_id, user_id=user_id)
     return {"entries": MemoEntries.list_for_ws(tx, ws_id)}

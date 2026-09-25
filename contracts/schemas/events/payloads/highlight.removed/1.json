@@ -5,6 +5,7 @@
   "description": "The learner removed a highlight they created. HighlightView tombstones the highlight_id (no further highlight.created reuses it); the anchor is not repeated here, it lives on the highlight.created event.",
   "x-envelope": 2,
   "x-actors": ["learner"],
+  "x-scope": ["session_id", "ws_id"],
   "type": "object",
   "required": ["highlight_id"],
   "properties": {
