@@ -24,6 +24,7 @@ from harness.adapters.fs_pack_source import FilesystemPackSource
 from harness.adapters.litellm import LiteLLMProvider
 from harness.adapters.postgres.engine import create_engine_from_env
 from harness.adapters.postgres.event_store import PostgresEventStore
+from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
 from harness.cli.errors import CommandError
 from harness.core.contract_schemas import ContractSchemas, ContractsNotFoundError
 from harness.core.domain_adapter import DomainAdapterRegistry
@@ -36,6 +37,7 @@ from harness.core.ports import (
     PackSource,
     StoredEvent,
 )
+from harness.core.ports.events_v2 import EventStoreV2
 from harness.core.registry import AlgorithmRegistry
 from harness.core.registry.builtin import v01_algorithm_registry
 
@@ -106,6 +108,16 @@ def event_store() -> Iterator[EventStore]:
     engine = create_engine_from_env()
     try:
         yield PostgresEventStore(engine)
+    finally:
+        engine.dispose()
+
+
+@contextmanager
+def event_store_v2() -> Iterator[EventStoreV2]:
+    """The v2 Postgres event store built from the same ``DATABASE_URL``."""
+    engine = create_engine_from_env()
+    try:
+        yield PostgresEventStoreV2(engine, contract_schemas())
     finally:
         engine.dispose()
 

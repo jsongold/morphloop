@@ -121,13 +121,13 @@ def import_(pack: PackArg) -> int:
     "rebuild",
     short_help="drop the learning-loop projections and replay the event log",
     help=(
-        "Rebuild the learning-loop projections from the stored events (DATABASE_URL). "
+        "Rebuild the learning-loop projections and v0.2 views from stored events (DATABASE_URL). "
         "The pack projection is rebuilt by 'import', not from the log."
     ),
 )
 def rebuild_cmd() -> int:
-    with wiring.event_store() as store:
-        replayed = rebuild.rebuild(store)
+    with wiring.event_store() as store, wiring.event_store_v2() as store_v2:
+        replayed = rebuild.rebuild(store, store_v2)
     print(rebuild.format_result(replayed))
     return 0
 
