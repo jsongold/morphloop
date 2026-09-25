@@ -6,7 +6,6 @@ Items are the pack's drill items plus generated documents of resource
 
 from __future__ import annotations
 
-import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -31,7 +30,16 @@ from harness.core.drill import (
     generated_items,
     pack_items,
 )
-from harness.core.drill.judge import GAP_SCHEMA_ID, DrillJudgeError, compute_gap, record_judgment
+from harness.core.drill.judge import (
+    GAP_SCHEMA_ID,
+    DrillJudgeError,
+    claim_judgment,
+    compute_gap,
+    load_judge_inputs,
+    record_judgment,
+    save_judge_inputs,
+    stored_judgment,
+)
 from harness.core.ports.events_v2 import EventV2
 from harness.core.ports.json_types import PlainJson
 from harness.core.ports.llm import LLMProvenance, LLMProvider
@@ -118,74 +126,82 @@ def answer_drill(
 ) -> dict[str, PlainJson]:
     # Replay first (#93): a resend must return the stored event even if the
     # pack changed since (e.g. the item was replaced), before any item lookup
-    # or answer-mode validation that could differ on retry.
-    judgment_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"drill.judged:{event_id}"))
-    with store.transaction() as tx:
-        existing = tx.get(event_id)
-        if existing is not None:
-            payload: dict[str, PlainJson] = {
-                "item_id": item_id,
-                "answer_mode": str(existing.payload.get("answer_mode")),
-            }
-            if body.actual is not None:
-                payload["actual"] = body.actual
-            if body.artifact_id is not None:
-                payload["artifact_id"] = body.artifact_id
-            candidate = EventV2(
-                id=event_id,
-                type=ANSWERED,
-                actor="learner",
-                user_id=user_id,
-                session_id=existing.session_id,
-                ws_id=ws_id,
-                payload=payload,
-            )
-            event = replay_or_conflict(tx, candidate)
-            assert event is not None
-        else:
-            ws = ws_or_404(tx, ws_id, user_id=user_id)
-            try:
-                event = service.answer(
-                    tx,
-                    event_id=event_id,
+    # or answer-mode validation that could differ on retry. The claim (#124)
+    # is taken before the transaction so a concurrent retry of the same key
+    # never reaches the LLM: it sees the judgment or leaves it pending.
+    with claim_judgment(event_id) as claimed:
+        with store.transaction() as tx:
+            existing = tx.get(event_id)
+            if existing is not None:
+                payload: dict[str, PlainJson] = {
+                    "item_id": item_id,
+                    "answer_mode": str(existing.payload.get("answer_mode")),
+                }
+                if body.actual is not None:
+                    payload["actual"] = body.actual
+                if body.artifact_id is not None:
+                    payload["artifact_id"] = body.artifact_id
+                candidate = EventV2(
+                    id=event_id,
+                    type=ANSWERED,
+                    actor="learner",
                     user_id=user_id,
-                    session_id=str(ws["session_id"]),
+                    session_id=existing.session_id,
                     ws_id=ws_id,
-                    item_id=item_id,
-                    actual=body.actual,
-                    artifact_id=body.artifact_id,
+                    payload=payload,
                 )
-            except DrillError as exc:
-                raise HTTPException(exc.status, str(exc)) from exc
-        judged = tx.get(judgment_id) is not None
-    if judged:
-        return {**event.to_dict(), "judgment_status": "complete"}
-    try:
-        item = service.get_item(item_id)
-        if item.answer_mode != "choice" and judge_config is None:
-            raise DrillJudgeError("the pack declares no drill gap judge")
-        checks = store.read(user_id=user_id, ws_id=ws_id) if item.answer_mode == "artifact" else ()
-        gap, provenance = compute_gap(
-            answer=event,
-            item=item,
-            pack=pack,
-            schemas=ContractSchemas.load(),
-            llm=llm if judge_config is not None else None,
-            llm_provenance=judge_config[0] if judge_config is not None else None,
-            prompt=judge_config[1] if judge_config is not None else None,
-            artifact_checks=checks,
-        )
-    except (DrillError, DrillJudgeError):
-        return {**event.to_dict(), "judgment_status": "pending"}
-    with store.transaction() as tx:
-        if tx.get(judgment_id) is None:
+                event = replay_or_conflict(tx, candidate)
+                assert event is not None
+            else:
+                ws = ws_or_404(tx, ws_id, user_id=user_id)
+                try:
+                    event = service.answer(
+                        tx,
+                        event_id=event_id,
+                        user_id=user_id,
+                        session_id=str(ws["session_id"]),
+                        ws_id=ws_id,
+                        item_id=item_id,
+                        actual=body.actual,
+                        artifact_id=body.artifact_id,
+                    )
+                except DrillError as exc:
+                    raise HTTPException(exc.status, str(exc)) from exc
+                # The item as answered, so a retry after a pack change judges the
+                # same material (#124).
+                save_judge_inputs(tx, event, service.get_item(item_id), pack)
+            judged = stored_judgment(tx, event_id) is not None
+            inputs = None if judged else load_judge_inputs(tx, event_id)
+        if judged:
+            return {**event.to_dict(), "judgment_status": "complete"}
+        if not claimed or inputs is None:
+            return {**event.to_dict(), "judgment_status": "pending"}
+        item, judge_pack = inputs
+        try:
+            if item.answer_mode != "choice" and judge_config is None:
+                raise DrillJudgeError("the pack declares no drill gap judge")
+            events = (
+                store.read(user_id=user_id, ws_id=ws_id) if item.answer_mode == "artifact" else ()
+            )
+            gap, provenance = compute_gap(
+                answer=event,
+                item=item,
+                pack=judge_pack,
+                schemas=ContractSchemas.load(),
+                llm=llm if judge_config is not None else None,
+                llm_provenance=judge_config[0] if judge_config is not None else None,
+                prompt=judge_config[1] if judge_config is not None else None,
+                artifact_events=events,
+            )
+        except DrillJudgeError:
+            return {**event.to_dict(), "judgment_status": "pending"}
+        with store.transaction() as tx:
             record_judgment(
                 tx,
-                event_id=judgment_id,
                 answer=event,
                 gap=gap,
-                pack=pack,
+                pack=judge_pack,
                 harness_version=harness_version(),
                 llm_provenance=provenance,
             )
-    return {**event.to_dict(), "judgment_status": "complete"}
+        return {**event.to_dict(), "judgment_status": "complete"}

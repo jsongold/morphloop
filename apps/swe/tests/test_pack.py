@@ -153,6 +153,14 @@ def test_pack_imports_with_the_apps_artifact_types() -> None:
     assert {doc["type"] for doc in pack.documents["artifacts"].values()} == {"lab", "diagram"}
 
 
+def test_judge_role_declares_the_drill_gap_schema() -> None:
+    # Without it the SDK's drill route never judges a text/artifact answer (#124).
+    pack = import_pack_v2(PACK_DIR, artifact_types=EXTENSION.artifact_types)
+    judge = pack.llm_roles["judge"]
+    assert judge.output_schema == "https://morphloop.dev/contracts/schemas/llm/drill.gap/1.json"
+    assert '"missing"' in judge.prompt_text and "reference_solution" not in judge.prompt_text
+
+
 def test_pack_needs_both_types(tmp_path: Path) -> None:
     lab_only = [t for t in EXTENSION.artifact_types if t.type == "lab"]
     with pytest.raises(PackV2ImportError, match="'diagram' is not registered"):

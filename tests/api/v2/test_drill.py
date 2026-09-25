@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sys
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -12,8 +14,10 @@ from fastapi.testclient import TestClient
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.v2.deps import event_store_v2_of, user_id_of
-from harness.api.v2.routes.drill import drill_judge_config_of
+from harness.api.v2.routes.drill import drill_judge_config_of, drill_service_of
 from harness.core.contract_schemas import ContractSchemas
+from harness.core.drill import DrillItem, DrillService
+from harness.core.drill.judge import judgment_id_of
 from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.ports.llm import LLMProvenance, LLMRequest, LLMResponse
@@ -48,10 +52,12 @@ class FakeLLM:
         self.store = store
         self.outputs = outputs
         self.calls = 0
+        self.requests: list[LLMRequest] = []
 
     def complete_structured(self, request: LLMRequest) -> LLMResponse:
         assert not self.store.tx_open
         self.calls += 1
+        self.requests.append(request)
         return LLMResponse(output=self.outputs.pop(0), provenance=LLM)
 
 
@@ -163,9 +169,6 @@ def test_answer_rejects_nul_and_explicit_null(client: Any) -> None:
 def test_answer_resend_after_pack_change_returns_stored_result(client: Any) -> None:
     # #93: a resend must replay from the stored event, not re-run item lookup
     # -- an item removed/changed in the pack must not break idempotency.
-    from harness.api.v2.routes.drill import drill_service_of
-    from harness.core.drill import DrillService
-
     key = {"Idempotency-Key": str(uuid.uuid4())}
     first = client.post(URL, json={"actual": "A"}, headers=key)
     assert first.status_code == 201
@@ -216,3 +219,82 @@ def test_invalid_llm_output_leaves_answer_pending_then_retries(client: Any) -> N
     again = client.post(url, json={"actual": "I do not know"}, headers=key)
     assert again.json()["judgment_status"] == "complete" and fake.calls == 2
     assert [e.type for e in client.store.read(ws_id="ws_1")].count("drill.judged") == 1
+
+
+def test_pending_retry_judges_the_item_as_answered_not_as_the_pack_now_has_it(client: Any) -> None:
+    # #124: the pack changed the item's expected answer between the answer and
+    # the retry; the retry must judge against the original material.
+    fake = FakeLLM(
+        client.store, [{"missing": [{"description": "", "labels": []}]}, {"missing": []}]
+    )
+    client.app.state.drill_llm = fake
+    client.app.dependency_overrides[drill_judge_config_of] = lambda: (LLM, "Judge the gap.")
+    url = URL.replace("dns-record-choice", "dns-resolver-text")
+    key = {"Idempotency-Key": str(uuid.uuid4())}
+    assert (
+        client.post(url, json={"actual": "?"}, headers=key).json()["judgment_status"] == "pending"
+    )
+    original = json.loads(fake.requests[0].messages[1].content)["expected"]
+    changed = DrillItem(
+        id="dns-resolver-text",
+        question="q",
+        expected="CHANGED",
+        answer_mode="text",
+        labels=("origin:pack",),
+    )
+    client.app.dependency_overrides[drill_service_of] = lambda: DrillService([changed])
+    try:
+        again = client.post(url, json={"actual": "?"}, headers=key)
+    finally:
+        del client.app.dependency_overrides[drill_service_of]
+    assert again.json()["judgment_status"] == "complete" and fake.calls == 2
+    sent = json.loads(fake.requests[1].messages[1].content)
+    assert sent["expected"] == original and "CHANGED" not in sent["expected"]
+
+
+def test_concurrent_retry_of_a_pending_judgment_calls_the_llm_once(client: Any) -> None:
+    # #124: a second request with the same key while the first is at the LLM
+    # gets `pending` and never bills a second model call.
+    url = URL.replace("dns-record-choice", "dns-resolver-text")
+    key = {"Idempotency-Key": str(uuid.uuid4())}
+    nested: list[Any] = []
+
+    class RacingLLM(FakeLLM):
+        def complete_structured(self, request: LLMRequest) -> LLMResponse:
+            if self.calls == 0:
+                worker = threading.Thread(
+                    target=lambda: nested.append(
+                        client.post(url, json={"actual": "?"}, headers=key)
+                    )
+                )
+                worker.start()
+                worker.join(timeout=10)
+            return super().complete_structured(request)
+
+    fake = RacingLLM(client.store, [{"missing": []}, {"missing": []}])
+    client.app.state.drill_llm = fake
+    client.app.dependency_overrides[drill_judge_config_of] = lambda: (LLM, "Judge the gap.")
+    first = client.post(url, json={"actual": "?"}, headers=key)
+    assert first.json()["judgment_status"] == "complete"
+    assert [r.json()["judgment_status"] for r in nested] == ["pending"]
+    assert (
+        client.post(url, json={"actual": "?"}, headers=key).json()["judgment_status"] == "complete"
+    )
+    assert fake.calls == 1
+    assert [e.type for e in client.store.read(ws_id="ws_1")].count("drill.judged") == 1
+
+
+def test_an_answer_squatting_the_judgment_id_is_not_a_judgment(client: Any) -> None:
+    # #124: the judgment id is derived from the answer id, so a client can
+    # store an ordinary answer there first. That must surface as a conflict,
+    # never as `judgment_status: complete` for the later answer.
+    later = str(uuid.uuid4())
+    squat = client.post(
+        URL, json={"actual": "A"}, headers={"Idempotency-Key": judgment_id_of(later)}
+    )
+    assert squat.status_code == 201
+    response = client.post(URL, json={"actual": "AAAA"}, headers={"Idempotency-Key": later})
+    assert response.status_code == 409 and response.json()["code"] == "idempotency-key-reused"
+    assert "complete" not in response.text
+    judged = [e for e in client.store.read(ws_id="ws_1") if e.type == "drill.judged"]
+    assert [e.payload["answer_event_id"] for e in judged] == [judgment_id_of(later)]
