@@ -8,7 +8,7 @@ incomplete oidc/supabase config, refuses to start -- and cached there.
 
 from __future__ import annotations
 
-from fastapi import Request
+from starlette.requests import HTTPConnection
 
 from harness.adapters.auth import DevAuthProvider, OidcAuthProvider
 from harness.adapters.supabase import supabase_auth
@@ -44,7 +44,7 @@ def auth_provider_from_settings() -> AuthProvider:
     return DevAuthProvider()
 
 
-def auth_provider_of(request: Request) -> AuthProvider:
+def auth_provider_of(request: HTTPConnection) -> AuthProvider:
     provider: AuthProvider | None = getattr(request.app.state, "auth_provider", None)
     if provider is None:
         provider = auth_provider_from_settings()

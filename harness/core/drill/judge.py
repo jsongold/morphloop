@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import json
 import re
-import threading
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import cast
 
 from harness.core.contract_schemas import ContractSchemas, ContractValidationError
 from harness.core.drill.model import AnswerMode, DrillItem
 from harness.core.labels import LabelError, check_labels
 from harness.core.pack.v2.importer import PackV2
+from harness.core.ports.claims import ClaimStore
 from harness.core.ports.events_v2 import EventTransactionV2, EventV2, StoredEventV2
 from harness.core.ports.json_types import JsonObject, PlainJson, to_plain_object
 from harness.core.ports.llm import (
@@ -35,8 +36,11 @@ _INPUT_VIEW = "drill.judge_inputs"
 _JUDGED_NAMESPACE = uuid.UUID("3c1a5c0e-6b1f-4f1b-9c2e-7d4a2c5e9b11")
 _TOKEN = re.compile(r"[\w./:-]+")
 _DISTINCTIVE = re.compile(r"[/.:_-]|\d")
-_inflight: set[str] = set()
-_inflight_guard = threading.Lock()
+# ponytail: the LLM call sets no timeout of its own (litellm's default is
+# 6000 s), so a call can outlive this lease; a retry then judges again. The
+# derived judgment id still keeps one drill.judged. Pass an LLM timeout below
+# this TTL when a second model call matters.
+JUDGE_LEASE_TTL = timedelta(minutes=10)
 
 
 class DrillJudgeError(ValueError):
@@ -64,23 +68,25 @@ def stored_judgment(tx: EventTransactionV2, answer_id: str) -> StoredEventV2 | N
 
 
 @contextmanager
-def claim_judgment(answer_id: str) -> Iterator[bool]:
-    """Single-flight for one answer's judgment: ``True`` for the request that may
-    call the LLM; a concurrent retry gets ``False`` and leaves the answer pending.
+def claim_judgment(
+    claims: ClaimStore, answer_id: str, *, ttl: timedelta = JUDGE_LEASE_TTL
+) -> Iterator[bool]:
+    """Single-flight for one answer's judgment across API processes: ``True``
+    for the request that may call the LLM; a concurrent retry gets ``False``
+    and leaves the answer pending (#181).
 
-    ponytail: process-local set; one API process in v0.2. A claim row with a
-    TTL in the store when the API runs in more than one process.
+    The lease ``judge:<answer_id>`` is taken and released in the claim store's
+    own short transactions, so the LLM call runs outside any transaction. A
+    crashed holder's lease expires after ``ttl`` and a later retry judges.
     """
-    with _inflight_guard:
-        claimed = answer_id not in _inflight
-        if claimed:
-            _inflight.add(answer_id)
+    key = f"judge:{answer_id}"
+    holder = uuid.uuid4().hex
+    claimed = claims.try_claim(key, holder, ttl)
     try:
         yield claimed
     finally:
         if claimed:
-            with _inflight_guard:
-                _inflight.discard(answer_id)
+            claims.release(key, holder)
 
 
 def _tokens(text: str) -> list[str]:

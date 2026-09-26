@@ -6,6 +6,7 @@ import json
 import sys
 import threading
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.events_v2 import EventV2
 from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.ports.llm import LLMProvenance, LLMRequest, LLMResponse
+from harness.testing.claims import InMemoryClaimStore
 from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 from harness.testing.openapi_v2 import load_merged_openapi_v2_spec
@@ -91,6 +93,7 @@ def client() -> Any:
     app = build_app()
     app.state.pack_v2 = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
     app.state.generated_documents = generated
+    app.state.claims = InMemoryClaimStore()
     app.dependency_overrides[event_store_v2_of] = lambda: store
     with TestClient(app) as c:
         c.store = store  # type: ignore[attr-defined]
@@ -388,6 +391,23 @@ def test_concurrent_retry_of_a_pending_judgment_calls_the_llm_once(client: Any) 
     )
     assert fake.calls == 1
     assert [e.type for e in client.store.read(ws_id="ws_1")].count("drill.judged") == 1
+
+
+def test_a_lease_held_by_another_worker_leaves_the_answer_pending(client: Any) -> None:
+    # #181: single-flight lives in the claim store, not the process, so a
+    # lease taken by another API worker keeps this one off the LLM.
+    fake = FakeLLM(client.store, [{"missing": []}])
+    client.app.state.drill_llm = fake
+    client.app.dependency_overrides[drill_judge_config_of] = lambda: (LLM, "Judge the gap.")
+    url = URL.replace("dns-record-choice", "dns-resolver-text")
+    key = str(uuid.uuid4())
+    client.app.state.claims.try_claim(f"judge:{key}", "other-worker", timedelta(minutes=10))
+    pending = client.post(url, json={"actual": "?"}, headers={"Idempotency-Key": key})
+    assert pending.status_code == 201 and pending.json()["judgment_status"] == "pending"
+    assert fake.calls == 0
+    client.app.state.claims.release(f"judge:{key}", "other-worker")
+    done = client.post(url, json={"actual": "?"}, headers={"Idempotency-Key": key})
+    assert done.json()["judgment_status"] == "complete" and fake.calls == 1
 
 
 def test_an_answer_squatting_the_judgment_id_is_not_a_judgment(client: Any) -> None:

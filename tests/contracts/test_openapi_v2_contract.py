@@ -189,6 +189,8 @@ LIST_OPERATIONS = [
     ("/drills", "items"),
     ("/ws/{ws_id}/drills/answers", "items"),
     ("/notebook/search", "results"),
+    ("/ws/{ws_id}/artifacts", "items"),
+    ("/textbook/docs", "docs"),
 ]
 
 
