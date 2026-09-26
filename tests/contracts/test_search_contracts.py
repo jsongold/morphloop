@@ -118,6 +118,7 @@ def test_search_hit_to_dict_matches_response_item_shape() -> None:
 def test_readme_states_drill_answers_are_never_searchable() -> None:
     readme = (CONTRACTS_DIR / "schemas" / "search" / "README.md").read_text(encoding="utf-8")
     assert "never searchable" in readme.lower()
+    assert "sys:holdout" in readme
 
 
 def test_search_hit_parent_id_round_trips_to_wire() -> None:
@@ -130,5 +131,7 @@ def test_search_requests_require_learner_scope() -> None:
     with pytest.raises(ValueError, match="user_id"):
         KeywordSearchRequest(text="ttl", user_id="", limit=5)
     with pytest.raises(ValueError, match="user_id"):
-        SemanticSearchRequest(embedding=[0.1], user_id="", limit=5)
+        SemanticSearchRequest(embedding=[0.1], model="m", user_id="", limit=5)
+    with pytest.raises(ValueError, match="model"):
+        SemanticSearchRequest(embedding=[0.1], model="", user_id="u1", limit=5)
     assert KeywordSearchRequest(text="ttl", user_id="u1", limit=5).user_id == "u1"

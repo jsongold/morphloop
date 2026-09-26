@@ -18,8 +18,11 @@ Fusing the keyword and semantic legs into one ``hybrid`` ranking (RRF) and
 picking which concrete backends serve a given mode is wiring, not a Port
 (issue #180 S5); this module only declares the shapes.
 
-Drill expected answers are never searchable. Only a drill item's
-question/prompt text is an eligible source for the search corpus (migration
+Drill expected answers and holdout drills are never searchable. Holdout
+drills (``sys:holdout``, the held-out transfer tasks of ADR-0011) are excluded
+entirely, question text included -- the same set ``learner_drills()`` drops.
+Of the remaining drill items, only the question/prompt text is an eligible
+source for the search corpus (migration
 ``d7b1e3f5a9c2_v040_scale.py``'s ``search_documents``/``search_embeddings``);
 a drill item's ``expected`` answer and its reference solution are withheld
 entirely -- never embedded, never indexed, never returned as a result. This
@@ -124,9 +127,11 @@ class KeywordSearchBackend(Protocol):
 class SemanticSearchRequest:
     """A similarity query for one learner over an already-embedded query vector (see
     :class:`EmbeddingProvider`). Only shared rows and rows owned by ``user_id`` are
-    eligible."""
+    eligible, and only rows embedded with ``model`` (the model that embedded the
+    query; vectors from other models are not comparable)."""
 
     embedding: Sequence[float]
+    model: str
     user_id: str
     limit: int
     resources: Sequence[str] = ()
@@ -134,6 +139,8 @@ class SemanticSearchRequest:
     def __post_init__(self) -> None:
         if not self.embedding:
             raise ValueError("a semantic search request needs a non-empty embedding")
+        if not self.model:
+            raise ValueError("a semantic search request needs the embedding model")
         if not self.user_id:
             raise ValueError("a search request needs the authenticated user_id")
         if self.limit < 1:
@@ -155,11 +162,23 @@ class SemanticSearchBackend(Protocol):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class RerankCandidate:
+    """A fused hit plus its learner-visible indexed text, for the reranker to score.
+
+    ``text`` is the same text the search tables index -- never an expected answer or
+    reference solution. Internal only: the public response stays reference-only.
+    """
+
+    hit: SearchHit
+    text: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class RerankRequest:
     """Re-score ``candidates`` against ``query``; the optional last stage."""
 
     query: str
-    candidates: Sequence[SearchHit]
+    candidates: Sequence[RerankCandidate]
     limit: int
 
     def __post_init__(self) -> None:
@@ -171,10 +190,10 @@ class RerankRequest:
 
 class Reranker(Protocol):
     """Optional last stage over already-fused hits. Never given a reference solution or a
-    drill item's expected answer: ``candidates`` carry only :class:`SearchHit` values."""
+    drill item's expected answer: ``candidates`` carry only a hit and its indexed text."""
 
     def rerank(self, request: RerankRequest) -> Sequence[SearchHit]:
-        """Return ``request.candidates`` re-ordered/re-scored, at most ``request.limit`` of them.
+        """Return the candidates' hits re-ordered/re-scored, at most ``request.limit`` of them.
 
         Raises :class:`SearchBackendError` on a backend failure.
         """

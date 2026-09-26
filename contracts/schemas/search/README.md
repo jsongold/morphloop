@@ -33,9 +33,12 @@ serve once the backends exist. It mirrors the `kind`/`id` result shape
 `GET /notebook/search` (`contracts/openapi/v0.2/paths/notebook.yaml`)
 already uses, adding `mode`, `score` and `source`.
 
-## Drill expected answers are never searchable
+## Drill expected answers and holdout drills are never searchable
 
-Only a drill item's question/prompt text is an eligible source for the
+Holdout drills (`sys:holdout`, the held-out transfer tasks of ADR-0011) are
+excluded from both search tables entirely, question text included — the same
+set the notebook search's `learner_drills()` drops. Of the remaining drill
+items, only the question/prompt text is an eligible source for the
 `search_documents`/`search_embeddings` tables (migration
 `d7b1e3f5a9c2_v040_scale.py`). A drill item's `expected` answer and its
 `reference_solution` are withheld from the search corpus entirely: never
