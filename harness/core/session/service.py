@@ -16,12 +16,16 @@ without needing to look anything up first.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import cast
 
 from harness.core.pack.v2.importer import PackV2
 from harness.core.ports import JsonObject, PlainJson, to_plain_json
 from harness.core.ports.events_v2 import EventIdConflictError, EventTransactionV2, EventV2
-from harness.core.session.model import SessionView, TopicNotFoundError, find_topic
+from harness.core.session.model import (
+    SessionsByUserView,
+    SessionView,
+    TopicNotFoundError,
+    find_topic,
+)
 from harness.core.view import dispatch
 
 __all__ = [
@@ -144,12 +148,22 @@ def get_session(tx: EventTransactionV2, session_id: str, *, user_id: str) -> Jso
     return doc if doc is not None and doc["user_id"] == user_id else None
 
 
-def list_sessions(tx: EventTransactionV2, *, user_id: str) -> Sequence[JsonObject]:
-    """Every session document of ``user_id``, in creation order.
+def list_sessions(
+    tx: EventTransactionV2, *, user_id: str, after: str | None = None, limit: int
+) -> tuple[list[JsonObject], str | None]:
+    """One page of ``user_id``'s sessions in creation order, plus the next
+    page's ``after`` key (``None`` on the last page).
 
-    Sorted by the creating event's ``position``, not the view's ``ses_<uuid>``
-    key order -- that key is unrelated to creation order (#89 review).
+    Reads the per-user :class:`SessionsByUserView` key range only (#175); an
+    ``after`` outside that range can never reach another user's sessions.
     """
-    docs = [doc for _key, doc in SessionView.list(tx) if doc["user_id"] == user_id]
-    docs.sort(key=lambda doc: cast(int, doc["position"]))
-    return docs
+    page, next_key = SessionsByUserView.list(
+        tx, key_prefix=SessionsByUserView.prefix(user_id), after=after, limit=limit
+    )
+    docs = []
+    for _key, ref in page:
+        doc = SessionView.get(tx, str(ref["session_id"]))
+        if doc is None:
+            raise LookupError(f"session index names a missing session {ref['session_id']!r}")
+        docs.append(doc)
+    return docs, next_key

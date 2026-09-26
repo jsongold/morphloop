@@ -6,6 +6,7 @@ import uuid
 
 import pytest
 
+from harness.cli.rebuild import rebuild
 from harness.core.contract_schemas import ContractSchemas, ContractValidationError
 from harness.core.ports.events_v2 import EventIdConflictError
 from harness.core.ws import (
@@ -18,6 +19,7 @@ from harness.core.ws import (
     list_threads,
     list_ws,
 )
+from harness.core.ws.view import WsByUserView
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
 
 USER = "usr_1"
@@ -93,8 +95,10 @@ def test_get_and_list_ws(store: InMemoryEventStoreV2) -> None:
         a = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
         b = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id="ses_2")
     with store.transaction() as tx:
-        assert {d["ws_id"] for d in list_ws(tx, user_id=USER)} == {a.ws_id, b.ws_id}
-        assert [d["ws_id"] for d in list_ws(tx, user_id=USER, session_id=SESSION)] == [a.ws_id]
+        assert {d["ws_id"] for d in list_ws(tx, user_id=USER, limit=50)[0]} == {a.ws_id, b.ws_id}
+        assert [d["ws_id"] for d in list_ws(tx, user_id=USER, session_id=SESSION, limit=50)[0]] == [
+            a.ws_id
+        ]
         with pytest.raises(WsNotFoundError):
             get_ws(tx, "ws_nope", user_id=USER)
         with pytest.raises(WsNotFoundError):
@@ -107,7 +111,11 @@ def test_list_ws_is_most_recently_created_first(store: InMemoryEventStoreV2) -> 
         b = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
         c = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
     with store.transaction() as tx:
-        assert [d["ws_id"] for d in list_ws(tx, user_id=USER)] == [c.ws_id, b.ws_id, a.ws_id]
+        assert [d["ws_id"] for d in list_ws(tx, user_id=USER, limit=50)[0]] == [
+            c.ws_id,
+            b.ws_id,
+            a.ws_id,
+        ]
 
 
 def test_create_ws_rejects_an_assistant_actor(store: InMemoryEventStoreV2) -> None:
@@ -249,7 +257,7 @@ def test_list_threads_is_creation_order_with_target_and_labels(
             labels=["mode:hint"],
         )
     with store.transaction() as tx:
-        threads = list_threads(tx, ws.ws_id, user_id=USER)
+        threads = list_threads(tx, ws.ws_id, user_id=USER, limit=50)[0]
     assert [t["thread_id"] for t in threads] == [
         main.payload["thread_id"],
         targeted.payload["thread_id"],
@@ -291,20 +299,74 @@ def test_list_threads_filters_by_target_highlight_id(store: InMemoryEventStoreV2
             },
         )
     with store.transaction() as tx:
-        threads = list_threads(tx, ws.ws_id, user_id=USER, target_highlight_id="hl_2")
+        threads = list_threads(tx, ws.ws_id, user_id=USER, target_highlight_id="hl_2", limit=50)[0]
     assert [t["thread_id"] for t in threads] == [other.payload["thread_id"]]
 
 
 def test_list_threads_on_missing_or_other_users_ws_raises(store: InMemoryEventStoreV2) -> None:
     with pytest.raises(WsNotFoundError):
         with store.transaction() as tx:
-            list_threads(tx, "ws_nope", user_id=USER)
+            list_threads(tx, "ws_nope", user_id=USER, limit=50)
     with store.transaction() as tx:
         ws = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
     with pytest.raises(WsNotFoundError):
         with store.transaction() as tx:
-            list_threads(tx, ws.ws_id, user_id="usr_other")
+            list_threads(tx, ws.ws_id, user_id="usr_other", limit=50)
 
 
 def test_threads_view_is_registered() -> None:
     assert ThreadsView.name == "ws.threads"
+
+
+def test_list_ws_pages_newest_first_and_never_shows_another_user(
+    store: InMemoryEventStoreV2,
+) -> None:
+    with store.transaction() as tx:
+        mine = [
+            create_ws(tx, event_id=str(uuid.uuid4()), user_id="usr_a", session_id=SESSION).ws_id
+            for _ in range(3)
+        ]
+        # "usr_ab" shares the raw string prefix "usr_a"
+        create_ws(tx, event_id=str(uuid.uuid4()), user_id="usr_ab", session_id=SESSION)
+        elsewhere = create_ws(
+            tx, event_id=str(uuid.uuid4()), user_id="usr_a", session_id="ses_2"
+        ).ws_id
+    with store.transaction() as tx:
+        first, cursor = list_ws(tx, user_id="usr_a", limit=2)
+        assert cursor is not None
+        second, end = list_ws(tx, user_id="usr_a", after=cursor, limit=2)
+        by_session, _ = list_ws(tx, user_id="usr_a", session_id=SESSION, limit=50)
+    assert [d["ws_id"] for d in first + second] == [elsewhere, *mine[::-1]]
+    assert end is None
+    assert [d["ws_id"] for d in by_session] == mine[::-1]  # ses_2's ws excluded
+
+
+def test_list_threads_pages_in_creation_order(store: InMemoryEventStoreV2) -> None:
+    with store.transaction() as tx:
+        ws = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
+        ids = [
+            create_thread(
+                tx,
+                event_id=str(uuid.uuid4()),
+                user_id=USER,
+                ws_id=ws.ws_id,
+                target={"kind": "artifact"},
+            ).payload["thread_id"]
+            for _ in range(3)
+        ]
+    with store.transaction() as tx:
+        first, cursor = list_threads(tx, ws.ws_id, user_id=USER, limit=2)
+        second, end = list_threads(tx, ws.ws_id, user_id=USER, after=cursor, limit=2)
+    assert [t["thread_id"] for t in first + second] == ids
+    assert end is None
+
+
+def test_rebuild_fills_the_ws_index_from_the_log(store: InMemoryEventStoreV2) -> None:
+    with store.transaction() as tx:
+        a = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
+    with store.transaction() as tx:
+        tx.clear_view(WsByUserView.name)
+        assert list_ws(tx, user_id=USER, limit=50)[0] == []
+    assert rebuild(store) == len(store.read())  # `morphloop rebuild`
+    with store.transaction() as tx:
+        assert [d["ws_id"] for d in list_ws(tx, user_id=USER, limit=50)[0]] == [a.ws_id]

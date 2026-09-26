@@ -9,10 +9,11 @@ from pathlib import Path
 import pytest
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
+from harness.cli.rebuild import rebuild
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import PackV2, import_pack_v2
 from harness.core.ports.events_v2 import EventIdConflictError
-from harness.core.session.model import TopicNotFoundError, find_topic
+from harness.core.session.model import SessionsByUserView, TopicNotFoundError, find_topic
 from harness.core.session.service import (
     PackMismatchError,
     create_session,
@@ -205,7 +206,7 @@ def test_list_sessions_returns_every_created_session(
             topic_id="network.dns.records",
         )
     with store.transaction() as tx:
-        topic_ids = {doc["topic_id"] for doc in list_sessions(tx, user_id="usr_alice")}
+        topic_ids = {doc["topic_id"] for doc in list_sessions(tx, user_id="usr_alice", limit=50)[0]}
     assert topic_ids == {"network.dns.resolution", "network.dns.records"}
 
 
@@ -220,7 +221,7 @@ def test_list_sessions_excludes_other_users(pack: PackV2, store: InMemoryEventSt
             topic_id="network",
         )
     with store.transaction() as tx:
-        assert list_sessions(tx, user_id="usr_bob") == []
+        assert list_sessions(tx, user_id="usr_bob", limit=50) == ([], None)
 
 
 def test_list_sessions_is_in_creation_order_not_uuid_order(
@@ -247,7 +248,7 @@ def test_list_sessions_is_in_creation_order_not_uuid_order(
             topic_id="network.dns.records",
         )
     with store.transaction() as tx:
-        topic_ids = [doc["topic_id"] for doc in list_sessions(tx, user_id="usr_alice")]
+        topic_ids = [doc["topic_id"] for doc in list_sessions(tx, user_id="usr_alice", limit=50)[0]]
     assert topic_ids == ["network.dns.resolution", "network.dns.records"]
 
 
@@ -277,3 +278,52 @@ def test_resend_after_the_pack_changed_still_returns_the_same_session(
             topic_id="network",
         )
     assert second == first
+
+
+def test_list_sessions_pages_in_creation_order(pack: PackV2, store: InMemoryEventStoreV2) -> None:
+    with store.transaction() as tx:
+        ids = [
+            create_session(
+                tx,
+                pack=pack,
+                user_id="usr_alice",
+                event_id=str(uuid.uuid4()),
+                pack_id=pack.pack_id,
+                topic_id="network",
+            )["id"]
+            for _ in range(3)
+        ]
+        # "usr_alicex" shares the raw string prefix "usr_alice"
+        create_session(
+            tx,
+            pack=pack,
+            user_id="usr_alicex",
+            event_id=str(uuid.uuid4()),
+            pack_id=pack.pack_id,
+            topic_id="network",
+        )
+    with store.transaction() as tx:
+        first, cursor = list_sessions(tx, user_id="usr_alice", limit=2)
+        second, end = list_sessions(tx, user_id="usr_alice", after=cursor, limit=2)
+    assert [doc["id"] for doc in first + second] == ids
+    assert cursor is not None and end is None
+
+
+def test_rebuild_fills_the_session_index_from_the_log(
+    pack: PackV2, store: InMemoryEventStoreV2
+) -> None:
+    with store.transaction() as tx:
+        doc = create_session(
+            tx,
+            pack=pack,
+            user_id="usr_alice",
+            event_id=str(uuid.uuid4()),
+            pack_id=pack.pack_id,
+            topic_id="network",
+        )
+    with store.transaction() as tx:
+        tx.clear_view(SessionsByUserView.name)
+        assert list_sessions(tx, user_id="usr_alice", limit=50) == ([], None)
+    assert rebuild(store) == len(store.read())  # `morphloop rebuild`
+    with store.transaction() as tx:
+        assert [d["id"] for d in list_sessions(tx, user_id="usr_alice", limit=50)[0]] == [doc["id"]]
