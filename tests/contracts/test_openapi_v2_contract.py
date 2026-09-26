@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 import yaml
+from jsonschema import Draft202012Validator
 from jsonschema_path import SchemaPath
 from jsonschema_path.handlers import default_handlers
 from openapi_spec_validator.validation import OpenAPIV31SpecValidator
@@ -174,3 +175,92 @@ def test_readme_documents_the_merge_and_never_edit_root_rule() -> None:
     assert "paths/<resource>.yaml" in readme
     assert "components/<resource>.yaml" in readme
     assert "openapi_v2" in readme
+
+
+# v0.4 (issue #168): every list operation pages with ?cursor=&limit= and
+# answers with an optional `next_cursor` (URL, list key).
+LIST_OPERATIONS = [
+    ("/ws", "items"),
+    ("/sessions", "items"),
+    ("/ws/{ws_id}/threads", "items"),
+    ("/ws/{ws_id}/threads/{thread_id}/messages", "messages"),
+    ("/ws/{ws_id}/highlights", "highlights"),
+    ("/ws/{ws_id}/memo/entries", "entries"),
+    ("/drills", "items"),
+    ("/ws/{ws_id}/drills/answers", "items"),
+    ("/notebook/search", "results"),
+]
+
+
+def _paged_object_schema(url: str) -> dict[str, Any]:
+    schema = MERGED_SPEC["paths"][url]["get"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    # /sessions keeps its pre-v0.4 bare-array shape as an `anyOf` branch.
+    objects = [s for s in schema.get("anyOf", [schema]) if s.get("type") == "object"]
+    assert len(objects) == 1, url
+    return objects[0]
+
+
+@pytest.mark.parametrize(("url", "key"), LIST_OPERATIONS)
+def test_list_operation_declares_cursor_and_limit(url: str, key: str) -> None:
+    params = ROOT["paths"][url]["get"]["parameters"]
+    by_name = {}
+    for i in range(len(params.read_value())):
+        with params[i].open() as param:
+            by_name[param["name"]] = param
+    assert by_name["cursor"]["in"] == "query" and by_name["cursor"]["required"] is False
+    assert by_name["limit"]["schema"]["type"] == "integer"
+    assert by_name["limit"]["schema"]["minimum"] == 1
+
+
+@pytest.mark.parametrize(("url", "key"), LIST_OPERATIONS)
+def test_list_response_has_optional_next_cursor(url: str, key: str) -> None:
+    schema = _paged_object_schema(url)
+    assert schema["properties"]["next_cursor"]["type"] == ["string", "null"]
+    assert "next_cursor" not in schema["required"]
+    # Current (unpaged) and paged bodies both validate.
+    Draft202012Validator(schema).validate({key: []})
+    Draft202012Validator(schema).validate({key: [], "next_cursor": "c1"})
+    Draft202012Validator(schema).validate({key: [], "next_cursor": None})
+
+
+def test_sessions_list_still_accepts_the_bare_array() -> None:
+    schema = MERGED_SPEC["paths"]["/sessions"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    Draft202012Validator(schema).validate([])
+
+
+def test_problem_code_has_auth_and_limit_codes() -> None:
+    with ROOT["components"]["schemas"]["Problem"].open() as problem:
+        codes = problem["properties"]["code"]["enum"]
+        description = problem["description"]
+    for code, status in [
+        ("unauthorized", 401),
+        ("forbidden", 403),
+        ("rate-limited", 429),
+        ("auth-unavailable", 503),
+    ]:
+        assert code in codes
+        assert f"`{code}` {status}" in description
+
+
+def test_bearer_jwt_security_applies_to_every_operation() -> None:
+    assert MERGED_SPEC["security"] == [{"bearer": []}]
+    scheme = MERGED_SPEC["components"]["securitySchemes"]["bearer"]
+    assert (scheme["type"], scheme["scheme"], scheme["bearerFormat"]) == ("http", "bearer", "JWT")
+    for item in MERGED_SPEC["paths"].values():
+        for op in item.values():
+            if isinstance(op, dict) and "responses" in op:
+                assert "security" not in op, op.get("operationId")
+
+
+def test_socket_ticket_endpoint() -> None:
+    op = MERGED_SPEC["paths"]["/auth/socket-tickets"]["post"]
+    schema = op["responses"]["201"]["content"]["application/json"]["schema"]
+    assert schema["required"] == ["ticket", "expires_at"]
+    assert schema["additionalProperties"] is False
+    Draft202012Validator(schema).validate({"ticket": "t", "expires_at": "2026-01-01T00:00:00Z"})
+    readme = (V2_DIR.parents[1] / "schemas" / "websocket" / "README.md").read_text(encoding="utf-8")
+    assert "?ticket=" in readme and "/auth/socket-tickets" in readme

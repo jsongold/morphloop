@@ -16,6 +16,9 @@
     tags: [chat]
     operationId: listChatMessages
     summary: The thread's messages, oldest first.
+    parameters:
+      - $ref: '../root.yaml#/components/parameters/Cursor'
+      - $ref: '../root.yaml#/components/parameters/Limit'
     responses:
       '200':
         description: Messages.
@@ -25,6 +28,9 @@
               type: object
               required: [messages]
               properties:
+                next_cursor:
+                  type: [string, 'null']
+                  description: Opaque cursor for the next page; absent or null on the last page.
                 messages:
                   type: array
                   items: &message

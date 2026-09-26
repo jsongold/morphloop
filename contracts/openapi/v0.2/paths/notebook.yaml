@@ -16,6 +16,8 @@
     parameters:
       - {name: q, in: query, required: true, schema: {type: string, minLength: 1}}
       - {name: session_id, in: query, required: false, schema: {type: string}}
+      - $ref: '../root.yaml#/components/parameters/Cursor'
+      - $ref: '../root.yaml#/components/parameters/Limit'
     responses:
       '200':
         description: Matching notebook content.
@@ -25,6 +27,9 @@
               type: object
               required: [results]
               properties:
+                next_cursor:
+                  type: [string, 'null']
+                  description: Opaque cursor for the next page; absent or null on the last page.
                 results:
                   type: array
                   items:
