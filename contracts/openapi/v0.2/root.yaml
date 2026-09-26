@@ -21,8 +21,12 @@ info:
 servers:
   - url: http://localhost:8000/v2
     description: Local Docker Compose stack, v0.2 API base path.
-security: []
+# Every operation needs a bearer JWT (the OIDC access token), unless an
+# operation overrides this with its own `security`.
+security:
+  - bearer: []
 tags:
+  - name: auth
   - name: session
   - name: ws
   - name: memo
@@ -45,6 +49,17 @@ components:
       $ref: './components/common.yaml#/Problem'
     Stub:
       $ref: './components/common.yaml#/Stub'
+  parameters:
+    Cursor:
+      $ref: './components/common.yaml#/CursorParam'
+    Limit:
+      $ref: './components/common.yaml#/LimitParam'
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: OIDC access token. Missing, malformed or expired -> 401 `unauthorized`; the identity provider unreachable -> 503 `auth-unavailable`.
   responses:
     Problem:
       description: Error (RFC 9457 problem details).

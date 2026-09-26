@@ -8,14 +8,24 @@ Problem:
   title: Problem details
   description: |
     RFC 9457 problem details with a closed `code` vocabulary. `code` → status:
-    `invalid-request` 400 (malformed JSON or parameters);
+    `invalid-request` 400 (malformed JSON or parameters, including an
+    unknown or expired `cursor`);
+    `unauthorized` 401 (missing, malformed or expired bearer token or
+    socket ticket);
+    `forbidden` 403 (authenticated, but the token lacks the needed
+    permission; another learner's resource is still `not-found` 404 so its
+    existence is not revealed);
     `not-found` 404;
     `idempotency-key-reused` 409 (same key, different body);
     `state-conflict` 409 (operation not allowed in the current state);
     `validation-failed` 422 (body fails its schema; `errors` lists paths);
     `llm-failed` 502 (an LLM call failed or its output failed validation;
     no learner state changed);
+    `rate-limited` 429 (a per-user limit was hit; the `Retry-After` header
+    says when to retry);
     `lab-unavailable` 503 (the lab runtime could not start or reset a lab);
+    `auth-unavailable` 503 (the identity provider could not be reached to
+    verify a token);
     `internal` 500.
   type: object
   required: [type, title, status, code]
@@ -39,12 +49,16 @@ Problem:
     code:
       enum:
         - invalid-request
+        - unauthorized
+        - forbidden
         - not-found
         - idempotency-key-reused
         - state-conflict
         - validation-failed
         - llm-failed
+        - rate-limited
         - lab-unavailable
+        - auth-unavailable
         - internal
     errors:
       description: Validation errors, for `validation-failed`.
@@ -73,3 +87,27 @@ Stub:
       minLength: 1
   required: [resource]
   additionalProperties: false
+
+# Keyset pagination query parameters shared by every list operation. A list
+# response carries `next_cursor`: an opaque string to pass back as `cursor`
+# for the next page, absent or null on the last page. Clients must not parse
+# or build a cursor. `next_cursor` is declared inline in each list response
+# (not $ref'd from here) so a response schema validates standalone.
+CursorParam:
+  name: cursor
+  in: query
+  required: false
+  description: Opaque `next_cursor` from the previous page; omit for the first page. Unknown or expired -> 400 `invalid-request`.
+  schema:
+    type: string
+    minLength: 1
+LimitParam:
+  name: limit
+  in: query
+  required: false
+  description: Maximum number of items in this page.
+  schema:
+    type: integer
+    minimum: 1
+    maximum: 100
+    default: 50

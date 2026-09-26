@@ -25,6 +25,8 @@
           items: {type: string}
         style: form
         explode: true
+      - $ref: '../root.yaml#/components/parameters/Cursor'
+      - $ref: '../root.yaml#/components/parameters/Limit'
     responses:
       '200':
         description: Matching items.
@@ -34,6 +36,9 @@
               type: object
               required: [items]
               properties:
+                next_cursor:
+                  type: [string, 'null']
+                  description: Opaque cursor for the next page; absent or null on the last page.
                 items:
                   type: array
                   items: &drill_item
@@ -137,6 +142,8 @@
       The ws must exist and belong to the caller (404 otherwise).
     parameters:
       - {name: ws_id, in: path, required: true, schema: {type: string}}
+      - $ref: '../root.yaml#/components/parameters/Cursor'
+      - $ref: '../root.yaml#/components/parameters/Limit'
     responses:
       '200':
         description: Matching answers, oldest first.
@@ -147,6 +154,9 @@
               required: [items]
               additionalProperties: false
               properties:
+                next_cursor:
+                  type: [string, 'null']
+                  description: Opaque cursor for the next page; absent or null on the last page.
                 items:
                   type: array
                   items:
