@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from harness.adapters.postgres.claims import PostgresClaimStore
-from harness.core.ports.claims import ClaimStore
+from harness.core.ports.claims import MAX_COUNTER_WINDOW, ClaimStore
 from harness.testing.claims import InMemoryClaimStore
 
 THREADS = 24
@@ -135,6 +135,8 @@ def test_invalid_arguments_are_refused(store: ClaimStore, key: str) -> None:
         store.try_claim(key, "a", timedelta(0))
     with pytest.raises(ValueError):
         store.consume(key, "calls", limit=0, window=HOUR)
+    with pytest.raises(ValueError):
+        store.consume(key, "calls", limit=1, window=MAX_COUNTER_WINDOW + timedelta(seconds=1))
     with pytest.raises(ValueError):
         store.acquire_slot(key, "run", holder="a", cap=0, ttl=HOUR)
 
