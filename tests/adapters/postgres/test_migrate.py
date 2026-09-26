@@ -40,3 +40,20 @@ def test_migrate_restores_the_previous_database_url_env_var(
     migrate(pg_url)
 
     assert os.environ["DATABASE_URL"] == "postgresql+psycopg://placeholder/placeholder"
+
+
+def test_migrate_accepts_percent_encoded_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    # ConfigParser interpolation would reject a raw "%" (e.g. a URL-encoded password).
+    import importlib
+
+    migrate_mod = importlib.import_module("harness.adapters.postgres.migrate")
+
+    seen: dict[str, str] = {}
+    monkeypatch.setattr(
+        migrate_mod.command,
+        "upgrade",
+        lambda config, rev: seen.update(url=config.get_main_option("sqlalchemy.url")),
+    )
+    url = "postgresql+psycopg://u:p%40ss@localhost/db"
+    migrate_mod.migrate(url)
+    assert seen["url"] == url

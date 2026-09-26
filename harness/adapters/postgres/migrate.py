@@ -43,7 +43,8 @@ def migrate(database_url: str) -> None:
     """
     config = Config()
     config.set_main_option("script_location", str(locate_migrations_dir()))
-    config.set_main_option("sqlalchemy.url", database_url)
+    # set_main_option goes through ConfigParser interpolation: escape "%" (URL-encoded passwords).
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     previous = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = database_url
     try:
