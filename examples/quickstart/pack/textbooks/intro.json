@@ -1,0 +1,12 @@
+{
+  "id": "intro",
+  "title": "Introduction",
+  "labels": ["topic:basics"],
+  "blocks": [
+    {
+      "id": "b1",
+      "body": "This is the one textbook block the quickstart pack ships with.",
+      "labels": ["topic:basics"]
+    }
+  ]
+}
