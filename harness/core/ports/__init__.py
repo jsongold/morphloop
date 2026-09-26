@@ -1,13 +1,12 @@
-"""The five v0.1 Ports: interfaces core owns and technical adapters implement.
+"""The Ports: interfaces core owns and technical adapters implement.
 
 ADR-0015, ADR-0016, ADR-0017. One module per Port:
 
-- ``event_store`` -- append-only event log, idempotent append, unit of work
-  with projection access, per-learner serialization, rebuild reads.
+- ``events_v2`` -- the append-only event log and the view document store.
 - ``llm`` -- provider-neutral structured-output LLM call.
 - ``lab_runtime`` -- disposable, isolated lab instances and in-lab commands.
 - ``terminal_bridge`` -- interactive PTY sessions inside a lab (asyncio).
-- ``pack_source`` -- list and read the raw files of a pack location.
+- ``generated_documents`` -- runtime-generated content, stored immutably.
 
 Clock and ID generation are not Ports (ADR-0016): core functions take times
 and ids as arguments.
@@ -34,17 +33,6 @@ Conventions shared by every Port:
 - This package imports only the standard library.
 """
 
-from harness.core.ports.event_store import (
-    Actor,
-    AppendRequest,
-    AppendResult,
-    EventEnvelope,
-    EventStore,
-    EventStoreError,
-    EventTransaction,
-    IdempotencyConflictError,
-    StoredEvent,
-)
 from harness.core.ports.json_types import (
     JsonObject,
     JsonScalar,
@@ -84,14 +72,6 @@ from harness.core.ports.llm import (
     LLMRole,
     MessageRole,
 )
-from harness.core.ports.pack_source import (
-    PackFileNotFoundError,
-    PackLocationNotFoundError,
-    PackPathError,
-    PackSource,
-    PackSourceError,
-    check_pack_path,
-)
 from harness.core.ports.terminal_bridge import (
     TerminalBridge,
     TerminalBridgeError,
@@ -102,18 +82,10 @@ from harness.core.ports.terminal_bridge import (
 )
 
 __all__ = [
-    "Actor",
-    "AppendRequest",
-    "AppendResult",
     "Argv",
-    "EventEnvelope",
-    "EventStore",
-    "EventStoreError",
-    "EventTransaction",
     "ExecRequest",
     "ExecResult",
     "GenerationParameter",
-    "IdempotencyConflictError",
     "ImageRef",
     "JsonObject",
     "JsonScalar",
@@ -136,15 +108,9 @@ __all__ = [
     "LabStatus",
     "MessageRole",
     "NetworkMode",
-    "PackFileNotFoundError",
-    "PackLocationNotFoundError",
-    "PackPathError",
-    "PackSource",
-    "PackSourceError",
     "PlainJson",
     "ReadinessProbe",
     "ResourceLimits",
-    "StoredEvent",
     "TerminalBridge",
     "TerminalBridgeError",
     "TerminalClosedError",
@@ -152,7 +118,6 @@ __all__ = [
     "TerminalSession",
     "TerminalSize",
     "check_argv",
-    "check_pack_path",
     "format_timestamp",
     "to_plain_json",
     "to_plain_object",

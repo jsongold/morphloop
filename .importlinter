@@ -32,7 +32,6 @@ modules =
     harness.adapters.litellm
     harness.adapters.docker_lab
     harness.adapters.pty
-    harness.adapters.fs_pack_source
 
 [importlinter:contract:adapters-do-not-import-wiring]
 name = harness.adapters.* must not import api or cli
@@ -47,8 +46,7 @@ forbidden_modules =
 # refer to each other by id. `harness.core.*` covers every new resource package automatically.
 # Allowed shared imports are the Ports, contract schemas, settings, the pack loader, the domain
 # adapter base and the v0.2 bases (view / artifact / labels). Notebook is the
-# function layer and may compose resources (#66). The last block is v0.1 coupling
-# between loop / learner_model / registry / pack, removed with that code in x1 (#69).
+# function layer and may compose resources (#66).
 [importlinter:contract:core-resources-are-independent]
 name = harness.core.<resource> packages must not import each other
 type = independence
@@ -70,13 +68,4 @@ ignore_imports =
     harness.core.notebook.** -> harness.core.memo.**
     harness.core.notebook.** -> harness.core.ws.**
     harness.core.notebook.** -> harness.core.session.**
-    harness.core.loop.** -> harness.core.learner_model
-    harness.core.loop.** -> harness.core.learner_model.**
-    harness.core.loop.** -> harness.core.registry
-    harness.core.loop.** -> harness.core.registry.**
-    harness.core.learner_model.** -> harness.core.registry
-    harness.core.learner_model.** -> harness.core.registry.**
-    harness.core.registry.** -> harness.core.learner_model
-    harness.core.registry.** -> harness.core.learner_model.**
-    harness.core.pack.** -> harness.core.registry.**
 unmatched_ignore_imports_alerting = none

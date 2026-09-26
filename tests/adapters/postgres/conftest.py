@@ -23,8 +23,6 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from harness.adapters.postgres import PostgresEventStore
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 _IMAGE = "postgres:16"
 _USER = _PASSWORD = _DB = "morphloop_test"
@@ -121,8 +119,3 @@ def pg_engine(pg_url: str) -> Iterator[Engine]:
         yield engine
     finally:
         engine.dispose()
-
-
-@pytest.fixture
-def store(pg_engine: Engine) -> PostgresEventStore:
-    return PostgresEventStore(pg_engine)

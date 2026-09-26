@@ -1,12 +1,10 @@
 """Building the real objects the commands and routes run against (ADR-0017: the CLI wires).
 
-Core owns the Ports and the registries; ``harness/adapters/*`` (and an app's
-domain adapters) implement them; nothing down there knows which implementation is
-in use. This module is where the choice is made for the CLI:
-the v2 Postgres event store from ``DATABASE_URL``, the
-litellm LLM provider (the pack's model string picks the provider; litellm reads
-the matching API key from the environment). Domain
-adapters belong to apps, so the CLI registers none.
+Core owns the Ports; ``harness/adapters/*`` implement them; nothing down there
+knows which implementation is in use. This module is where the choice is made:
+the v2 Postgres event store from ``DATABASE_URL`` and the litellm LLM provider
+(the pack's model string picks the provider; litellm reads the matching API
+key from the environment).
 
 Every failure to build one of them is a :class:`~harness.cli.errors.CommandError`,
 so a missing key reads as a message rather than a traceback.
@@ -24,10 +22,7 @@ from harness.adapters.postgres.engine import create_engine_from_env, get_databas
 from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
 from harness.cli.errors import CommandError
 from harness.core.contract_schemas import ContractSchemas, ContractsNotFoundError
-from harness.core.domain_adapter import DomainAdapterRegistry
 from harness.core.ports.events_v2 import EventStoreV2
-from harness.core.registry import AlgorithmRegistry
-from harness.core.registry.builtin import v01_algorithm_registry
 from harness.core.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -38,15 +33,6 @@ def contract_schemas() -> ContractSchemas:
         return ContractSchemas.load()
     except ContractsNotFoundError as exc:
         raise CommandError(str(exc)) from exc
-
-
-def domain_adapters() -> DomainAdapterRegistry:
-    """No domain adapters: they belong to apps, which register their own."""
-    return DomainAdapterRegistry()
-
-
-def algorithms() -> AlgorithmRegistry:
-    return v01_algorithm_registry()
 
 
 def database_url() -> str:

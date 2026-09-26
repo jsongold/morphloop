@@ -25,13 +25,10 @@ PROVENANCE = LLMProvenance(
 )
 
 # Every schema an LLM output is actually validated against in this repo: the
-# five `contracts/schemas/llm/*` output schemas, plus the pack v2 content
+# `contracts/schemas/llm/*` output schemas, plus the pack v2 content
 # schemas the generator (`harness/core/generator/runtime.py`) asks for.
 SCHEMA_IDS = [
-    "schemas/llm/tutor.reply/1.json",
-    "schemas/llm/evaluator.judgment/1.json",
-    "schemas/llm/learner_model.update/1.json",
-    "schemas/llm/memo_summarizer.note/1.json",
+    "schemas/llm/drill.gap/1.json",
     "schemas/llm/generator.activity_candidate/1.json",
     "schemas/pack/v2/drill-item.json",
     "schemas/pack/v2/textbook-doc.json",

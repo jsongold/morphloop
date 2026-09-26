@@ -175,8 +175,7 @@ class CheckObservation:
 class CheckResult:
     """A check observation labelled with the check's adapter item id.
 
-    ``to_dict()`` is one item of ``evaluation.completed`` ``checks``
-    (``contracts/schemas/events/payloads/evaluation.completed/1.json``).
+    ``to_dict()`` is the JSON form recorded with a check run.
     """
 
     check_id: str
