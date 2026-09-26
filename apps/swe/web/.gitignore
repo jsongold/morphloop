@@ -13,6 +13,11 @@
 # testing
 /coverage
 
+# playwright e2e artifacts (screenshots, traces); the config lives in e2e/
+/e2e/artifacts/
+/test-results/
+/playwright-report/
+
 # next.js
 /.next/
 /out/
