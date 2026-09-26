@@ -1,4 +1,4 @@
-// Entry point of the v0.2 UI (issue #106). The v0.1 UI at `/` is untouched.
+// Entry point of the UI (issue #106); `/` redirects here.
 
 import { WorkspaceProvider } from "@/v2/state";
 import { Workspace } from "@/v2/Workspace";

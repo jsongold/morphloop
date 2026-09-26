@@ -163,10 +163,9 @@ test("v0.2.0 GUI works end to end (#106)", async ({ page }) => {
     await shot(page, "reloaded-restored");
   });
 
-  await test.step("9. open / (the v0.1 page) -> it still loads", async () => {
+  await test.step("9. open / -> redirected to /v2", async () => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "morphloop", exact: true })).toBeVisible();
-    await shot(page, "v01-page");
+    await expect(page).toHaveURL(/\/v2$/);
   });
 });
 

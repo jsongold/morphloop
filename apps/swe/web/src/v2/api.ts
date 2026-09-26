@@ -1,7 +1,5 @@
-// Hand-written HTTP client for the v0.2 API (ADR-0017/0018). Same shape as
-// `src/lib/api.ts` (v0.1) but every path is joined onto `/v2`
-// (contracts/openapi/v0.2/root.yaml `servers`). Kept separate so v0.1 and
-// v0.2 migrate independently.
+// Hand-written HTTP client for the v0.2 API (ADR-0017/0018). Every path is
+// joined onto `/v2` (contracts/openapi/v0.2/root.yaml `servers`).
 
 import type { Problem } from "./types";
 

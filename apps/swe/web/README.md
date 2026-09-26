@@ -16,12 +16,10 @@ Checks: `pnpm typecheck && pnpm lint && pnpm build`.
 
 ## Layout
 
-- `src/lib/types.ts` — wire types, written by hand from `contracts/openapi/v0.1.yaml` and `contracts/schemas/`.
-- `src/lib/api.ts` — one function per v0.1 HTTP endpoint; errors surface as `ApiError` with the RFC 9457 `Problem`.
-- `src/lib/websocket.ts` — lab terminal WebSocket client (`/labs/{lab_instance_id}/terminal`).
-- `src/lib/layout.ts` — minimal interpreter of the pack layout document. v0.1 fixes no generic layout schema (ADR-0012); it reads only `main.modes/default_mode/components`, `side.component`, `bottom.component` and ignores unknown keys.
-- `src/components/` — workspace (mission, xterm.js terminal, sequence visualization with reality mapping, concept side pane, tutor chat with highlight quotes, timeline).
+- `src/app/v2/page.tsx` — the workspace; `/` redirects to `/v2`.
+- `src/v2/` — hand-written client for `contracts/openapi/v0.2/` (`api.ts`, `types.ts`), workspace state, and one directory per pane under `panes/`.
+- `src/components/TerminalPane.tsx` — xterm.js terminal used by the artifact pane.
+- `src/lib/websocket.ts` — lab terminal WebSocket client (`contracts/schemas/websocket/`); `src/lib/types.ts` holds its wire types.
 
-The learner id and current session id are kept in `localStorage`; everything
-else (attempt, lab, highlights, chat, timeline, open content, selected
-visualization step) is restored from the API on reload.
+The session and workspace ids live in the URL query; everything else is
+restored from the API on reload.

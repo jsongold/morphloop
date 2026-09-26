@@ -27,7 +27,7 @@ import {
   type CheckResult,
 } from "./artifacts";
 
-// xterm touches `window` at import time: client-only (see Workspace.tsx).
+// xterm touches `window` at import time: client-only.
 const TerminalPane = dynamic(() => import("@/components/TerminalPane"), {
   ssr: false,
   loading: () => <div className="terminal muted">Loading terminal…</div>,
