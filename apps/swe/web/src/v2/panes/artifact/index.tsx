@@ -175,7 +175,7 @@ export default function ArtifactPane() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkId, setCheckId] = useState("");
-  const [params, setParams] = useState("{}");
+  const [params, setParams] = useState("");
   const terminalHandle = useRef<TerminalHandle | null>(null);
   const wsId = ws?.ws_id ?? null;
   const artifact = active?.artifact.ws_id === wsId ? active.artifact : null;
@@ -229,7 +229,7 @@ export default function ArtifactPane() {
         <button disabled={busy} onClick={() => void action("reset")}>Reset</button>
         <button disabled={busy} onClick={() => void action("stop")}>Stop</button>
         <label>Check <input value={checkId} onChange={(event) => setCheckId(event.target.value)} placeholder="check id" /></label>
-        <label>Params <input value={params} onChange={(event) => setParams(event.target.value)} placeholder="{}" /></label>
+        <label>Params <input value={params} onChange={(event) => setParams(event.target.value)} placeholder="(target default)" /></label>
         <button disabled={busy || !checkId.trim()} onClick={() => void check()}>Run check</button>
       </>}
     </div>

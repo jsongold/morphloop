@@ -115,7 +115,8 @@ class StartArtifact(BaseModel):
 
 class RunCheck(BaseModel):
     check_id: str = Field(min_length=1)
-    params: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] | None = None
+    """Omitted: the spec's own target params for ``check_id`` (#149)."""
 
 
 def _body(result: JsonObject) -> dict[str, PlainJson]:
