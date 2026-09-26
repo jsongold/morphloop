@@ -7,10 +7,9 @@
 # derived from the worktree path, so each worktree can `up` without colliding.
 # The api port lands in 17000-17999, offset from the hash.
 #
-#   scripts/dev-stack.sh up [pack-path] [--fake-llm]  # build + start, then import
+#   scripts/dev-stack.sh up [--fake-llm]            # build + start (SDK api only)
 #   scripts/dev-stack.sh down [-v]               # stop (and delete the db)
 #   scripts/dev-stack.sh logs [service]            # follow logs (api/db)
-#   scripts/dev-stack.sh import [pack-path]        # import a pack via the api
 #   scripts/dev-stack.sh test                       # e2e tests inside the api
 #
 # --fake-llm (or MORPHLOOP_LLM_PROVIDER=fake in the environment, #130): the api
@@ -36,9 +35,7 @@ case "$cmd" in
         args+=("$arg")
       fi
     done
-    pack="${args[0]:-contents/software-engineering}"
     docker compose up -d --build
-    docker compose exec -T api python -m harness.cli import "$pack" 2>/dev/null || true
     echo "api  http://localhost:${API_PORT}  (project ${COMPOSE_PROJECT_NAME})"
     ;;
   down)
@@ -49,16 +46,12 @@ case "$cmd" in
     shift
     docker compose logs -f "$@"
     ;;
-  import)
-    shift
-    docker compose exec -T api python -m harness.cli import "${1:-contents/software-engineering}"
-    ;;
   test)
     shift
     docker compose exec -T api pytest tests/e2e "$@"
     ;;
   *)
-    echo "usage: $(basename "$0") {up|down|logs|import|test}" >&2
+    echo "usage: $(basename "$0") {up|down|logs|test}" >&2
     exit 2
     ;;
 esac
