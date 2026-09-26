@@ -7,6 +7,7 @@ ADR-0015, ADR-0016, ADR-0017. One module per Port:
 - ``lab_runtime`` -- disposable, isolated lab instances and in-lab commands.
 - ``terminal_bridge`` -- interactive PTY sessions inside a lab (asyncio).
 - ``generated_documents`` -- runtime-generated content, stored immutably.
+- ``search`` -- keyword, semantic, rerank and embedding backends (issue #180).
 
 Clock and ID generation are not Ports (ADR-0016): core functions take times
 and ids as arguments.
@@ -72,6 +73,25 @@ from harness.core.ports.llm import (
     LLMRole,
     MessageRole,
 )
+from harness.core.ports.search import (
+    EmbeddingError,
+    EmbeddingOutputError,
+    EmbeddingProvenance,
+    EmbeddingProvider,
+    EmbeddingRequest,
+    EmbeddingResponse,
+    KeywordSearchBackend,
+    KeywordSearchRequest,
+    RerankCandidate,
+    Reranker,
+    RerankRequest,
+    SearchBackendError,
+    SearchHit,
+    SearchMode,
+    SearchSource,
+    SemanticSearchBackend,
+    SemanticSearchRequest,
+)
 from harness.core.ports.terminal_bridge import (
     TerminalBridge,
     TerminalBridgeError,
@@ -83,6 +103,12 @@ from harness.core.ports.terminal_bridge import (
 
 __all__ = [
     "Argv",
+    "EmbeddingError",
+    "EmbeddingOutputError",
+    "EmbeddingProvenance",
+    "EmbeddingProvider",
+    "EmbeddingRequest",
+    "EmbeddingResponse",
     "ExecRequest",
     "ExecResult",
     "GenerationParameter",
@@ -90,6 +116,8 @@ __all__ = [
     "JsonObject",
     "JsonScalar",
     "JsonValue",
+    "KeywordSearchBackend",
+    "KeywordSearchRequest",
     "LLMError",
     "LLMMessage",
     "LLMOutputError",
@@ -110,7 +138,16 @@ __all__ = [
     "NetworkMode",
     "PlainJson",
     "ReadinessProbe",
+    "RerankCandidate",
+    "RerankRequest",
+    "Reranker",
     "ResourceLimits",
+    "SearchBackendError",
+    "SearchHit",
+    "SearchMode",
+    "SearchSource",
+    "SemanticSearchBackend",
+    "SemanticSearchRequest",
     "TerminalBridge",
     "TerminalBridgeError",
     "TerminalClosedError",
