@@ -22,8 +22,16 @@ from typing import Protocol
 
 
 def slot_key(subject: str, name: str, index: int) -> str:
-    """The claim key of slot ``index`` of ``(subject, name)``."""
-    return f"slot:{subject}:{name}:{index}"
+    """The claim key of slot ``index`` of ``(subject, name)``.
+
+    ``subject``/``name`` are opaque and may contain ``:``, so each is
+    length-prefixed rather than just joined with ``:`` -- otherwise
+    ``slot_key("a:b", "c", 0)`` and ``slot_key("a", "b:c", 0)`` would both
+    return ``slot:a:b:c:0`` and collide (#205). No key has shipped to a
+    persisted store yet (the claims table landed in this same v0.4 cycle),
+    so there is nothing stored in the old format to keep readable.
+    """
+    return f"slot:{len(subject)}:{subject}:{len(name)}:{name}:{index}"
 
 
 def check_positive(**values: float) -> None:
