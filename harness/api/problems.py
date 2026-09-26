@@ -6,7 +6,9 @@ failures that happen before a route answers -- an event that fails its contract
 schema (422 ``validation-failed``), a body that fails its request
 schema (422 ``validation-failed``) and a malformed body or query parameter
 (400 ``invalid-request``) -- a reused ``Idempotency-Key`` with a different
-body (409 ``idempotency-key-reused``, v2), and a catch-all for an unexpected exception
+body (409 ``idempotency-key-reused``, v2), a missing or invalid bearer token
+(401 ``unauthorized``), an unreachable identity provider (503
+``auth-unavailable``), and a catch-all for an unexpected exception
 (500 ``internal``).
 """
 
@@ -22,13 +24,20 @@ from starlette.exceptions import HTTPException
 
 from harness.core.contract_schemas import ContractValidationError
 from harness.core.ports import PlainJson
+from harness.core.ports.auth import AuthError, AuthUnavailableError
 from harness.core.ports.events_v2 import EventIdConflictError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
 logger = logging.getLogger(__name__)
 
-_STATUS_CODES = {400: "invalid-request", 404: "not-found", 409: "state-conflict"}
+_STATUS_CODES = {
+    400: "invalid-request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not-found",
+    409: "state-conflict",
+}
 
 
 def problem(
@@ -78,6 +87,16 @@ def install_handlers(app: FastAPI) -> None:
     async def _event_id_conflict(request: Request, exc: Exception) -> Response:
         # A reused Idempotency-Key with a different body (v2 routes).
         return problem(status=409, code="idempotency-key-reused", detail=str(exc))
+
+    @app.exception_handler(AuthError)
+    async def _unauthorized(request: Request, exc: Exception) -> Response:
+        response = problem(status=401, code="unauthorized", detail=str(exc))
+        response.headers["WWW-Authenticate"] = "Bearer"
+        return response
+
+    @app.exception_handler(AuthUnavailableError)
+    async def _auth_unavailable(request: Request, exc: Exception) -> Response:
+        return problem(status=503, code="auth-unavailable", detail=str(exc))
 
     @app.exception_handler(RequestValidationError)
     async def _request_error(request: Request, exc: Exception) -> Response:
