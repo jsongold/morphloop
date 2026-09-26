@@ -191,6 +191,35 @@ an artifact type with routes needs (the v2 event store Port and value types, the
 Ports with their Docker adapters, the domain adapter registry); test support
 (fakes, the in-memory store, contract validation) is `harness.testing`.
 
+### Using Supabase (auth + DB)
+
+The SDK offers providers; the app chooses one in code (`create_app(auth=..., db=...)`,
+which wins) or with env vars. Unset: auth=`dev` (refused in production), db=`postgres`.
+
+1. In the Supabase dashboard, note the **project ref** (`https://<ref>.supabase.co`) and
+   switch Auth to **asymmetric JWT signing keys** (RS256/ES256; legacy HS256 is unsupported).
+2. From *Connect*, copy two connection strings: the **transaction pooler** (Supavisor,
+   port 6543) for the app and the **direct connection** (port 5432) for migrations.
+   Use the `postgresql+psycopg://` scheme for both.
+3. Set the env vars and migrate over the direct URL:
+
+```sh
+export MORPHLOOP_AUTH_PROVIDER=supabase
+export MORPHLOOP_SUPABASE_PROJECT_REF=<ref>
+export MORPHLOOP_DB_PROVIDER=supabase       # psycopg prepare_threshold=None for Supavisor
+export DATABASE_URL='postgresql+psycopg://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres'
+export MORPHLOOP_DATABASE_DIRECT_URL='postgresql+psycopg://postgres:<password>@db.<ref>.supabase.co:5432/postgres'
+morphloop migrate                           # uses MORPHLOOP_DATABASE_DIRECT_URL when set
+```
+
+Or choose in code:
+
+```python
+from harness.sdk import create_app, supabase_auth, supabase_engine
+
+app = create_app(auth=supabase_auth(project_ref="<ref>"), db=supabase_engine)
+```
+
 ## Core idea
 
 ```text

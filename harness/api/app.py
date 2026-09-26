@@ -20,13 +20,14 @@ from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from harness.adapters.postgres.engine import create_engine_from_env, ping
+from harness.adapters.postgres.engine import ping
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
 from harness.api.v2.auth import auth_provider_from_settings
+from harness.api.v2.db import DbProvider, db_of
 from harness.api.v2.deps import user_id_of
 from harness.core.artifact import Artifact
 from harness.core.ports.auth import AuthProvider
@@ -35,14 +36,14 @@ from harness.core.settings import Settings
 REPLAYED_HEADER = "Idempotent-Replayed"
 
 
-def check_db() -> bool:
-    """Default DB health check: ping a fresh engine built from DATABASE_URL.
+def check_db(request: Request) -> bool:
+    """Default DB health check: ping a fresh engine from the app's DB provider.
 
     This is a FastAPI dependency, so tests can replace it via
     ``app.dependency_overrides[check_db] = ...`` without touching a real
     database.
     """
-    engine = create_engine_from_env()
+    engine = db_of(request)()
     try:
         return ping(engine)
     finally:
@@ -62,7 +63,10 @@ class AppExtension:
 
 
 def create_app(
-    *, extensions: Iterable[AppExtension] = (), auth: AuthProvider | None = None
+    *,
+    extensions: Iterable[AppExtension] = (),
+    auth: AuthProvider | None = None,
+    db: DbProvider | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -70,6 +74,8 @@ def create_app(
     server registers no artifact type, so a pack that embeds artifacts is refused.
     ``auth`` is the app's :class:`AuthProvider` (e.g. ``OidcAuthProvider`` or
     ``supabase_auth(...)``); unset, ``MORPHLOOP_AUTH_PROVIDER`` picks one.
+    ``db`` is the app's engine factory (``create_engine_from_env`` or
+    ``supabase_engine``); unset, ``MORPHLOOP_DB_PROVIDER`` picks one.
     """
     extensions = tuple(extensions)
 
@@ -108,6 +114,8 @@ def create_app(
     app.include_router(v2, dependencies=[Depends(user_id_of)])
     if auth is not None:
         app.state.auth_provider = auth
+    if db is not None:
+        app.state.db = db
     app.state.artifact_types = tuple(t for e in extensions for t in e.artifact_types)
     return app
 
