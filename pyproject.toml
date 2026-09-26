@@ -22,17 +22,28 @@ dependencies = [
     "uvicorn[standard]>=0.53.0",
 ]
 
+[project.scripts]
+morphloop = "harness.cli.main:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# The wheel ships contracts/ as package data (harness/contracts/), so an installed SDK
-# resolves them without the repository checkout (ADR-0018 s19). The repo top-level
-# contracts/ stays the single source: `sources` only rewrites the path inside the wheel
-# (an editable install keeps reading the checkout).
+# The wheel ships contracts/ and migrations/ as package data (harness/contracts/,
+# harness/migrations/), so an installed SDK resolves them -- and `morphloop migrate`
+# runs -- without the repository checkout (ADR-0018 s19, #159). The repo top-level
+# contracts/ and migrations/ stay the single source and are placed under harness/ in
+# the wheel: `sources` for contracts/ (no .py files, so the rewrite is transparent to
+# an editable install); `force-include` for migrations/ (it has .py files, and
+# `sources` on a .py-bearing directory breaks editable installs, see
+# https://github.com/pfmoore/editables/issues/20). An editable install keeps reading
+# the checkout either way; force-include additionally copies the migrations in.
 [tool.hatch.build.targets.wheel]
 only-include = ["harness", "domains", "contracts"]
 sources = { "contracts" = "harness/contracts" }
+
+[tool.hatch.build.targets.wheel.force-include]
+"migrations" = "harness/migrations"
 
 # Apps built on the SDK (apps/<app>/, ADR-0018 s19) are workspace members with their own
 # pyproject.toml and tests; they depend on this package by name. The dev group depends on

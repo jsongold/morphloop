@@ -20,7 +20,7 @@ curl -s localhost:18xxx/v2/topics
 ```
 
 `up` builds and starts db / api / web and waits until they are healthy. The api
-runs `alembic upgrade head` on every start and loads the SE pack from `pack/`
+runs `morphloop migrate` (migrations shipped in the SDK) on every start and loads the SE pack from `pack/`
 (`MORPHLOOP_PACK_V2_DIR` overrides it); there is no separate import step. The
 compose project name and host ports are derived from the checkout path, so
 several worktrees can run side by side. Plain `docker compose up -d --build`

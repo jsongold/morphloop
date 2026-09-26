@@ -134,9 +134,10 @@ def test_generate_requires_a_template() -> None:
     assert result.exit_code == 2
 
 
-def test_import_takes_a_pack_and_rebuild_takes_nothing() -> None:
+def test_import_takes_a_pack_and_rebuild_and_migrate_take_nothing() -> None:
     assert _params(["import", "contents/x"])["pack"] == "contents/x"
     assert _params(["rebuild"]) == {}
+    assert _params(["migrate"]) == {}
 
 
 def test_a_command_is_required() -> None:

@@ -24,7 +24,7 @@ from harness.adapters.docker_lab import DockerLabRuntime
 from harness.adapters.fake_llm import FakeDevLLMProvider
 from harness.adapters.fs_pack_source import FilesystemPackSource
 from harness.adapters.litellm import LiteLLMProvider
-from harness.adapters.postgres.engine import create_engine_from_env
+from harness.adapters.postgres.engine import create_engine_from_env, get_database_url
 from harness.adapters.postgres.event_store import PostgresEventStore
 from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
 from harness.cli.errors import CommandError
@@ -85,6 +85,10 @@ def importer_factory(
 
 def pack_source() -> PackSource:
     return FilesystemPackSource()
+
+
+def database_url() -> str:
+    return get_database_url()
 
 
 def llm_provider() -> LiteLLMProvider | FakeDevLLMProvider:

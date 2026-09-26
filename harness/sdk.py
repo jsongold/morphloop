@@ -29,6 +29,7 @@ not exported here is internal and may change between SDK versions.
 """
 
 from harness.adapters.docker_lab import DockerLabRuntime
+from harness.adapters.postgres import migrate
 from harness.adapters.pty import DockerTerminalBridge
 from harness.api.app import AppExtension, create_app
 from harness.api.problems import problem
@@ -98,6 +99,7 @@ __all__ = [
     "artifact_class",
     "create_app",
     "import_pack_v2",
+    "migrate",
     "registered_artifact_types",
     # /v2 request dependencies and responses
     "EventIdDep",

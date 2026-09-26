@@ -26,7 +26,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-workspace --package morphloop-swe
 
 # The SDK (package `morphloop`) and its migrations, then this app with its pack.
-COPY pyproject.toml uv.lock README.md alembic.ini ./
+# `morphloop migrate` (below) builds its own alembic Config, so alembic.ini is not needed here.
+COPY pyproject.toml uv.lock README.md ./
 COPY harness harness
 COPY domains domains
 COPY contracts contracts
@@ -46,4 +47,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head && uvicorn --factory swe.app:create_swe_app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "morphloop migrate && uvicorn --factory swe.app:create_swe_app --host 0.0.0.0 --port 8000"]
