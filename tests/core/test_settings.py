@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from harness.api.v2.auth import auth_provider_from_settings
 from harness.core.settings import Settings
 
 
@@ -88,11 +89,13 @@ def test_supabase_url_must_be_https(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_production_refuses_dev_auth_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Settings still load (an app may pass create_app(auth=...)); the dev
+    # provider itself refuses to be built (#171).
     monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")
     monkeypatch.delenv("MORPHLOOP_AUTH_PROVIDER", raising=False)
-
-    with pytest.raises(ValidationError):
-        Settings()
+    assert Settings().morphloop_auth_provider == "dev"
+    with pytest.raises(RuntimeError):
+        auth_provider_from_settings()
 
 
 def test_production_oidc_requires_issuer_and_audience(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -100,9 +103,12 @@ def test_production_oidc_requires_issuer_and_audience(monkeypatch: pytest.Monkey
     monkeypatch.setenv("MORPHLOOP_AUTH_PROVIDER", "oidc")
     monkeypatch.delenv("MORPHLOOP_OIDC_ISSUER", raising=False)
     monkeypatch.delenv("MORPHLOOP_OIDC_AUDIENCE", raising=False)
+    monkeypatch.setenv("MORPHLOOP_OIDC_JWKS_URL", "https://issuer.example.com/jwks.json")
 
-    with pytest.raises(ValidationError):
-        Settings()
+    # Checked when the provider is built, not on every Settings() read, so an
+    # app passing create_app(auth=...) is not blocked by unused settings (#171).
+    with pytest.raises(ValueError):
+        auth_provider_from_settings()
 
 
 def test_production_starts_with_oidc_issuer_and_audience(
@@ -127,8 +133,8 @@ def test_production_supabase_requires_project_ref_or_url(
     monkeypatch.delenv("MORPHLOOP_SUPABASE_PROJECT_REF", raising=False)
     monkeypatch.delenv("MORPHLOOP_SUPABASE_URL", raising=False)
 
-    with pytest.raises(ValidationError):
-        Settings()
+    with pytest.raises(ValueError):
+        auth_provider_from_settings()
 
 
 def test_supabase_preset_derives_issuer_audience_and_jwks_url(
