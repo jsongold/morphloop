@@ -51,7 +51,7 @@ PY
 # installed wheel.
 container=$(docker run --rm -d \
     -e POSTGRES_USER=morphloop -e POSTGRES_PASSWORD=morphloop -e POSTGRES_DB=morphloop \
-    -p 127.0.0.1::5432 postgres:16)
+    -p 127.0.0.1::5432 pgvector/pgvector:pg16)
 port=""
 tries=0
 while [ -z "$port" ]; do

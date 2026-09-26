@@ -117,7 +117,7 @@ uv sync
 
 docker run -d --name morphloop-quickstart-db \
   -e POSTGRES_USER=morphloop -e POSTGRES_PASSWORD=morphloop -e POSTGRES_DB=morphloop \
-  -p 5432:5432 postgres:16
+  -p 5432:5432 pgvector/pgvector:pg16
 export DATABASE_URL=postgresql+psycopg://morphloop:morphloop@localhost:5432/morphloop
 uv run alembic upgrade head
 
