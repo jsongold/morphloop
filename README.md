@@ -201,7 +201,21 @@ which wins) or with env vars. Unset: auth=`dev` (refused in production), db=`pos
 2. From *Connect*, copy two connection strings: the **transaction pooler** (Supavisor,
    port 6543) for the app and the **direct connection** (port 5432) for migrations.
    Use the `postgresql+psycopg://` scheme for both.
-3. Set the env vars and migrate over the direct URL:
+3. **Close the Data API to the SDK's tables before migrating.** The migrations create
+   tables in `public` without row-level security, and Supabase's Data API (PostgREST)
+   exposes `public` to the `anon` and `authenticated` roles by default, which would
+   bypass the SDK's authorization. The SDK never uses the Data API: under
+   *Project Settings → Data API*, disable it or remove `public` from *Exposed schemas*.
+   If another client needs the Data API on `public`, revoke those roles instead (SQL editor):
+
+   ```sql
+   revoke all on all tables in schema public from anon, authenticated;
+   revoke all on all sequences in schema public from anon, authenticated;
+   alter default privileges for role postgres in schema public revoke all on tables from anon, authenticated;
+   alter default privileges for role postgres in schema public revoke all on sequences from anon, authenticated;
+   ```
+
+4. Set the env vars and migrate over the direct URL:
 
 ```sh
 export MORPHLOOP_AUTH_PROVIDER=supabase
