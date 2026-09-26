@@ -18,6 +18,7 @@ from harness.core.drill import (
     DrillItemNotFoundError,
     DrillService,
     generated_items,
+    list_answers,
     pack_items,
 )
 from harness.core.pack.v2 import PackV2ImportError, import_pack_v2
@@ -101,6 +102,40 @@ def test_answer_appends_event_and_view_once(service: DrillService) -> None:
     with store.transaction() as tx:
         docs = DrillAnswersView.list(tx, key_prefix="ws_1/dns-record-choice/")
     assert [d["actual"] for _, d in docs] == ["A"]
+
+
+def test_list_answers_is_creation_order_without_actual_or_expected(
+    service: DrillService,
+) -> None:
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    # "dns-record-choice" sorts before "dns-resolver-text" by item_id, but was
+    # answered second -- creation order must win over the key's item grouping.
+    first = _answer(service, store, item_id="dns-resolver-text", actual="x")
+    second = _answer(service, store, item_id="dns-record-choice", actual="A")
+    with store.transaction() as tx:
+        answers = list_answers(tx, "ws_1")
+    assert answers == [
+        {
+            "item_id": "dns-resolver-text",
+            "answer_event_id": first.id,
+            "judgment_status": "unjudged",
+            "gap": None,
+        },
+        {
+            "item_id": "dns-record-choice",
+            "answer_event_id": second.id,
+            "judgment_status": "unjudged",
+            "gap": None,
+        },
+    ]
+    assert all("actual" not in a and "expected" not in a for a in answers)
+
+
+def test_list_answers_is_scoped_to_its_ws(service: DrillService) -> None:
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    _answer(service, store, item_id="dns-record-choice", actual="A")
+    with store.transaction() as tx:
+        assert list_answers(tx, "ws_other") == []
 
 
 def test_answer_must_fit_the_answer_mode(service: DrillService) -> None:

@@ -94,6 +94,12 @@ def test_duplicate_llm_role_name_is_rejected(pack: Path) -> None:
     assert "[llm_roles] llm role 'assistant' is declared 2 times" in _problems(pack)
 
 
+def test_duplicate_artifact_spec_id_is_rejected(pack: Path) -> None:
+    shutil.copy(pack / "artifacts" / "dns-resolution-flow.json", pack / "artifacts" / "second.json")
+    _edit(pack / "manifest.json", lambda d: d["artifacts"].append("artifacts/second.json"))
+    assert "[artifact] artifact id 'dns-resolution-flow' appears 2 times" in _problems(pack)
+
+
 def test_schema_error_names_the_file(pack: Path) -> None:
     _edit(pack / "topics" / "network.json", lambda d: d.pop("title"))
     assert "topics/network.json: $: 'title' is a required property" in _problems(pack)

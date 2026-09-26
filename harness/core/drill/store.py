@@ -11,10 +11,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from typing import cast
 
+from harness.core.drill.judge import stored_judgment
 from harness.core.drill.model import ANSWERED, DrillItem
 from harness.core.labels import HOLDOUT
 from harness.core.pack.v2 import PackV2
-from harness.core.ports.events_v2 import StoredEventV2, ViewDocumentStore
+from harness.core.ports.events_v2 import EventTransactionV2, StoredEventV2, ViewDocumentStore
 from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.ports.json_types import JsonObject
 from harness.core.view import View
@@ -100,3 +101,34 @@ class DrillAnswersView(View):
             **event.payload,
         }
         tx.put_view(cls.name, cls.key(event.ws_id, item_id, event.position), cast(JsonObject, doc))
+
+
+def list_answers(tx: EventTransactionV2, ws_id: str) -> list[JsonObject]:
+    """The ws's answers, in creation order: ``item_id``, ``answer_event_id``,
+    and ``judgment_status``/``gap`` (issue #129). Never ``actual`` or
+    ``expected``.
+
+    Keys sort ``<item_id>`` before ``<position>`` (``DrillAnswersView.key``),
+    so listing by ``key_prefix`` alone would group by item, not creation
+    order -- the trailing zero-padded position is parsed back out to sort
+    globally instead.
+
+    ``judgment_status``/``gap`` come from the answer's ``drill.judged`` event
+    (#65, #134 review), looked up per answer; an answer with none yet reads
+    back ``judgment_status: "unjudged"``, ``gap: None``.
+    """
+    pairs = DrillAnswersView.list(tx, key_prefix=f"{ws_id}/")
+    ordered = sorted(pairs, key=lambda pair: int(pair[0].rsplit("/", 1)[-1]))
+    answers: list[JsonObject] = []
+    for _, doc in ordered:
+        event_id = str(doc["event_id"])
+        judgment = stored_judgment(tx, event_id)
+        answers.append(
+            {
+                "item_id": doc["item_id"],
+                "answer_event_id": event_id,
+                "judgment_status": "judged" if judgment is not None else "unjudged",
+                "gap": judgment.payload["gap"] if judgment is not None else None,
+            }
+        )
+    return answers

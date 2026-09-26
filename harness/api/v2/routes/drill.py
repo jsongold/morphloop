@@ -15,6 +15,7 @@ from harness.api.backend import harness_version
 from harness.api.v2.deps import (
     EventIdDep,
     EventStoreV2Dep,
+    EventTransactionV2Dep,
     GeneratedDocumentsDep,
     PackV2Dep,
     UserIdDep,
@@ -28,6 +29,7 @@ from harness.core.drill import (
     DrillError,
     DrillService,
     generated_items,
+    list_answers,
     pack_items,
 )
 from harness.core.drill.judge import (
@@ -41,7 +43,7 @@ from harness.core.drill.judge import (
     stored_judgment,
 )
 from harness.core.ports.events_v2 import EventV2
-from harness.core.ports.json_types import PlainJson
+from harness.core.ports.json_types import JsonObject, PlainJson
 from harness.core.ports.llm import LLMProvenance, LLMProvider
 
 router = APIRouter(tags=["drill"])
@@ -221,3 +223,9 @@ def answer_drill(
                 llm_provenance=provenance,
             )
         return {**event.to_dict(), "judgment_status": "complete"}
+
+
+@router.get("/ws/{ws_id}/drills/answers")
+def get_answers(tx: EventTransactionV2Dep, user_id: UserIdDep, ws_id: str) -> JsonObject:
+    ws_or_404(tx, ws_id, user_id=user_id)
+    return {"items": list_answers(tx, ws_id)}
