@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -26,6 +26,7 @@ from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.events_v2 import EventIdConflictError, EventV2, StoredEventV2
 from harness.core.ports.json_types import JsonObject
 from harness.core.ports.llm import LLMProvenance, LLMRequest, LLMResponse
+from harness.testing.claims import InMemoryClaimStore
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
 
 PACK = Path(__file__).resolve().parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
@@ -476,9 +477,21 @@ def test_judgment_id_is_validated_and_recording_is_race_safe() -> None:
 
 
 def test_claim_judgment_is_single_flight_per_answer() -> None:
-    with claim_judgment("a") as first:
+    claims = InMemoryClaimStore()
+    with claim_judgment(claims, "a") as first:
         assert first
-        with claim_judgment("a") as second, claim_judgment("b") as other:
+        with claim_judgment(claims, "a") as second, claim_judgment(claims, "b") as other:
             assert not second and other
-    with claim_judgment("a") as after:
+    with claim_judgment(claims, "a") as after:
         assert after
+
+
+def test_claim_judgment_lease_expires_after_a_crashed_holder() -> None:
+    now = [datetime(2026, 1, 1, tzinfo=UTC)]
+    claims = InMemoryClaimStore(clock=lambda: now[0])
+    assert claims.try_claim("judge:a", "crashed-worker", timedelta(minutes=10))
+    with claim_judgment(claims, "a") as blocked:
+        assert not blocked
+    now[0] += timedelta(minutes=11)
+    with claim_judgment(claims, "a") as retry:
+        assert retry
