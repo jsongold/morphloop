@@ -37,7 +37,7 @@ export type CheckResult = {
   observed: Record<string, unknown>;
 };
 
-export type CheckBody = { check_id: string; params: Record<string, unknown> };
+export type CheckBody = { check_id: string; params?: Record<string, unknown> };
 
 type Get = <T>(path: string, query?: Record<string, string>) => Promise<T>;
 type Post = <T>(path: string, body?: unknown) => Promise<{ body: T }>;
@@ -94,9 +94,13 @@ export async function runCheck(
   ).body;
 }
 
+/** Blank text has no ``params``: the params key is omitted, so the check
+ * endpoint defaults to the spec's own target for the check id (#149) --
+ * the learner_view hides it, so the GUI can't send it itself. Typed text,
+ * even ``"{}"``, is sent explicitly. */
 export function parseParams(text: string): { params?: Record<string, unknown>; error?: string } {
   const trimmed = text.trim();
-  if (!trimmed) return { params: {} };
+  if (!trimmed) return {};
   let value: unknown;
   try {
     value = JSON.parse(trimmed);
@@ -118,5 +122,7 @@ export function checkRequest(
   if (!trimmed) return { error: "Enter a check id." };
   const parsed = parseParams(paramsText);
   if (parsed.error) return { error: parsed.error };
-  return { body: { check_id: trimmed, params: parsed.params ?? {} } };
+  return {
+    body: parsed.params === undefined ? { check_id: trimmed } : { check_id: trimmed, params: parsed.params },
+  };
 }
