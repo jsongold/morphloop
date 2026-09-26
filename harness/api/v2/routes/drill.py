@@ -11,6 +11,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import Field, model_validator
 
+from harness.api.v2.claims import ClaimsDep
 from harness.api.v2.deps import (
     EventIdDep,
     EventStoreV2Dep,
@@ -125,6 +126,7 @@ def answer_drill(
     pack: PackV2Dep,
     llm: Annotated[LLMProvider, Depends(drill_llm_of)],
     judge_config: DrillJudgeConfigDep,
+    claims: ClaimsDep,
     user_id: UserIdDep,
     event_id: EventIdDep,
     ws_id: str,
@@ -133,10 +135,11 @@ def answer_drill(
 ) -> dict[str, PlainJson]:
     # Replay first (#93): a resend must return the stored event even if the
     # pack changed since (e.g. the item was replaced), before any item lookup
-    # or answer-mode validation that could differ on retry. The claim (#124)
-    # is taken before the transaction so a concurrent retry of the same key
-    # never reaches the LLM: it sees the judgment or leaves it pending.
-    with claim_judgment(event_id) as claimed:
+    # or answer-mode validation that could differ on retry. The claim lease
+    # (#124, #181) is taken before the transaction so a concurrent retry of the
+    # same key, on any worker, never reaches the LLM: it sees the judgment or
+    # leaves it pending.
+    with claim_judgment(claims, event_id) as claimed:
         with store.transaction() as tx:
             existing = tx.get(event_id)
             if existing is not None:
