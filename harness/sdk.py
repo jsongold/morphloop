@@ -28,9 +28,11 @@ adapters, the domain adapter registry and the contract schemas. Test support
 not exported here is internal and may change between SDK versions.
 """
 
+from harness.adapters.auth import DevAuthProvider, OidcAuthProvider
 from harness.adapters.docker_lab import DockerLabRuntime
 from harness.adapters.postgres import migrate
 from harness.adapters.pty import DockerTerminalBridge
+from harness.adapters.supabase import supabase_auth
 from harness.api.app import AppExtension, create_app
 from harness.api.problems import problem
 from harness.api.v2.deps import (
@@ -59,6 +61,7 @@ from harness.core.domain_adapter import (
     run_check,
 )
 from harness.core.pack.v2 import PackV2, PackV2ImportError, import_pack_v2
+from harness.core.ports.auth import AuthError, AuthProvider, AuthUnavailableError
 from harness.core.ports.events_v2 import (
     ActorV2,
     EventIdConflictError,
@@ -101,6 +104,13 @@ __all__ = [
     "import_pack_v2",
     "migrate",
     "registered_artifact_types",
+    # auth providers (the app picks one: create_app(auth=...))
+    "AuthError",
+    "AuthProvider",
+    "AuthUnavailableError",
+    "DevAuthProvider",
+    "OidcAuthProvider",
+    "supabase_auth",
     # /v2 request dependencies and responses
     "EventIdDep",
     "EventTransactionV2Dep",
