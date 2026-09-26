@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from harness.api.v2.auth import auth_provider_from_settings
 from harness.core.settings import Settings
 
 
@@ -88,11 +89,13 @@ def test_supabase_url_must_be_https(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_production_refuses_dev_auth_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Settings still load (an app may pass create_app(auth=...)); the dev
+    # provider itself refuses to be built (#171).
     monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")
     monkeypatch.delenv("MORPHLOOP_AUTH_PROVIDER", raising=False)
-
-    with pytest.raises(ValidationError):
-        Settings()
+    assert Settings().morphloop_auth_provider == "dev"
+    with pytest.raises(RuntimeError):
+        auth_provider_from_settings()
 
 
 def test_production_oidc_requires_issuer_and_audience(monkeypatch: pytest.MonkeyPatch) -> None:

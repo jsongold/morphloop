@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from harness.adapters.postgres.engine import create_engine_from_env, ping
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
+from harness.api.v2.deps import user_id_of
 from harness.core.artifact import Artifact
 from harness.core.ports.auth import AuthProvider
 from harness.core.settings import Settings
@@ -89,7 +90,10 @@ def create_app(
     for extension in extensions:
         for router in extension.routers:
             v2.include_router(router)
-    app.include_router(v2)
+    # Every /v2 operation needs the bearer token (the contract's root
+    # `security`). As a router dependency it runs before a route's DB/pack
+    # dependencies; the route's own UserIdDep reuses the cached result (#171).
+    app.include_router(v2, dependencies=[Depends(user_id_of)])
     if auth is not None:
         app.state.auth_provider = auth
     app.state.artifact_types = tuple(t for e in extensions for t in e.artifact_types)

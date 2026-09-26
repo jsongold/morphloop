@@ -165,11 +165,8 @@ class Settings(BaseSettings):
     def _production_requires_auth(self) -> Settings:
         if self.morphloop_environment != "production":
             return self
-        if self.morphloop_auth_provider == "dev":
-            raise ValueError(
-                "MORPHLOOP_ENVIRONMENT=production refuses MORPHLOOP_AUTH_PROVIDER=dev "
-                "(the fixed local user id)"
-            )
+        # MORPHLOOP_AUTH_PROVIDER=dev is refused by DevAuthProvider itself, not
+        # here: an app passing create_app(auth=...) never selects it (#171).
         if self.morphloop_auth_provider == "oidc" and (
             self.effective_oidc_issuer is None or self.effective_oidc_audience is None
         ):

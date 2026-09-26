@@ -11,7 +11,7 @@ from harness.adapters.auth import DevAuthProvider, OidcAuthProvider
 from harness.api.app import create_app
 from harness.api.problems import install_handlers
 from harness.api.v2.auth import auth_provider_from_settings
-from harness.api.v2.deps import UserIdDep
+from harness.api.v2.deps import UserIdDep, event_store_v2_of
 from harness.core.ports.auth import AuthError, AuthUnavailableError
 
 
@@ -93,3 +93,20 @@ def test_settings_select_oidc_and_supabase(monkeypatch: pytest.MonkeyPatch) -> N
     assert isinstance(supabase, OidcAuthProvider)
     assert supabase.issuer == "https://abcd.supabase.co/auth/v1"
     assert supabase.audience == "authenticated"
+
+
+def test_production_app_with_explicit_provider_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")
+    client = probe_app(create_app(auth=StubAuth()))
+    assert client.get("/whoami", headers={"Authorization": "Bearer good"}).status_code == 200
+
+
+def test_v2_authenticates_before_opening_the_database() -> None:
+    app = create_app(auth=StubAuth())
+
+    def no_db() -> None:
+        raise AssertionError("the store must not be built for an anonymous request")
+
+    app.dependency_overrides[event_store_v2_of] = no_db
+    response = TestClient(app).get("/v2/ws")
+    assert response.status_code == 401
