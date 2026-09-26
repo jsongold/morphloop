@@ -30,7 +30,7 @@ PACK_DIR = Path(__file__).parents[2] / "contracts/fixtures/pack-v2/valid/dns-pac
 
 @pytest.fixture
 def client() -> TestClient:
-    app, _ = build_app()
+    app = build_app()
     app.state.pack_v2 = import_pack_v2(PACK_DIR, artifact_types=PACK_ARTIFACT_TYPES)
     app.state.event_store_v2 = InMemoryEventStoreV2(ContractSchemas.load())
     return TestClient(app)

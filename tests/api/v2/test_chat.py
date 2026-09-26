@@ -39,7 +39,7 @@ def client(tmp_path: Path, llm: FakeToolProvider) -> Iterator[TestClient]:
     # ConnectionTrackingStore: fails the test if a route opens a second
     # pooled connection (`store.read`) while a transaction is open (#104).
     store = ConnectionTrackingStore(store_with_thread(tmp_path))
-    app, _ = build_app()
+    app = build_app()
     app.dependency_overrides[event_store_v2_of] = lambda: store
     app.dependency_overrides[chat_llm_of] = lambda: llm
     app.state.pack_v2 = import_pack_v2(PACK_DIR, artifact_types=PACK_ARTIFACT_TYPES)

@@ -32,7 +32,7 @@ PACK_ID = "software-engineering"
 
 
 def _client(*, user_id: str | None = None, store: InMemoryEventStoreV2 | Any = None) -> TestClient:
-    app, _fixture = build_app()
+    app = build_app()
     app.state.pack_v2 = import_pack_v2(PACK_DIR, artifact_types=PACK_ARTIFACT_TYPES)
     app.state.event_store_v2 = store or InMemoryEventStoreV2(ContractSchemas.load())
     if user_id is not None:

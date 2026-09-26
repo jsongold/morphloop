@@ -22,7 +22,7 @@ PACK = Path(__file__).resolve().parents[2] / "contracts/fixtures/pack-v2/valid/d
 
 
 def test_artifact_spec_uses_loaded_pack_and_matches_contract() -> None:
-    app, _ = build_app(extensions=[AppExtension(artifact_types=PACK_ARTIFACT_TYPES)])
+    app = build_app(extensions=[AppExtension(artifact_types=PACK_ARTIFACT_TYPES)])
     app.state.pack_v2 = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
     with TestClient(app) as client:
         response = client.get("/v2/artifact-specs/dns-resolution-flow")
