@@ -10,18 +10,46 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from lab_fixture import SESSION_ID, SPEC, SPEC_ID, USER_ID, WS_ID, LabFixture, build
 from openapi_lab import assert_check_response, assert_lab_document, assert_list_response
 
+from harness.api.v2.routes.drill import drill_judge_config_of
+from harness.core.ports.llm import LLMProvenance, LLMRequest, LLMResponse
 from harness.sdk import PackV2, create_app
 from harness.testing.contracts import validate
-from harness.testing.fakes_v2 import seed_ws
+from harness.testing.fakes_v2 import ConnectionTrackingStore, seed_ws
+from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 from swe.app import EXTENSION
 
 WS_MESSAGE_SCHEMA = "schemas/websocket/envelope/message.json"
+
+DRILL_ITEM_ID = "lab-check-drill"
+LLM_PROVENANCE = LLMProvenance(
+    provider="fake",
+    model="fake/model",
+    prompt_id="judge",
+    prompt_version="1",
+    generation_parameters={},
+)
+
+
+class FakeLLM:
+    """A drill gap judge that never opens its own transaction (#124 review)."""
+
+    def __init__(self, store: ConnectionTrackingStore, outputs: list[dict[str, Any]]) -> None:
+        self.store = store
+        self.outputs = outputs
+        self.calls = 0
+
+    def complete_structured(self, request: LLMRequest) -> LLMResponse:
+        assert not self.store.tx_open
+        self.calls += 1
+        return LLMResponse(output=self.outputs.pop(0), provenance=LLM_PROVENANCE)
 
 
 def _pack_with_test_spec() -> PackV2:
@@ -35,6 +63,30 @@ def _pack_with_test_spec() -> PackV2:
         topics=(),
         documents={"artifacts": {"artifacts/lab.json": SPEC}},
         llm_roles={},
+    )
+
+
+def _pack_with_drill_item() -> PackV2:
+    """The fake-adapter lab spec plus one ``artifact`` item that targets its own
+    ``spec.checks`` (#124), so it can be judged from a check answered against them."""
+    item = {
+        "id": DRILL_ITEM_ID,
+        "question": "does the lab pass?",
+        "expected": "run fake.exit with the target params",
+        "answer_mode": "artifact",
+        "labels": ["troubleshooting"],
+        "artifact_ref": SPEC_ID,
+    }
+    pack = _pack_with_test_spec()
+    return PackV2(
+        pack_id=pack.pack_id,
+        pack_version=pack.pack_version,
+        pack_hash="sha256:" + "0" * 64,
+        manifest=pack.manifest,
+        labels=pack.labels,
+        topics=pack.topics,
+        documents={**pack.documents, "drills": {"drills/lab-check-drill.json": item}},
+        llm_roles=pack.llm_roles,
     )
 
 
@@ -255,3 +307,46 @@ def test_another_learner_reusing_a_lifecycle_key_gets_409(
             f"/v2/ws/{ws_id}/artifacts/{artifact_id}/{action}", json=body, headers=key
         )
         _assert_conflict_without_leak(theirs, artifact_id)
+
+
+def test_check_without_params_defaults_to_the_spec_target(client: TestClient) -> None:
+    """#149: the GUI can't send a check's params (``learner_view`` hides the spec),
+    so an omitted ``params`` defaults to the lab spec's own target for that
+    ``check_id`` (``spec.checks``, #124)."""
+    artifact_id = _start(client)
+    base = f"/v2/ws/{WS_ID}/artifacts/{artifact_id}"
+    checked = client.post(f"{base}/check", json={"check_id": "fake.exit"})
+    assert checked.status_code == 200, checked.text
+    assert_check_response(checked.json())
+    assert checked.json()["passed"] is True
+    assert checked.json()["params"] == {"argv": ["true"], "expected_exit_code": 0}
+
+
+def test_gui_check_without_params_lets_the_drill_be_judged(
+    client: TestClient, lab: LabFixture
+) -> None:
+    """A drill answered from a GUI check (no ``params``) is judged end to end:
+    the recorded ``artifact.checked`` params match the item's target exactly,
+    so ``artifact_evidence`` (#124) accepts them (#149)."""
+    app = cast(FastAPI, client.app)
+    app.state.pack_v2 = _pack_with_drill_item()
+    app.state.generated_documents = InMemoryGeneratedDocumentStore()
+    artifact_id = _start(client)
+    base = f"/v2/ws/{WS_ID}/artifacts/{artifact_id}"
+    checked = client.post(f"{base}/check", json={"check_id": "fake.exit"})
+    assert checked.status_code == 200, checked.text
+
+    fake = FakeLLM(lab.store, [{"missing": []}])
+    app.state.drill_llm = fake
+    app.dependency_overrides[drill_judge_config_of] = lambda: (LLM_PROVENANCE, "Judge the gap.")
+    try:
+        answered = client.post(
+            f"/v2/ws/{WS_ID}/drills/{DRILL_ITEM_ID}/answers",
+            json={"artifact_id": artifact_id},
+        )
+    finally:
+        del app.dependency_overrides[drill_judge_config_of]
+    assert answered.status_code == 201, answered.text
+    assert answered.json()["judgment_status"] == "complete"
+    assert fake.calls == 1
+    assert [e.type for e in lab.store.read(ws_id=WS_ID)].count("drill.judged") == 1

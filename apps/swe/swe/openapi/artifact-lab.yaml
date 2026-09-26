@@ -30,7 +30,11 @@ schemas:
     required: [check_id]
     properties:
       check_id: {type: string, minLength: 1}
-      params: {type: object}
+      params:
+        description: >-
+          Omitted: the spec's own target params for check_id (spec.checks,
+          #124) are used, since learner_view hides the spec from the GUI (#149).
+        type: object
     additionalProperties: false
   check_response:
     description: The observation, as recorded in artifact.checked.
