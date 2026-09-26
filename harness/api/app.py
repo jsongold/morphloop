@@ -11,18 +11,22 @@ asks it.
 An app built on the SDK (its own repository, ADR-0018 §19) assembles its server
 with ``create_app(extensions=[AppExtension(...)])``: each extension contributes
 routers mounted under ``/v2`` and the :class:`Artifact` types its packs may use.
-The SDK itself registers no artifact type.
+The SDK itself registers no artifact type. ``periodic_jobs`` run once per
+interval across workers (:mod:`harness.api.periodic`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from harness.adapters.postgres.engine import create_engine_from_env, ping
+from harness.api.periodic import PeriodicJob, app_claims, claims_purge, start_scheduler
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
 from harness.core.artifact import Artifact
@@ -50,11 +54,13 @@ class AppExtension:
     """What one app adds to the SDK server (#95).
 
     ``routers`` are mounted under ``/v2``; ``artifact_types`` are the
-    :class:`Artifact` subclasses the pack importer accepts (``PackV2Dep``).
+    :class:`Artifact` subclasses the pack importer accepts (``PackV2Dep``);
+    ``periodic_jobs`` start and stop with the app (:mod:`harness.api.periodic`).
     """
 
     routers: tuple[APIRouter, ...] = ()
     artifact_types: tuple[type[Artifact], ...] = ()
+    periodic_jobs: tuple[PeriodicJob, ...] = ()
 
 
 def create_app(*, extensions: Iterable[AppExtension] = ()) -> FastAPI:
@@ -64,7 +70,18 @@ def create_app(*, extensions: Iterable[AppExtension] = ()) -> FastAPI:
     server registers no artifact type, so a pack that embeds artifacts is refused.
     """
     extensions = tuple(extensions)
-    app = FastAPI(title="morphloop-api")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        store_of = partial(app_claims, app)
+        jobs = (claims_purge(store_of), *(j for e in extensions for j in e.periodic_jobs))
+        app.state.scheduler = start_scheduler(jobs, store_of)
+        try:
+            yield
+        finally:
+            app.state.scheduler.shutdown(wait=False)
+
+    app = FastAPI(title="morphloop-api", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
