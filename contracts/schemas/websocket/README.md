@@ -48,6 +48,17 @@ Server → client:
 
 ## Key decisions
 
+### Authentication: `?ticket=` (v0.4)
+
+A browser cannot send an `Authorization` header on a WebSocket upgrade, and
+a bearer token in the URL would leak into logs. So a socket authenticates
+with a ticket: the client calls `POST /v2/auth/socket-tickets` with its
+bearer token, gets `{ticket, expires_at}`, and opens the socket with
+`?ticket=<ticket>`. The ticket is single-use, short-lived and bound to the
+caller; a missing, unknown, expired or already-used ticket is rejected
+before the upgrade completes (HTTP 401, Problem `unauthorized`). No message
+in the catalog carries a token.
+
 ### Connection scoping: per lab instance, not per attempt
 
 The connection is opened at `/labs/{lab_instance_id}/terminal`

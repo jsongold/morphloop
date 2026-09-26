@@ -52,12 +52,26 @@
     tags: [memo]
     operationId: listMemoEntries
     summary: List a ws's memo entries, in append order.
+    parameters:
+      - $ref: '../root.yaml#/components/parameters/Cursor'
+      - $ref: '../root.yaml#/components/parameters/Limit'
     responses:
       '200':
         description: The ws's memo entries.
         content:
           application/json:
             schema:
-              $ref: '../components/memo.yaml#/MemoEntryList'
+              # components/memo.yaml#/MemoEntryList plus `next_cursor`.
+              type: object
+              required: [entries]
+              additionalProperties: false
+              properties:
+                entries:
+                  type: array
+                  items:
+                    $ref: '../components/memo.yaml#/MemoEntry'
+                next_cursor:
+                  type: [string, 'null']
+                  description: Opaque cursor for the next page; absent or null on the last page.
       default:
         $ref: '../root.yaml#/components/responses/Problem'

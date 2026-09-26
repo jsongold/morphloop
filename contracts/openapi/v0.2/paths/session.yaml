@@ -104,15 +104,32 @@
   get:
     tags: [session]
     operationId: listSessions
-    summary: List every session of the single v0.2.0 learner.
+    summary: List the caller's sessions.
+    parameters:
+      - $ref: '../root.yaml#/components/parameters/Cursor'
+      - $ref: '../root.yaml#/components/parameters/Limit'
     responses:
       '200':
-        description: Every session, most recently created last.
+        description: |
+          The caller's sessions. The bare array (every session, most recently
+          created last) is the pre-v0.4 shape, kept valid until the paging
+          route lands (#175); the paged shape is `{items, next_cursor}`.
         content:
           application/json:
             schema:
-              type: array
-              items: *Session
+              anyOf:
+                - type: array
+                  items: *Session
+                - type: object
+                  required: [items]
+                  additionalProperties: false
+                  properties:
+                    items:
+                      type: array
+                      items: *Session
+                    next_cursor:
+                      type: [string, 'null']
+                      description: Opaque cursor for the next page; absent or null on the last page.
       default:
         $ref: '../root.yaml#/components/responses/Problem'
 

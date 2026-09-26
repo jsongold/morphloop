@@ -76,6 +76,8 @@
         required: false
         description: Restrict to the ws's of one session; omit to list every ws of the learner.
         schema: {type: string, pattern: '^ses_[0-9A-Za-z]{1,64}$'}
+      - $ref: '../root.yaml#/components/parameters/Cursor'
+      - $ref: '../root.yaml#/components/parameters/Limit'
     responses:
       '200':
         description: Matching workspaces.
@@ -85,6 +87,9 @@
               type: object
               required: [items]
               properties:
+                next_cursor:
+                  type: [string, 'null']
+                  description: Opaque cursor for the next page; absent or null on the last page.
                 items:
                   type: array
                   items: &ws_object
@@ -216,6 +221,8 @@
         required: false
         description: Only threads whose `target` carries this `highlight_id` (issue #129).
         schema: {type: string, pattern: '^hl_[0-9A-Za-z]{1,64}$'}
+      - $ref: '../root.yaml#/components/parameters/Cursor'
+      - $ref: '../root.yaml#/components/parameters/Limit'
     responses:
       '200':
         description: Matching threads, oldest first.
@@ -226,6 +233,9 @@
               required: [items]
               additionalProperties: false
               properties:
+                next_cursor:
+                  type: [string, 'null']
+                  description: Opaque cursor for the next page; absent or null on the last page.
                 items:
                   type: array
                   items:

@@ -1,0 +1,32 @@
+# URL -> Path Item map for auth functions (v0.4, issue #168). Not a resource
+# (ADR-0018): it only issues short-lived credentials for the caller. Never
+# edit ../root.yaml or another resource's paths/*.yaml. See ../README.md.
+#
+# A browser cannot set an Authorization header on a WebSocket upgrade, so a
+# socket authenticates with a ticket: the client trades its bearer token for
+# a ticket here, then opens the socket with `?ticket=<ticket>`
+# (contracts/schemas/websocket/README.md).
+/auth/socket-tickets:
+  post:
+    tags: [auth]
+    operationId: createSocketTicket
+    summary: Issue a single-use, short-lived ticket for opening a WebSocket.
+    description: |
+      Needs the bearer token (the root `security`). The ticket is bound to
+      the caller, is opaque, is valid until `expires_at` and is consumed by
+      the first socket that presents it. 401 `unauthorized` without a valid
+      token; 429 `rate-limited` when the caller asks too often.
+    responses:
+      '201':
+        description: The ticket.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket, expires_at]
+              additionalProperties: false
+              properties:
+                ticket: {type: string, minLength: 1}
+                expires_at: {type: string, format: date-time}
+      default:
+        $ref: '../root.yaml#/components/responses/Problem'
