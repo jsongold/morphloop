@@ -8,10 +8,9 @@
 # The api port lands in 17000-17999, offset from the hash (the SWE app stack uses
 # 18000+ / 13000+, so both can run in one worktree).
 #
-#   scripts/dev-stack.sh up [pack-path] [--fake-llm]  # build + start, then import
+#   scripts/dev-stack.sh up [--fake-llm]            # build + start (SDK api only)
 #   scripts/dev-stack.sh down [-v]               # stop (and delete the db)
 #   scripts/dev-stack.sh logs [service]            # follow logs (api/db)
-#   scripts/dev-stack.sh import [pack-path]        # import a pack via the api
 #   scripts/dev-stack.sh test                       # e2e tests inside the api
 #
 # --fake-llm (or MORPHLOOP_LLM_PROVIDER=fake in the environment, #130): the api
