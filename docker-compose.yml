@@ -4,7 +4,7 @@
 # The api host port defaults to 8000; override with API_PORT.
 services:
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: morphloop
       POSTGRES_PASSWORD: morphloop

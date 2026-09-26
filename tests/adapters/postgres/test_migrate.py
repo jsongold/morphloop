@@ -5,10 +5,13 @@ from __future__ import annotations
 import os
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from harness.adapters.postgres.migrate import locate_migrations_dir, migrate
+from harness.core.settings import Settings
 
 
 def test_locate_migrations_dir_finds_the_checkout_s_versions() -> None:
@@ -57,3 +60,26 @@ def test_migrate_accepts_percent_encoded_url(monkeypatch: pytest.MonkeyPatch) ->
     url = "postgresql+psycopg://u:p%40ss@localhost/db"
     migrate_mod.migrate(url)
     assert seen["url"] == url
+
+
+def test_v040_revision_downgrades_and_upgrades_cleanly(pg_url: str, pg_engine: Engine) -> None:
+    config = Config()
+    config.set_main_option("script_location", str(locate_migrations_dir()))
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("DATABASE_URL", pg_url)
+        command.downgrade(config, "c4e8a2d6f1b3")
+        with pg_engine.connect() as conn:
+            assert conn.execute(text("select to_regclass('search_embeddings')")).scalar() is None
+        command.upgrade(config, "head")
+
+    with pg_engine.connect() as conn:
+        dims = conn.execute(
+            text(
+                "select format_type(atttypid, atttypmod) from pg_attribute "
+                "where attrelid = 'search_embeddings'::regclass and attname = 'embedding'"
+            )
+        ).scalar_one()
+        assert dims == f"vector({Settings().morphloop_embedding_dims})"
+        tables = ("claims", "usage_counters", "search_documents")
+        for table in tables:
+            assert conn.execute(text("select to_regclass(:t)"), {"t": table}).scalar() == table

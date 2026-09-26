@@ -3,7 +3,7 @@
 One :class:`Settings` model for the env vars the harness reads:
 ``MORPHLOOP_CONTRACTS_DIR``, ``DATABASE_URL``, ``WEB_ORIGIN``, ``WEB_ORIGINS``,
 ``HARNESS_VERSION``, ``MORPHLOOP_PACK_V2_DIR``, ``MORPHLOOP_USER_ID``,
-``MORPHLOOP_LLM_PROVIDER``, ``MORPHLOOP_ENVIRONMENT``, the
+``MORPHLOOP_LLM_PROVIDER``, ``MORPHLOOP_ENVIRONMENT``, ``MORPHLOOP_EMBEDDING_DIMS``, the
 ``MORPHLOOP_AUTH_PROVIDER`` / ``MORPHLOOP_DB_PROVIDER`` / ``MORPHLOOP_OIDC_*``
 / ``MORPHLOOP_SUPABASE_*`` / ``MORPHLOOP_SOCKET_TICKET_*`` / ``MORPHLOOP_USER_*``
 auth-platform settings (#169; this issue is settings only -- the provider
@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     # v0.4 (#169): per-user limits (#152 "Per-user lab / LLM call limits").
     morphloop_user_max_concurrent_labs: int = Field(default=1, gt=0)
     morphloop_user_llm_calls_per_minute: int = Field(default=20, gt=0)
+
+    # v0.4 (#180): the pgvector column size, fixed when the search migration
+    # runs. <=1536 keeps a plain ``vector`` HNSW-indexable (the cap is 2000);
+    # it must equal the pack's declared embedding dims.
+    morphloop_embedding_dims: int = Field(default=1536, gt=0, le=1536)
 
     @property
     def cors_origins(self) -> list[str]:
