@@ -1,12 +1,12 @@
 """Building the real objects the commands run against (ADR-0017: the CLI wires).
 
-Core owns the Ports and the registries; ``harness/adapters/*`` and
-``domains/*`` implement them; nothing down there knows which implementation is
+Core owns the Ports and the registries; ``harness/adapters/*`` (and an app's
+domain adapters) implement them; nothing down there knows which implementation is
 in use. This module is where the choice is made for the CLI: the local
 filesystem pack source, the Postgres event store from ``DATABASE_URL``, the
 litellm LLM provider (the pack's model string picks the provider; litellm reads
-the matching API key from the environment), the Docker lab runtime, and the DNS
-domain adapter (the v0.1 slice, ADR-0012).
+the matching API key from the environment) and the Docker lab runtime. Domain
+adapters belong to apps, so the CLI registers none.
 
 Every failure to build one of them is a :class:`~harness.cli.errors.CommandError`,
 so a missing key or an unreachable Docker daemon reads as a message rather
@@ -19,7 +19,6 @@ import logging
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 
-import domains.dns
 from harness.adapters.docker_lab import DockerLabRuntime
 from harness.adapters.fake_llm import FakeDevLLMProvider
 from harness.adapters.fs_pack_source import FilesystemPackSource
@@ -56,10 +55,8 @@ def contract_schemas() -> ContractSchemas:
 
 
 def domain_adapters() -> DomainAdapterRegistry:
-    """The domain adapters of the v0.1 slice (ADR-0012)."""
-    registry = DomainAdapterRegistry()
-    registry.register(domains.dns.adapter())
-    return registry
+    """No domain adapters: they belong to apps, which register their own."""
+    return DomainAdapterRegistry()
 
 
 def algorithms() -> AlgorithmRegistry:

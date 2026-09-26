@@ -4,7 +4,7 @@
 
 このリポジトリは複数 worktree で並行開発する。`docker compose up` を直接実行すると、worktree 同士でコンテナ名・ネットワーク・DB volume・ホストポートが衝突する。
 
-- SWE アプリ（db / api / web）は `cd apps/swe && ./scripts/dev.sh up [--fake-llm]`（プロジェクト名 `morphloop-swe-<hash>`、api 18000+ / web 13000+）。E2E は `./scripts/dev.sh e2e`、停止は `./scripts/dev.sh down [-v]`。詳細は `apps/swe/README.md`。
+- SWE アプリ（web UI 含む）は別リポジトリ https://github.com/jsongold/browncircle にある。
 - SDK 単体のスタック（db + 素の SDK api）の起動・停止・ログ・pack import・e2e は `scripts/dev-stack.sh` を使う。
 - このスクリプトは worktree パスから compose プロジェクト名 `morphloop-<hash>` とホストポート（api 17000+）を導出し、その worktree 専用のスタックを立てる。
 - 主な使い方:

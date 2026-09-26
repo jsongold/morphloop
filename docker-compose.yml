@@ -1,6 +1,6 @@
 # The SDK's own stack: Postgres plus the bare SDK server (harness.api.app), for SDK
-# development and tests/e2e. The SWE app (with its web UI) runs from apps/swe
-# (apps/swe/README.md). Start: docker compose up -d --build
+# development and tests/e2e. Apps (with their web UIs) live in their own repositories.
+# Start: docker compose up -d --build
 # The api host port defaults to 8000; override with API_PORT.
 services:
   db:

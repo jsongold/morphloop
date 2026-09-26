@@ -9,17 +9,12 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies first (cached separately from application code). The lock
-# covers the whole uv workspace (the SDK plus apps/*), so every member's pyproject
-# must be present for `--locked` to validate it.
+# Install dependencies first (cached separately from application code).
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    --mount=type=bind,source=apps/swe/pyproject.toml,target=apps/swe/pyproject.toml \
     uv sync --locked --no-install-workspace --no-dev
 
-# The SDK only: apps/* stay in the context for the lock, and each app builds its
-# own image (apps/swe/Dockerfile).
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev

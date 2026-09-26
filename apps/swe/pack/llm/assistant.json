@@ -1,6 +1,0 @@
-{
-  "role": "assistant",
-  "model": "gpt-5.4-2026-03-05",
-  "max_tokens": 4000,
-  "prompt": "llm/assistant.md"
-}

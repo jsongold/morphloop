@@ -1,11 +1,11 @@
 """Composition root: the real objects the HTTP/WebSocket layer runs against.
 
 Same idiom as ``harness/cli/wiring.py`` -- core owns the Ports, ``harness/adapters/*``
-and ``domains/*`` implement them, and this is where the API picks which
+(and an app's domain adapters) implement them, and this is where the API picks which
 implementation is used: the Postgres event store from ``DATABASE_URL``, the
 litellm provider (the pack's model string selects the provider and litellm reads
 the matching API key from the environment), the Docker lab runtime and its PTY
-bridge, and the DNS domain adapter (the v0.1 slice, ADR-0012). The pack source is
+bridge (domain adapters belong to apps). The pack source is
 not wired here: packs are imported by the CLI (ADR-0015) and the loop reads only
 the DB projection through :class:`~harness.core.pack.PackCatalog`.
 

@@ -9,7 +9,7 @@ and :mod:`harness.api.terminal`, the composition root in
 when the database or the Docker daemon is down, which is exactly when someone
 asks it.
 
-An app built on the SDK (``apps/<app>/``, ADR-0018 §19) assembles its server
+An app built on the SDK (its own repository, ADR-0018 §19) assembles its server
 with ``create_app(extensions=[AppExtension(...)])``: each extension contributes
 routers mounted under ``/v2`` and the :class:`Artifact` types its packs may use.
 The SDK itself registers no artifact type.

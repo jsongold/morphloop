@@ -1,6 +1,6 @@
 """Domain adapter contract and registry (ADR-0009, ADR-0012, ADR-0014).
 
-A domain adapter (``domains/<domain>/``) holds domain-specific code: deterministic
+A domain adapter (shipped by an app) holds domain-specific code: deterministic
 checks, environment fixture providers and tool adapters. A pack refers to them
 only by adapter item id, ``'<adapter_id>.<name>'`` (``contracts/schemas/common/
 ids.json#/$defs/adapter_item_id``), and its manifest declares every adapter it
@@ -14,7 +14,7 @@ technical library (ADR-0015, ADR-0016 fix five of them), implemented by
 2, ADR-0017): it is not swapped per deployment, several are registered at once,
 and core also owns the registry around it. Keeping it out of ``ports/`` keeps
 that package exactly the five Ports. Like the Ports, this module is imported by
-``domains/*`` and never imports them (``.importlinter``).
+domain adapters and never imports them (``.importlinter``).
 
 Scope is the v0.1 DNS slice (ADR-0012): the three item kinds ADR-0009 names, and
 a terminal as the only tool kind. Conventions follow ``harness.core.ports``:
@@ -303,7 +303,7 @@ class TerminalTool(Protocol):
 
 
 class DomainAdapter(Protocol):
-    """A versioned domain adapter package (``domains/<domain>/``).
+    """A versioned domain adapter package (shipped by an app).
 
     Item mappings are keyed by the item name, without the ``'<adapter_id>.'``
     prefix. v0.1 has one tool kind (terminal); another kind will widen the

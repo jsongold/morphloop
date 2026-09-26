@@ -1,6 +1,6 @@
 """The public SDK surface for app authors (#95, ADR-0018 §19).
 
-An app (``apps/<app>/``, later its own repository) imports only this module::
+An app (its own repository) imports only this module::
 
     from harness.sdk import AppExtension, Artifact, create_app
 

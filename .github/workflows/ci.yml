@@ -48,50 +48,10 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Mypy
-        run: uv run mypy harness domains apps
+        run: uv run mypy
 
       - name: Import linter
         run: uv run lint-imports
 
       - name: Pytest (SDK)
         run: uv run pytest -q -rs
-
-      # Own step: the SDK tests stand in stubs for the app's artifact types, and one
-      # process registers each type name once (apps/swe/pyproject.toml configures it).
-      - name: Pytest (apps/swe)
-        run: uv run pytest -q -rs apps/swe/tests
-
-  web:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/swe/web
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          package_json_file: apps/swe/web/package.json
-
-      - name: Install Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: pnpm
-          cache-dependency-path: apps/swe/web/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Test
-        run: pnpm test
-
-      - name: Build
-        run: pnpm build

@@ -1,6 +1,0 @@
-{
-  "role": "schedule",
-  "model": "gpt-5.4-2026-03-05",
-  "max_tokens": 2000,
-  "prompt": "llm/schedule.md"
-}

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Run the SDK Docker stack (db + bare SDK api) per-worktree. The SWE app stack
-# (with the web UI) is apps/swe/scripts/dev.sh, run from apps/swe.
+# Run the SDK Docker stack (db + bare SDK api) per-worktree. Apps (with their web
+# UIs) run from their own repositories.
 #
 # Several worktrees share one repo but must not share one stack: a unique
 # compose project name (containers, network, db volume) and host ports are
 # derived from the worktree path, so each worktree can `up` without colliding.
-# The api port lands in 17000-17999, offset from the hash (the SWE app stack uses
-# 18000+ / 13000+, so both can run in one worktree).
+# The api port lands in 17000-17999, offset from the hash.
 #
 #   scripts/dev-stack.sh up [pack-path] [--fake-llm]  # build + start, then import
 #   scripts/dev-stack.sh down [-v]               # stop (and delete the db)
