@@ -7,7 +7,8 @@ are opaque labels chosen by the caller; the SDK names no domain noun (ADR-0018).
 - A *claim* is a lease: ``key`` is held by one ``holder`` until it is released
   or its ``ttl`` runs out. The holder may renew its own lease.
 - A *counter* counts calls per ``(subject, name)`` in fixed windows aligned to
-  the epoch (``window`` long) and refuses once ``limit`` is reached.
+  the epoch (``window`` long, at most :data:`MAX_COUNTER_WINDOW`) and refuses
+  once ``limit`` is reached.
 - A *slot* is one of ``cap`` leases ``slot:<subject>:<name>:<i>``, so at most
   ``cap`` holders run at once per ``(subject, name)``.
 
@@ -20,6 +21,11 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Protocol
 
+# The longest counter window. A purge with ``counters_older_than`` of at least
+# this never deletes the row of a window that is still running (the periodic
+# claims purge uses exactly this).
+MAX_COUNTER_WINDOW = timedelta(days=7)
+
 
 def slot_key(subject: str, name: str, index: int) -> str:
     """The claim key of slot ``index`` of ``(subject, name)``."""
@@ -31,6 +37,14 @@ def check_positive(**values: float) -> None:
     for name, value in values.items():
         if value <= 0:
             raise ValueError(f"{name} must be positive, got {value}")
+
+
+def check_window(window: timedelta) -> float:
+    """``window`` in seconds; ``ValueError`` unless ``0 < window <= MAX_COUNTER_WINDOW``."""
+    check_positive(window=window.total_seconds())
+    if window > MAX_COUNTER_WINDOW:
+        raise ValueError(f"window must be at most {MAX_COUNTER_WINDOW}, got {window}")
+    return window.total_seconds()
 
 
 class ClaimStore(Protocol):
@@ -47,7 +61,8 @@ class ClaimStore(Protocol):
 
     def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool:
         """Count one call in the current window; ``False`` (not counted) once
-        ``limit`` calls are already counted there."""
+        ``limit`` calls are already counted there. ``ValueError`` if ``window``
+        exceeds :data:`MAX_COUNTER_WINDOW`."""
         ...
 
     def acquire_slot(
