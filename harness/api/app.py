@@ -66,10 +66,9 @@ def create_app(*, extensions: Iterable[AppExtension] = ()) -> FastAPI:
     extensions = tuple(extensions)
     app = FastAPI(title="morphloop-api")
 
-    web_origin = Settings().web_origin
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[web_origin],
+        allow_origins=Settings().cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

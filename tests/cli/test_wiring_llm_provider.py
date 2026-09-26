@@ -24,5 +24,10 @@ def test_fake_opt_in_returns_the_fake(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_fake_is_refused_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MORPHLOOP_LLM_PROVIDER", "fake")
     monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")
+    # #169: production also requires a real auth provider; set one so this
+    # test's Settings() construction reaches the fake-LLM guard below.
+    monkeypatch.setenv("MORPHLOOP_AUTH_PROVIDER", "oidc")
+    monkeypatch.setenv("MORPHLOOP_OIDC_ISSUER", "https://issuer.example.com")
+    monkeypatch.setenv("MORPHLOOP_OIDC_AUDIENCE", "morphloop-api")
     with pytest.raises(CommandError):
         wiring.llm_provider()
