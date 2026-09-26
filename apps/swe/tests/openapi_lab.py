@@ -14,9 +14,13 @@ from harness.testing.openapi_v2 import load_merged_openapi_v2_spec
 LAB_SPEC: dict[str, Any] = yaml.safe_load(
     (Path(swe.__file__).parent / "openapi" / "artifact-lab.yaml").read_text(encoding="utf-8")
 )
-_BASE: dict[str, Any] = load_merged_openapi_v2_spec()["paths"]["/ws/{ws_id}/artifacts"]["post"][
-    "responses"
-]["201"]["content"]["application/json"]["schema"]
+_ARTIFACTS_PATH: dict[str, Any] = load_merged_openapi_v2_spec()["paths"]["/ws/{ws_id}/artifacts"]
+_BASE: dict[str, Any] = _ARTIFACTS_PATH["post"]["responses"]["201"]["content"]["application/json"][
+    "schema"
+]
+_LIST: dict[str, Any] = _ARTIFACTS_PATH["get"]["responses"]["200"]["content"]["application/json"][
+    "schema"
+]
 
 
 def _check(instance: object, schema: dict[str, Any]) -> None:
@@ -33,3 +37,8 @@ def assert_lab_document(document: object) -> None:
 
 def assert_check_response(body: object) -> None:
     _check(body, LAB_SPEC["schemas"]["check_response"])
+
+
+def assert_list_response(body: object) -> None:
+    """A `GET /ws/{ws_id}/artifacts` response: type-neutral items only."""
+    _check(body, _LIST)

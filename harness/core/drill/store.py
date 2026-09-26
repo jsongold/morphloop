@@ -65,3 +65,30 @@ class DrillAnswersView(View):
             **event.payload,
         }
         tx.put_view(cls.name, cls.key(event.ws_id, item_id, event.position), cast(JsonObject, doc))
+
+
+def list_answers(tx: ViewDocumentStore, ws_id: str) -> list[JsonObject]:
+    """The ws's answers, in creation order: ``item_id``, ``answer_event_id``,
+    and ``judgment_status``/``gap`` (issue #129). Never ``actual`` or
+    ``expected``.
+
+    Keys sort ``<item_id>`` before ``<position>`` (``DrillAnswersView.key``),
+    so listing by ``key_prefix`` alone would group by item, not creation
+    order -- the trailing zero-padded position is parsed back out to sort
+    globally instead.
+
+    No ``drill.judged`` view exists yet (gap-judging, issue #65, unmerged):
+    every answer reads back ``judgment_status: "unjudged"``, ``gap: None``.
+    Wiring that view in only changes the per-answer lookup below.
+    """
+    pairs = DrillAnswersView.list(tx, key_prefix=f"{ws_id}/")
+    ordered = sorted(pairs, key=lambda pair: int(pair[0].rsplit("/", 1)[-1]))
+    return [
+        {
+            "item_id": doc["item_id"],
+            "answer_event_id": doc["event_id"],
+            "judgment_status": "unjudged",
+            "gap": None,
+        }
+        for _, doc in ordered
+    ]

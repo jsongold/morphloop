@@ -170,6 +170,14 @@ def test_paths_are_domain_agnostic() -> None:
     assert "dns" not in names
 
 
+def test_artifact_spec_response_is_type_neutral() -> None:
+    schema = MERGED_SPEC["paths"]["/artifact-specs/{spec_id}"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]
+    assert schema["required"] == ["id", "type", "labels", "spec"]
+    assert schema["properties"]["spec"] == {"type": "object", "additionalProperties": True}
+
+
 def test_readme_documents_the_merge_and_never_edit_root_rule() -> None:
     readme = (V2_DIR / "README.md").read_text(encoding="utf-8")
     assert "paths/<resource>.yaml" in readme

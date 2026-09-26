@@ -2,7 +2,8 @@
 
 One :class:`Settings` model for the env vars the harness reads:
 ``MORPHLOOP_CONTRACTS_DIR``, ``DATABASE_URL``, ``WEB_ORIGIN``,
-``HARNESS_VERSION``, ``MORPHLOOP_PACK_V2_DIR`` and ``MORPHLOOP_USER_ID``.
+``HARNESS_VERSION``, ``MORPHLOOP_PACK_V2_DIR``, ``MORPHLOOP_USER_ID``,
+``MORPHLOOP_LLM_PROVIDER`` and ``MORPHLOOP_ENVIRONMENT``.
 Field names match their env var names case-insensitively (the library
 default), so no prefix or alias mapping is needed.
 
@@ -30,3 +31,8 @@ class Settings(BaseSettings):
     # and the single learner's id (`contracts/schemas/common/ids.json` user_id).
     morphloop_pack_v2_dir: str | None = None
     morphloop_user_id: str = Field(default="usr_local", pattern=r"^usr_[0-9A-Za-z]{1,64}$")
+    # #130: "fake" swaps in a deterministic, keyless LLM for dev-stack / local E2E
+    # (harness.cli.wiring.llm_provider); refused when morphloop_environment is
+    # "production".
+    morphloop_llm_provider: str = "litellm"
+    morphloop_environment: str = "development"

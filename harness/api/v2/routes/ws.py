@@ -10,7 +10,7 @@ from pydantic import ConfigDict, Field, model_validator
 from harness.api.v2.deps import EventIdDep, EventTransactionV2Dep, UserIdDep
 from harness.api.v2.models import Text, V2Model
 from harness.core.ports.json_types import JsonObject, PlainJson
-from harness.core.ws import WsError, create_thread, create_ws, get_ws, list_ws
+from harness.core.ws import WsError, create_thread, create_ws, get_ws, list_threads, list_ws
 
 router = APIRouter(tags=["ws"])
 
@@ -19,6 +19,15 @@ router = APIRouter(tags=["ws"])
 _LABEL_PATTERN = r"^[a-z0-9][a-z0-9._-]{0,63}(:[a-z0-9][a-z0-9._-]{0,127})?$"
 Label = Annotated[Text, Field(pattern=_LABEL_PATTERN)]
 SessionId = Annotated[Text, Field(pattern=r"^ses_[0-9A-Za-z]{1,64}$")]
+HighlightId = Annotated[Text, Field(pattern=r"^hl_[0-9A-Za-z]{1,64}$")]
+
+# `ThreadsView` internal bookkeeping (sort order), not part of the wire shape
+# (mirrors highlight.py's `_public`, issue #60 review).
+_INTERNAL_THREAD_FIELDS = frozenset({"position"})
+
+
+def _public_thread(doc: JsonObject) -> JsonObject:
+    return {key: value for key, value in doc.items() if key not in _INTERNAL_THREAD_FIELDS}
 
 
 class TargetRequest(V2Model):
@@ -102,3 +111,17 @@ def post_thread(
     except WsError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
     return event.to_dict()
+
+
+@router.get("/ws/{ws_id}/threads")
+def get_threads(
+    tx: EventTransactionV2Dep,
+    user_id: UserIdDep,
+    ws_id: str,
+    target_highlight_id: Annotated[HighlightId | None, Query()] = None,
+) -> JsonObject:
+    try:
+        threads = list_threads(tx, ws_id, user_id=user_id, target_highlight_id=target_highlight_id)
+    except WsError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    return {"items": [_public_thread(doc) for doc in threads]}
