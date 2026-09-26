@@ -1,8 +1,7 @@
 # contracts/openapi/v0.2/
 
 Skeleton of the v0.2.0 resource-centric HTTP contract (ADR-0018, parent
-design issue #34). `../v0.1.yaml` is untouched and stays the contract for the
-v0.1 learner chain while v0.2 is built up resource by resource.
+design issue #34).
 
 ## Layout
 
@@ -59,12 +58,10 @@ document (see the module docstring).
 
 ## Validator
 
-Same validator as v0.1: `openapi-spec-validator`'s `OpenAPIV31SpecValidator`,
+The validator is `openapi-spec-validator`'s `OpenAPIV31SpecValidator`,
 via `jsonschema_path.SchemaPath.from_dict` on the merged spec, with `base_uri`
 set to `root.yaml`'s own file URI so `$ref`s into `components/common.yaml`
 resolve (verified against the installed `jsonschema_path` source —
 `SchemaPath.from_file_path`/`PathReader` compute `base_uri` from
 `Path.as_uri()`, and the default `file` handler resolves relative refs
-against it; the same mechanism `contracts/openapi/v0.1.yaml`'s test uses for
-absolute `https://morphloop.dev/contracts/...` refs, just with `file` instead
-of `https`/`http`). See `tests/contracts/test_openapi_v2_contract.py`.
+against it). See `tests/contracts/test_openapi_v2_contract.py`.

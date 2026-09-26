@@ -31,7 +31,7 @@ def _check(body: Any, url: str, method: str, status: str) -> None:
 @pytest.fixture
 def client() -> Any:
     store = InMemoryEventStoreV2(ContractSchemas.load())
-    app, _ = build_app()
+    app = build_app()
     app.dependency_overrides[event_store_v2_of] = lambda: store
     with TestClient(app) as c:
         c.store = store  # type: ignore[attr-defined]
