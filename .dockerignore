@@ -1,11 +1,14 @@
-.venv
+**/.venv
 apps/swe/web/
-node_modules
+**/node_modules
 .git
 docs
 .claude
-.mypy_cache
-.pytest_cache
-.ruff_cache
-__pycache__
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+**/__pycache__
 *.pyc
+# Local secrets (.env.local with LLM keys) never enter an image.
+**/.env
+**/.env.*
