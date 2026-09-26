@@ -20,8 +20,9 @@ never adds its own env var or loader:
   `app.state.pack_v2` (tests set `app.state.pack_v2`).
 - `GeneratedDocumentsDep`: runtime-generated content, Postgres by default,
   cached on `app.state.generated_documents`.
-- `UserIdDep`: v0.2.0 has one learner, `MORPHLOOP_USER_ID`. A POST body never
-  carries `user_id`.
+- `UserIdDep`: the caller's `usr_…` id from the bearer token, via the app's
+  `AuthProvider` (`harness.api.v2.auth`; #171). A POST body never carries
+  `user_id`.
 - `EventIdDep`: the new event's `id`, from the `Idempotency-Key` header (a
   UUID, else 400); the server assigns a fresh UUID when it is absent.
 - `replay_or_conflict`: the idempotent-replay check a POST runs first.
@@ -43,10 +44,12 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from harness.adapters.postgres.engine import create_engine_from_env
 from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
 from harness.adapters.postgres.generated_documents import PostgresGeneratedDocumentStore
+from harness.api.v2.auth import auth_provider_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import PackV2, import_pack_v2
 from harness.core.ports.events_v2 import (
@@ -128,9 +131,19 @@ def generated_documents_of(request: Request) -> GeneratedDocumentStore:
 GeneratedDocumentsDep = Annotated[GeneratedDocumentStore, Depends(generated_documents_of)]
 
 
-def user_id_of() -> str:
-    """The single v0.2.0 learner (`MORPHLOOP_USER_ID`)."""
-    return Settings().morphloop_user_id
+_bearer = HTTPBearer(auto_error=False, scheme_name="bearer", bearerFormat="JWT")
+
+
+def user_id_of(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> str:
+    """The caller's internal id; 401 / 503 problems come from the provider's errors.
+
+    A sync `def` on purpose: JWKS fetches block, so FastAPI runs it in the thread pool.
+    """
+    token = credentials.credentials if credentials else None
+    return auth_provider_of(request).user_id(token)
 
 
 UserIdDep = Annotated[str, Depends(user_id_of)]

@@ -16,7 +16,8 @@ The SDK itself registers no artifact type.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, FastAPI
@@ -25,7 +26,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from harness.adapters.postgres.engine import create_engine_from_env, ping
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
+from harness.api.v2.auth import auth_provider_from_settings
+from harness.api.v2.deps import user_id_of
 from harness.core.artifact import Artifact
+from harness.core.ports.auth import AuthProvider
 from harness.core.settings import Settings
 
 REPLAYED_HEADER = "Idempotent-Replayed"
@@ -57,14 +61,28 @@ class AppExtension:
     artifact_types: tuple[type[Artifact], ...] = ()
 
 
-def create_app(*, extensions: Iterable[AppExtension] = ()) -> FastAPI:
+def create_app(
+    *, extensions: Iterable[AppExtension] = (), auth: AuthProvider | None = None
+) -> FastAPI:
     """Build the FastAPI application.
 
     ``extensions`` are an app's :class:`AppExtension` values. Without them the
     server registers no artifact type, so a pack that embeds artifacts is refused.
+    ``auth`` is the app's :class:`AuthProvider` (e.g. ``OidcAuthProvider`` or
+    ``supabase_auth(...)``); unset, ``MORPHLOOP_AUTH_PROVIDER`` picks one.
     """
     extensions = tuple(extensions)
-    app = FastAPI(title="morphloop-api")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Resolve the provider at startup, not at import (the module-level
+        # `app` below must stay importable): production with the dev provider
+        # or an incomplete oidc/supabase config refuses to start (#171).
+        if getattr(app.state, "auth_provider", None) is None:
+            app.state.auth_provider = auth_provider_from_settings()
+        yield
+
+    app = FastAPI(title="morphloop-api", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -84,7 +102,12 @@ def create_app(*, extensions: Iterable[AppExtension] = ()) -> FastAPI:
     for extension in extensions:
         for router in extension.routers:
             v2.include_router(router)
-    app.include_router(v2)
+    # Every /v2 operation needs the bearer token (the contract's root
+    # `security`). As a router dependency it runs before a route's DB/pack
+    # dependencies; the route's own UserIdDep reuses the cached result (#171).
+    app.include_router(v2, dependencies=[Depends(user_id_of)])
+    if auth is not None:
+        app.state.auth_provider = auth
     app.state.artifact_types = tuple(t for e in extensions for t in e.artifact_types)
     return app
 
