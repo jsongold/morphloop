@@ -9,6 +9,7 @@ import {
   answeredItems,
   answerRequest,
   artifactOptions,
+  canRetryLoad,
   canSubmit,
   artifactsPath,
   answersPath,
@@ -34,9 +35,13 @@ function Drills({ wsId }: { wsId: string | null }) {
   const [artifacts, setArtifacts] = useState<Record<string, Artifact[]>>({});
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [loadRetry, setLoadRetry] = useState(0);
+  const [artifactsRetry, setArtifactsRetry] = useState(0);
   const pending = useRef<Record<string, Submission>>({});
+  const loadVersion = useRef(0);
   const historyWsId = answers?.wsId ?? null;
   const answered = answers && answers.wsId === wsId ? answers.byItem : {};
+  const loadFailed = canRetryLoad(historyWsId, wsId, error);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,12 +62,13 @@ function Drills({ wsId }: { wsId: string | null }) {
   useEffect(() => {
     if (!wsId) return;
     let cancelled = false;
+    const version = ++loadVersion.current;
     get<{ items: DrillAnswer[] }>(answersPath(wsId)).then(
-      (data) => { if (!cancelled) setAnswers({ wsId, byItem: answeredItems(data.items) }); },
-      (e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); },
+      (data) => { if (!cancelled && version === loadVersion.current) { setAnswers({ wsId, byItem: answeredItems(data.items) }); setError(null); } },
+      (e: unknown) => { if (!cancelled && version === loadVersion.current) setError(e instanceof Error ? e.message : String(e)); },
     );
     return () => { cancelled = true; };
-  }, [wsId]);
+  }, [wsId, loadRetry]);
 
   useEffect(() => {
     const refs = drillArtifactRefs(items ?? []);
@@ -75,7 +81,7 @@ function Drills({ wsId }: { wsId: string | null }) {
       (e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); },
     );
     return () => { cancelled = true; };
-  }, [wsId, items]);
+  }, [wsId, items, artifactsRetry]);
 
   async function submit(item: DrillItem, event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -85,16 +91,19 @@ function Drills({ wsId }: { wsId: string | null }) {
     pending.current[item.id] = request;
     setBusy(item.id);
     setError(null);
+    const version = ++loadVersion.current;
     try {
       const { body } = await post<StoredEvent>(
         `/ws/${encodeURIComponent(wsId)}/drills/${encodeURIComponent(item.id)}/answers`,
         request.body,
         request.key,
       );
-      setAnswers((previous) => ({
-        wsId,
-        byItem: { ...(previous?.wsId === wsId ? previous.byItem : {}), [item.id]: body.id },
-      }));
+      if (version === loadVersion.current) {
+        setAnswers((previous) => ({
+          wsId,
+          byItem: { ...(previous?.wsId === wsId ? previous.byItem : {}), [item.id]: body.id },
+        }));
+      }
       delete pending.current[item.id];
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -117,7 +126,12 @@ function Drills({ wsId }: { wsId: string | null }) {
         <button type="submit">Filter</button>
       </form>
       {!wsId && <p className="muted">Select a workspace to answer drills.</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && (
+        <div>
+          <p className="error" role="alert">{error}</p>
+          {loadFailed && <button onClick={() => { setError(null); setLoadRetry((n) => n + 1); }}>Retry loading answers</button>}
+        </div>
+      )}
       {items === null ? (!error && <p className="muted">Loading drills…</p>) : items.length === 0 ? (
         <p className="muted">No drills found.</p>
       ) : (
@@ -140,7 +154,9 @@ function Drills({ wsId }: { wsId: string | null }) {
                         ))}
                       </fieldset>
                     ) : item.answer_mode === "artifact" ? (
-                      options.length === 0 ? <p className="muted">Start the lab first.</p> : (
+                      options.length === 0 ? (
+                        <p className="muted">Start the lab first. <button type="button" onClick={() => setArtifactsRetry((n) => n + 1)}>Refresh</button></p>
+                      ) : (
                         <label>
                           Your artifact<br />
                           <select value={values[item.id] ?? ""} required onChange={(event) => setValues((v) => ({ ...v, [item.id]: event.target.value }))}>

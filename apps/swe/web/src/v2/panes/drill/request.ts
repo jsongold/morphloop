@@ -63,6 +63,12 @@ export function canSubmit(loadedWsId: string | null, wsId: string | null, value:
   return !!wsId && loadedWsId === wsId && value.trim().length > 0 && !saving;
 }
 
+// A load can be retried once it has failed for the active workspace: a
+// success sets loadedWsId to wsId, and a pending load has no error yet.
+export function canRetryLoad(loadedWsId: string | null, wsId: string | null, error: string | null): boolean {
+  return !!wsId && loadedWsId !== wsId && !!error;
+}
+
 export function answerRequest(wsId: string, item: DrillItem, value: string, previous: Submission | null, newKey: () => string): Submission | null {
   const actual = item.answer_mode === "text" ? value.trim() : value;
   if (!actual || (item.answer_mode === "choice" && !item.choices?.includes(actual))) return null;
