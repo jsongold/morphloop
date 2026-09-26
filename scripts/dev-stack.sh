@@ -37,9 +37,7 @@ case "$cmd" in
         args+=("$arg")
       fi
     done
-    pack="${args[0]:-contents/software-engineering}"
     docker compose up -d --build
-    docker compose exec -T api python -m harness.cli import "$pack" 2>/dev/null || true
     echo "api  http://localhost:${API_PORT}  (project ${COMPOSE_PROJECT_NAME})"
     ;;
   down)
@@ -50,16 +48,12 @@ case "$cmd" in
     shift
     docker compose logs -f "$@"
     ;;
-  import)
-    shift
-    docker compose exec -T api python -m harness.cli import "${1:-contents/software-engineering}"
-    ;;
   test)
     shift
     docker compose exec -T api pytest tests/e2e "$@"
     ;;
   *)
-    echo "usage: $(basename "$0") {up|down|logs|import|test}" >&2
+    echo "usage: $(basename "$0") {up|down|logs|test}" >&2
     exit 2
     ;;
 esac
