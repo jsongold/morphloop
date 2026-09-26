@@ -55,6 +55,7 @@ SPEC: dict[str, Any] = {
         },
         "allowed_fixtures": ["fake.lab"],
         "allowed_checks": ["fake.exit"],
+        "checks": [{"check": "fake.exit", "params": {"argv": ["true"], "expected_exit_code": 0}}],
         "idle_seconds": 60,
     },
 }

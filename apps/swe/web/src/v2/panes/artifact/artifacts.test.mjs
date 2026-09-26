@@ -80,18 +80,25 @@ test("the artifact spec is read by id", async () => {
   assert.deepEqual(calls, ["/artifact-specs/dns-resolution-flow"]);
 });
 
-test("params parse as a JSON object; bad input is a message, not a throw", () => {
-  assert.deepEqual(parseParams("  "), { params: {} });
+test("params parse as a JSON object; blank text has none; bad input is a message, not a throw", () => {
+  assert.deepEqual(parseParams("  "), {});
+  assert.deepEqual(parseParams("{}"), { params: {} });
   assert.deepEqual(parseParams('{"name":"ledger"}'), { params: { name: "ledger" } });
   assert.equal(typeof parseParams("{").error, "string");
   assert.equal(typeof parseParams("[1,2]").error, "string");
   assert.equal(typeof parseParams("null").error, "string");
 });
 
-test("a check needs a non-empty id and object params", () => {
+test("a check needs a non-empty id; blank params are omitted so the check defaults to the spec's target (#149)", () => {
   assert.deepEqual(checkRequest("dns.name_resolves", '{"name":"ledger"}'), {
     body: { check_id: "dns.name_resolves", params: { name: "ledger" } },
   });
-  assert.equal(checkRequest("  ", "{}").error, "Enter a check id.");
+  assert.deepEqual(checkRequest("dns.name_resolves", "  "), {
+    body: { check_id: "dns.name_resolves" },
+  });
+  assert.deepEqual(checkRequest("dns.name_resolves", "{}"), {
+    body: { check_id: "dns.name_resolves", params: {} },
+  });
+  assert.equal(checkRequest("  ", "").error, "Enter a check id.");
   assert.equal(typeof checkRequest("dns.name_resolves", "oops").error, "string");
 });

@@ -207,6 +207,47 @@ def test_check_runs_only_allowed_checks_in_the_lab() -> None:
         assert err.value.status == 422
 
 
+def test_check_without_params_uses_the_spec_target_params() -> None:
+    """#149: the GUI can't send a check's params (``learner_view`` hides the
+    spec), so an omitted ``params`` (``None``) defaults to the spec's own
+    target for that ``check_id`` (``spec.checks``, #124)."""
+    f = build()
+    artifact_id = start(f)
+    with f.tx() as tx:
+        result = f.service.check(
+            tx,
+            SPECS,
+            artifact_id,
+            "fake.exit",
+            None,
+            event_id=new_key(),
+            user_id=USER_ID,
+            ws_id=WS_ID,
+        )
+    assert result["passed"] is True and result["check_id"] == "fake.exit"
+    assert result["params"] == {"argv": ["true"], "expected_exit_code": 0}
+    assert f.labs.exec_calls[-1][1].argv == ("true",)
+
+
+def test_check_with_explicit_params_ignores_the_spec_target() -> None:
+    """Explicit params, even ones the target would fail, are used as given."""
+    f = build()
+    artifact_id = start(f)
+    params: dict[str, Any] = {"argv": ["false"], "expected_exit_code": 1}
+    with f.tx() as tx:
+        result = f.service.check(
+            tx,
+            SPECS,
+            artifact_id,
+            "fake.exit",
+            params,
+            event_id=new_key(),
+            user_id=USER_ID,
+            ws_id=WS_ID,
+        )
+    assert result["params"] == params
+
+
 def test_failed_check_is_an_observation() -> None:
     f = build()
 
