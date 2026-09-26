@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/notebook.built/1.json",
+  "title": "notebook.built payload v1",
+  "description": "The textbook docs and drill items selected when notebook built a workspace. The IDs stay fixed across retries of the creating request.",
+  "x-envelope": 2,
+  "x-actors": ["learner"],
+  "x-scope": ["session_id", "ws_id"],
+  "type": "object",
+  "required": ["selector", "doc_ids", "drill_item_ids"],
+  "properties": {
+    "selector": {"enum": ["topic", "labels"]},
+    "doc_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/doc_id"}
+    },
+    "drill_item_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/item_id"}
+    }
+  },
+  "additionalProperties": false
+}

@@ -38,16 +38,21 @@ def _required(doc: JsonObject, specs: dict[str, tuple[str, ...]]) -> tuple[str, 
     return specs.get(str(doc.get("artifact_ref")), ())
 
 
-def pack_items(pack: PackV2) -> list[DrillItem]:
-    """Every drill item bundled in ``pack``, in file path order."""
+def pack_items(pack: PackV2, *, include_holdout: bool = True) -> list[DrillItem]:
+    """Every drill item bundled in ``pack``, in file path order.
+
+    ``include_holdout=False`` drops ``sys:holdout`` items, for learner-facing
+    practice surfaces (the notebook) that must not reveal held-out tasks.
+    """
     required = _artifact_checks(pack.documents.get("artifacts", {}).values())
     drills = pack.documents.get("drills", {})
-    return [
+    items = [
         DrillItem.from_document(
             drills[path], origin="pack", required_checks=_required(drills[path], required)
         )
         for path in sorted(drills)
     ]
+    return items if include_holdout else [item for item in items if HOLDOUT not in item.labels]
 
 
 def generated_items(
