@@ -24,6 +24,7 @@ forbidden_modules =
     harness.cli
     harness.testing
 
+# harness.adapters.supabase is not listed: its auth preset builds on harness.adapters.auth.
 [importlinter:contract:adapters-are-independent]
 name = harness.adapters.* libraries must not import each other
 type = independence
@@ -32,6 +33,7 @@ modules =
     harness.adapters.litellm
     harness.adapters.docker_lab
     harness.adapters.pty
+    harness.adapters.auth
 
 [importlinter:contract:adapters-do-not-import-wiring]
 name = harness.adapters.* must not import api or cli
