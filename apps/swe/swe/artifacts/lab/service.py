@@ -264,14 +264,21 @@ class LabArtifactService:
         specs: Mapping[str, JsonObject],
         artifact_id: str,
         check_id: str,
-        params: JsonObject,
+        params: JsonObject | None,
         *,
         event_id: str,
         user_id: str,
         ws_id: str,
         actor: ActorV2 = "learner",
     ) -> JsonObject:
-        """Run one of the spec's ``allowed_checks`` against the lab (``artifact.checked``)."""
+        """Run one of the spec's ``allowed_checks`` against the lab (``artifact.checked``).
+
+        ``params=None`` (the GUI's ``check`` call, since ``learner_view`` hides the
+        spec it would otherwise read them from): the spec's own target params for
+        ``check_id`` (``spec.checks``, #124), so the recorded ``artifact.checked``
+        matches the target exactly and a drill answered from it can be judged
+        (#149). Passed explicitly, even ``{}``, params are used as given.
+        """
         expect = {"artifact_id": artifact_id, "check_id": check_id}
         replay = self._replay(tx, event_id, "artifact.checked", (user_id, ws_id), expect)
         if replay is not None:
@@ -280,6 +287,8 @@ class LabArtifactService:
         artifact, lab_instance_id = self._lab(document, specs)
         if check_id not in artifact.allowed_checks:
             raise _invalid(f"check {check_id!r} is not in the spec's allowed_checks")
+        if params is None:
+            params = artifact.target_params(check_id) or {}
         try:
             self.adapters.check(check_id).validate_params(params)
             result = run_check(

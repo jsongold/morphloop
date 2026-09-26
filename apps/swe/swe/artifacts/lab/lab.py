@@ -76,8 +76,25 @@ class LabArtifact(Artifact):
     spec_id: str
     environment: JsonObject
     allowed_checks: frozenset[str]
+    checks: tuple[JsonObject, ...] = ()
+    """The spec's target conditions (``{"check", "params"}`` each, #124): the check
+    endpoint defaults an omitted check's params to its match here, since
+    ``learner_view`` hides the spec from the GUI that would otherwise send them (#149)."""
     idle_seconds: int | None = None
     """Stop the lab after this long without ws activity; ``None``: only on request."""
+
+    def target_params(self, check_id: str) -> JsonObject | None:
+        """The declared target ``params`` for ``check_id`` (first match), or ``None``
+        if this lab declares no target for it.
+
+        ponytail: first match; ambiguous only if a spec repeats a check id with
+        different target params, which #124's ``validate_spec`` does not forbid.
+        """
+        for target in self.checks:
+            if target.get("check") == check_id:
+                params = target.get("params")
+                return params if isinstance(params, Mapping) else None
+        return None
 
     @classmethod
     def validate_spec(cls, spec: JsonObject, pack: PackV2) -> Iterable[str]:
@@ -110,10 +127,12 @@ class LabArtifact(Artifact):
         body = spec["spec"]
         assert isinstance(body, Mapping)
         environment = body["environment"]
-        fixtures, checks, labels = body["allowed_fixtures"], body["allowed_checks"], spec["labels"]
+        fixtures, allowed, labels = body["allowed_fixtures"], body["allowed_checks"], spec["labels"]
         assert isinstance(environment, Mapping)
-        assert isinstance(fixtures, Sequence) and isinstance(checks, Sequence)
+        assert isinstance(fixtures, Sequence) and isinstance(allowed, Sequence)
         assert isinstance(labels, Sequence)
+        targets = body.get("checks", [])
+        assert isinstance(targets, Sequence)
         idle = body.get("idle_seconds")
         if environment.get("fixture") not in fixtures:
             raise ValueError(f"fixture {environment.get('fixture')!r} is not in allowed_fixtures")
@@ -122,7 +141,8 @@ class LabArtifact(Artifact):
             labels=frozenset(str(label) for label in labels),
             spec_id=str(spec["id"]),
             environment=environment,
-            allowed_checks=frozenset(str(c) for c in checks),
+            allowed_checks=frozenset(str(c) for c in allowed),
+            checks=tuple(t for t in targets if isinstance(t, Mapping)),
             idle_seconds=idle if isinstance(idle, int) else None,
         )
 
