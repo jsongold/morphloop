@@ -88,7 +88,7 @@ def client() -> Any:
         "labels": ["dimension:explain"],
     }
     generated.add(GeneratedDocument(resource="drill", id=GEN_ID, body=body, provenance={}))
-    app, _ = build_app()
+    app = build_app()
     app.state.pack_v2 = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
     app.state.generated_documents = generated
     app.dependency_overrides[event_store_v2_of] = lambda: store

@@ -42,11 +42,11 @@ def test_lint_imports_passes() -> None:
 
 
 def test_sdk_imports_no_app() -> None:
-    """``harness`` and ``domains`` never name an app package (ADR-0018 s19)."""
+    """``harness`` never names an app package (ADR-0018 s19)."""
     import ast
 
     offending: list[str] = []
-    for root in ("harness", "domains"):
+    for root in ("harness",):
         for path in (REPO_ROOT / root).rglob("*.py"):
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                 names = (

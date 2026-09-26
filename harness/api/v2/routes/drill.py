@@ -11,7 +11,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import Field, model_validator
 
-from harness.api.backend import harness_version
 from harness.api.v2.deps import (
     EventIdDep,
     EventStoreV2Dep,
@@ -19,6 +18,7 @@ from harness.api.v2.deps import (
     GeneratedDocumentsDep,
     PackV2Dep,
     UserIdDep,
+    harness_version,
     replay_or_conflict,
     ws_or_404,
 )

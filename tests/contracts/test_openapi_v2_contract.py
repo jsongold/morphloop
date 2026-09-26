@@ -1,13 +1,11 @@
 """Contract tests for contracts/openapi/v0.2/ (ADR-0018, issue #44).
 
-Unlike `test_openapi_contract.py` (a single-file v0.1 document), v0.2's
 `root.yaml` keeps `paths: {}` on disk forever: each resource owns a URL ->
 Path Item map in its own `paths/<resource>.yaml`, and
 `harness.testing.openapi_v2.load_merged_openapi_v2_spec` merges every
 `paths/*.yaml` into the document's `paths` at load time, rejecting a URL
 declared twice. This means two resource PRs adding different URLs touch
 different files and never need to edit (or conflict on) `root.yaml`.
-`v0.1.yaml` is untouched.
 """
 
 from __future__ import annotations
@@ -22,7 +20,6 @@ from jsonschema_path import SchemaPath
 from jsonschema_path.handlers import default_handlers
 from openapi_spec_validator.validation import OpenAPIV31SpecValidator
 
-from harness.testing.contracts import CONTRACTS_DIR
 from harness.testing.openapi_v2 import V2_DIR, DuplicatePathError, load_merged_openapi_v2_spec
 
 RESOURCES = [
@@ -42,7 +39,7 @@ RESOURCES = [
 def _no_contracts_schema_handler(uri: str) -> Any:
     # v0.2 skeleton does not yet reference any contracts/schemas/*.json by
     # $id (the new event envelope is issue #43); a resource PR that adds one
-    # should extend this the same way test_openapi_contract.py resolves them.
+    # should extend this to resolve them.
     raise LookupError(f"contracts/openapi/v0.2 does not expect an external ref to {uri}")
 
 
@@ -55,12 +52,6 @@ def _schema_path(spec: dict[str, Any], base_uri: str) -> SchemaPath:
 
 MERGED_SPEC = load_merged_openapi_v2_spec()
 ROOT = _schema_path(MERGED_SPEC, (V2_DIR / "root.yaml").resolve().as_uri())
-
-
-def test_v01_is_untouched() -> None:
-    v1 = (CONTRACTS_DIR / "openapi" / "v0.1.yaml").read_text(encoding="utf-8")
-    assert "openapi: 3.1.0" in v1
-    assert "version: 0.1.0" in v1
 
 
 def test_root_yaml_on_disk_keeps_paths_empty() -> None:

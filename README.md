@@ -15,12 +15,12 @@ Start with:
 
 ## Quick Start
 
-Requirements: Docker (with Compose v2). For local development also `uv` and `pnpm`.
+Requirements: Docker (with Compose v2). For local development also `uv`.
 
-### Run the SWE app (web UI, labs, the v0.2 SE pack)
+### The SWE app (web UI, labs, the SE pack)
 
-The app lives in `apps/swe/` and runs from there: `cd apps/swe && ./scripts/dev.sh up`
-(`--fake-llm` for no key). See `apps/swe/README.md` for its env vars and E2E.
+The SWE app lives in its own repository: https://github.com/jsongold/browncircle.
+UIs live in app repositories; this repository is the backend SDK (plus `examples/quickstart`).
 
 ### Run the SDK stack
 
@@ -48,13 +48,6 @@ curl -s localhost:8000/health
 # {"status":"ok","db":"ok"}
 ```
 
-Import the pack (once per database; re-run after changing `contents/`):
-
-```sh
-docker compose exec -T api python -m harness.cli import contents/software-engineering
-# status  imported
-```
-
 If port 8000 is already in use, override the host port:
 
 ```sh
@@ -71,11 +64,9 @@ compose project name (`morphloop-<hash>`) and host port (api 17000+) from
 the worktree path:
 
 ```sh
-./scripts/dev-stack.sh up        # build + start + import the SE pack
+./scripts/dev-stack.sh up        # build + start (SDK api only)
 # api  http://localhost:17xxx   (project morphloop-2efd6458)
 ./scripts/dev-stack.sh logs api  # follow logs (api / db)
-./scripts/dev-stack.sh import    # (re)import the pack
-./scripts/dev-stack.sh test      # e2e tests in the api container
 ./scripts/dev-stack.sh down -v   # stop and delete the db volume
 ```
 
@@ -88,28 +79,6 @@ docker compose logs -f api      # or db
 docker compose down             # stop
 docker compose down -v          # stop and delete the database volume
 docker rm -f $(docker ps -aq --filter label=io.morphloop.lab.managed=docker_lab)  # remove leftover labs
-```
-
-### Try the DNS mission
-
-With the SDK stack up and the pack imported, run the web UI against it
-(`cd apps/swe/web && pnpm dev`, see Local development), then:
-
-1. Open http://localhost:3000 and choose **Start a session** (or **Resume** an earlier one).
-2. Choose the DNS activity. A lab container starts and its shell appears in the terminal pane.
-3. Diagnose and fix the problem in the terminal. The reset button restores the lab to its starting state.
-4. Ask the tutor in the chat panel. Highlight text in the mission or visualization to quote it in the question.
-5. Choose **Submit**. The evaluation result and the updated learner state appear, and **Choose next activity** starts the next round.
-
-The timeline shows every recorded event of the session.
-
-### End-to-end check against the real stack
-
-With the stack running and the pack imported (the test reads the key from the shell):
-
-```sh
-set -a; . ./.env.local; set +a
-uv run pytest tests/e2e -q
 ```
 
 ### Try the DB-down behaviour
@@ -129,20 +98,11 @@ Python (API, harness):
 uv sync
 uv run pytest -q                 # tests
 uv run ruff check . && uv run ruff format --check .
-uv run mypy harness domains      # type check
+uv run mypy                      # type check
 uv run lint-imports              # dependency-direction check
 ```
 
-Web UI against the API running in Docker:
-
-```sh
-cd apps/swe/web
-pnpm install
-pnpm dev                         # http://localhost:3000 (NEXT_PUBLIC_API_BASE_URL defaults to http://localhost:8000)
-pnpm typecheck && pnpm lint && pnpm build
-```
-
-The standard UI is optional; any UI that follows the API contract in `contracts/` can replace it.
+Any UI that follows the API contract in `contracts/` can run against the API; UIs live in app repositories.
 
 ### Quick start: the SDK alone
 
@@ -187,7 +147,7 @@ same three calls against the example app with the in-memory `/v2` fakes
 ### Building an app on the SDK
 
 The SDK owns the `Artifact` base and the extension points; concrete artifact
-types (lab, diagram, ...) belong to an app (`apps/<app>/`, ADR-0018 §19). An app
+types (lab, diagram, ...) belong to an app (its own repository, ADR-0018 §19). An app
 is its own package that depends on the installed SDK package (`morphloop`) and
 imports `harness.sdk` only; nothing else in `harness` is public API.
 
@@ -200,24 +160,10 @@ scripts/check-sdk-wheel.sh                  # proves an installed wheel loads it
 
 The wheel ships `contracts/` as package data (`harness/contracts/`), so
 `ContractSchemas.load()` and `harness.testing` need no repository checkout;
-`MORPHLOOP_CONTRACTS_DIR` still overrides it. Inside this repository the root
-`pyproject.toml` is a uv workspace whose members are `apps/*`: an app under
-`apps/<app>/` with its own `pyproject.toml` (depending on `morphloop`) and tests
-is installed by `uv sync` (the root dev group depends on it), and later moves out
-to its own repository unchanged. The SDK's own tests use only the minimal fixture
-pack under `tests/contracts/fixtures/pack-v2/valid/dns-pack/` with test-only stub
-types; a real pack and its tests belong to the app.
-
-The first app is `apps/swe/` (package `swe`): the `lab` and `diagram` artifact
-types with their routes, the SE pack under `apps/swe/pack/`, and
-`swe.app.create_swe_app`, which `docker compose` serves. Its tests are a separate
-run, since the SDK tests register stand-ins under the same type names:
-
-```sh
-uv run pytest -q                  # SDK
-uv run pytest -q apps/swe/tests   # the app (apps/swe/pyproject.toml configures it)
-uv run mypy harness domains apps && uv run lint-imports   # `swe` imports harness.sdk only
-```
+`MORPHLOOP_CONTRACTS_DIR` still overrides it. The SDK's own tests use only the
+minimal fixture pack under `tests/contracts/fixtures/pack-v2/valid/dns-pack/` with
+test-only stub types; a real pack, its domain adapters and its tests belong to the app
+(the SWE app: https://github.com/jsongold/browncircle).
 
 An app imports `harness.sdk` only:
 
@@ -239,8 +185,7 @@ app = create_app(extensions=[AppExtension(routers=(router,), artifact_types=(Lab
 
 Routers mount under `/v2`. The pack importer accepts only the registered types and
 validates every artifact `spec` with the type's schema and validator; a pack that
-names another type is refused. `harness must not import apps` and `swe imports
-harness.sdk only` are enforced by `lint-imports`. `harness.sdk` also exports what
+names another type is refused. `harness.sdk` also exports what
 an artifact type with routes needs (the v2 event store Port and value types, the
 `View` base, the `/v2` request dependencies, `problem()`, the lab and terminal
 Ports with their Docker adapters, the domain adapter registry); test support

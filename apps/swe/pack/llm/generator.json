@@ -1,6 +1,0 @@
-{
-  "role": "generator",
-  "model": "gpt-5.4-2026-03-05",
-  "max_tokens": 32000,
-  "prompt": "llm/generator.md"
-}
