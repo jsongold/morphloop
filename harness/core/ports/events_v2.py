@@ -117,8 +117,18 @@ class ViewDocumentStore(Protocol):
         """Return the document at ``(view, key)``, or ``None``."""
         ...
 
-    def list_view(self, view: str, *, key_prefix: str = "") -> Sequence[tuple[str, JsonObject]]:
-        """Return ``(key, document)`` pairs whose key starts with ``key_prefix``, sorted by key."""
+    def list_view(
+        self, view: str, *, key_prefix: str = "", after: str | None = None, limit: int | None = None
+    ) -> tuple[Sequence[tuple[str, JsonObject]], str | None]:
+        """One page of ``(key, document)`` pairs whose key starts with ``key_prefix``,
+        sorted by key (keyset pagination, #173).
+
+        ``after``: the previous page's returned cursor, or ``None`` for the first
+        page. ``limit``: max rows on this page, or ``None`` for every remaining
+        row in one page (the cursor is then always ``None``).
+
+        Returns ``(page, next_cursor)``; ``next_cursor`` is ``None`` on the last page.
+        """
         ...
 
     def put_view(self, view: str, key: str, document: JsonObject) -> None:

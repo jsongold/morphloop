@@ -16,7 +16,8 @@ from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import text
+from sqlakeyset import select_page
+from sqlalchemy import Select, column, select, table, text
 from sqlalchemy.engine import Connection, Engine, RowMapping
 
 from harness.core.contract_schemas import EVENT_V2_APPEND_ID, ContractSchemas
@@ -44,13 +45,7 @@ _INSERT = text(
 )
 _SELECT_BY_ID = text(f"SELECT {_COLUMNS} FROM events_v2 WHERE id = :id")
 _GET_VIEW = text("SELECT document FROM view_documents_v2 WHERE view = :view AND key = :key")
-# COLLATE "C" orders by code point, matching Python's sorted() on str.
-_LIST_VIEW = text(
-    """
-    SELECT key, document FROM view_documents_v2
-    WHERE view = :view AND starts_with(key, :prefix) ORDER BY key COLLATE "C"
-    """
-)
+_VIEW_DOCUMENTS = table("view_documents_v2", column("view"), column("key"), column("document"))
 _PUT_VIEW = text(
     """
     INSERT INTO view_documents_v2 (view, key, document)
@@ -59,6 +54,30 @@ _PUT_VIEW = text(
     """
 )
 _CLEAR_VIEW = text("DELETE FROM view_documents_v2 WHERE view = :view")
+
+
+def _prefix_upper_bound(prefix: str) -> str:
+    """Exclusive upper bound for keys starting with ``prefix``, under the
+    code-point order that ``key COLLATE "C"`` also uses (module docstring
+    below), so ``key >= prefix AND key < bound`` is a sargable index range
+    equivalent to ``starts_with(key, prefix)`` (#173, #190 P2 review).
+
+    ponytail: breaks if ``prefix`` ends in the max code point (0x10FFFF); no
+    key in this codebase does.
+    """
+    return prefix[:-1] + chr(ord(prefix[-1]) + 1)
+
+
+def _view_select(view: str, key_prefix: str) -> Select[tuple[str, JsonObject]]:
+    # COLLATE "C" orders by code point, matching Python's sorted() on str,
+    # and is what the (view, key COLLATE "C") index (migration d7b1e3f5a9c2) is built on.
+    key_col = _VIEW_DOCUMENTS.c.key.collate("C")
+    stmt = select(_VIEW_DOCUMENTS.c.key, _VIEW_DOCUMENTS.c.document).where(
+        _VIEW_DOCUMENTS.c.view == view
+    )
+    if key_prefix:
+        stmt = stmt.where(key_col >= key_prefix).where(key_col < _prefix_upper_bound(key_prefix))
+    return stmt.order_by(key_col.asc())
 
 
 def _to_json(document: JsonObject) -> str:
@@ -119,9 +138,19 @@ class _Transaction:
         params = {"view": view, "key": key}
         return cast(JsonObject | None, self._conn().execute(_GET_VIEW, params).scalar_one_or_none())
 
-    def list_view(self, view: str, *, key_prefix: str = "") -> Sequence[tuple[str, JsonObject]]:
-        rows = self._conn().execute(_LIST_VIEW, {"view": view, "prefix": key_prefix})
-        return [(row.key, cast(JsonObject, row.document)) for row in rows]
+    def list_view(
+        self, view: str, *, key_prefix: str = "", after: str | None = None, limit: int | None = None
+    ) -> tuple[Sequence[tuple[str, JsonObject]], str | None]:
+        stmt = _view_select(view, key_prefix)
+        if limit is None:
+            rows = self._conn().execute(stmt)
+            return [(row.key, cast(JsonObject, row.document)) for row in rows], None
+        page = select_page(
+            self._conn(), stmt, per_page=limit, after=(after,) if after is not None else None
+        )
+        page_rows = [(row.key, cast(JsonObject, row.document)) for row in page]
+        next_cursor = page_rows[-1][0] if page.paging.has_next else None
+        return page_rows, next_cursor
 
     def put_view(self, view: str, key: str, document: JsonObject) -> None:
         params = {"view": view, "key": key, "document": _to_json(document)}
@@ -162,10 +191,10 @@ class PostgresEventStoreV2:
     ) -> Sequence[StoredEventV2]:
         params: dict[str, Any] = {"after": after_position}
         clauses = ["position > :after"]
-        for column, value in (("user_id", user_id), ("session_id", session_id), ("ws_id", ws_id)):
+        for col, value in (("user_id", user_id), ("session_id", session_id), ("ws_id", ws_id)):
             if value is not None:
-                clauses.append(f"{column} = :{column}")
-                params[column] = value
+                clauses.append(f"{col} = :{col}")
+                params[col] = value
         sql = f"SELECT {_COLUMNS} FROM events_v2 WHERE {' AND '.join(clauses)} ORDER BY position"
         if limit is not None:
             sql += " LIMIT :limit"
