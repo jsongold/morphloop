@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const source = readFileSync(new URL("./index.tsx", import.meta.url), "utf8");
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
 const exports = {};
-const fakeRequire = (name) => name === "@/v2/api" || name === "@/v2/state" || name === "../artifact" ? {} : require(name);
+const fakeRequire = (name) => name === "@/v2/api" || name === "@/v2/state" || name === "../artifact" || name === "./toc" ? {} : require(name);
 vm.runInNewContext(code, { exports, require: fakeRequire });
 
 function text(node) {
