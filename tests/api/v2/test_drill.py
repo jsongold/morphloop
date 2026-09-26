@@ -105,8 +105,27 @@ def test_list_filters_by_labels_and_hides_expected(client: Any) -> None:
     body = client.get("/v2/drills", params={"labels": ["dimension:explain", "origin:generated"]})
     assert body.status_code == 200
     assert [i["id"] for i in body.json()["items"]] == [GEN_ID]
-    everything = client.get("/v2/drills").json()["items"]
-    assert len(everything) == 4 and all("expected" not in i for i in everything)
+    everything = client.get("/v2/drills").json()
+    _check(everything, "/drills", "get", "200")
+    items = everything["items"]
+    assert len(items) == 3 and all("expected" not in i for i in items)
+    assert everything["next_cursor"] is None
+
+
+def test_list_pages_by_cursor_and_never_lists_holdout(client: Any) -> None:
+    # #178: the holdout item is answerable by id but never listed.
+    seen, cursor = [], None
+    while True:
+        params = {"limit": 1, **({"cursor": cursor} if cursor else {})}
+        body = client.get("/v2/drills", params=params).json()
+        assert len(body["items"]) == 1
+        seen += [i["id"] for i in body["items"]]
+        cursor = body["next_cursor"]
+        if cursor is None:
+            break
+    assert len(seen) == 3 and seen == sorted(seen)
+    assert "dns-fix-resolver-lab" not in seen
+    assert client.get("/v2/drills/dns-fix-resolver-lab").status_code == 200
 
 
 def test_get_item(client: Any) -> None:
@@ -199,7 +218,8 @@ def test_list_answers_never_includes_actual_or_expected(client: Any) -> None:
                 "judgment_status": "judged",
                 "gap": {"missing": []},
             }
-        ]
+        ],
+        "next_cursor": None,
     }
     assert "actual" not in listed.text and "expected" not in listed.text
 
@@ -229,8 +249,31 @@ def test_list_answers_reports_unjudged_while_pending(client: Any) -> None:
                 "judgment_status": "unjudged",
                 "gap": None,
             }
-        ]
+        ],
+        "next_cursor": None,
     }
+
+
+def test_list_answers_pages_in_creation_order(client: Any) -> None:
+    # #178: "dns-resolver-text" sorts after "dns-record-choice" but is answered
+    # first; pages follow creation order across items.
+    client.app.dependency_overrides[drill_judge_config_of] = lambda: None
+    try:
+        ids = [
+            client.post(
+                f"/v2/ws/ws_1/drills/{item}/answers",
+                json={"actual": "A"},
+                headers={"Idempotency-Key": str(uuid.uuid4())},
+            ).json()["id"]
+            for item in ["dns-resolver-text", "dns-record-choice", "dns-resolver-text"]
+        ]
+    finally:
+        del client.app.dependency_overrides[drill_judge_config_of]
+    first = client.get(ANSWERS_URL, params={"limit": 2}).json()
+    _check(first, "/ws/{ws_id}/drills/answers", "get", "200")
+    rest = client.get(ANSWERS_URL, params={"cursor": first["next_cursor"]}).json()
+    assert [a["answer_event_id"] for a in first["items"] + rest["items"]] == ids
+    assert rest["next_cursor"] is None
 
 
 def test_list_answers_on_missing_or_other_users_ws_is_404(client: Any) -> None:

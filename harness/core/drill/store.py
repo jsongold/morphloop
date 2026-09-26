@@ -89,20 +89,37 @@ def generated_items(
     ]
 
 
+def learner_items_page(
+    items: Iterable[DrillItem], *, after: str | None, limit: int
+) -> tuple[list[DrillItem], str | None]:
+    """One page of learner-listable ``items`` by id, plus the next page's
+    ``after`` id (``None`` on the last page, #178).
+
+    ``sys:holdout`` items are never listed: a learner must not see a held-out
+    task ahead of time. They stay reachable by id for the transfer check.
+    ponytail: sorts the whole in-memory list per page; bounded by authored content.
+    """
+    ordered = sorted(
+        (i for i in items if HOLDOUT not in i.labels and (after is None or i.id > after)),
+        key=lambda i: i.id,
+    )
+    page = ordered[:limit]
+    return page, (page[-1].id if len(ordered) > limit else None)
+
+
 class DrillAnswersView(View):
-    """Answers keyed ``<ws_id>/<item_id>/<position>``: list a ws or one item with a prefix."""
+    """Answers keyed ``<ws_id>/<position:012d>``: a ws's answers in creation order (#178)."""
 
     name = "drill.answers"
     handles = frozenset({ANSWERED})
 
     @staticmethod
-    def key(ws_id: str, item_id: str, position: int) -> str:
-        return f"{ws_id}/{item_id}/{position:012d}"
+    def key(ws_id: str, position: int) -> str:
+        return f"{ws_id}/{position:012d}"
 
     @classmethod
     def apply(cls, event: StoredEventV2, tx: ViewDocumentStore) -> None:
         assert event.ws_id is not None
-        item_id = str(event.payload["item_id"])
         doc: dict[str, object] = {
             "event_id": event.id,
             "user_id": event.user_id,
@@ -110,27 +127,23 @@ class DrillAnswersView(View):
             "ws_id": event.ws_id,
             **event.payload,
         }
-        tx.put_view(cls.name, cls.key(event.ws_id, item_id, event.position), cast(JsonObject, doc))
+        tx.put_view(cls.name, cls.key(event.ws_id, event.position), cast(JsonObject, doc))
 
 
-def list_answers(tx: EventTransactionV2, ws_id: str) -> list[JsonObject]:
-    """The ws's answers, in creation order: ``item_id``, ``answer_event_id``,
-    and ``judgment_status``/``gap`` (issue #129). Never ``actual`` or
-    ``expected``.
-
-    Keys sort ``<item_id>`` before ``<position>`` (``DrillAnswersView.key``),
-    so listing by ``key_prefix`` alone would group by item, not creation
-    order -- the trailing zero-padded position is parsed back out to sort
-    globally instead.
+def list_answers(
+    tx: EventTransactionV2, ws_id: str, *, after: str | None = None, limit: int
+) -> tuple[list[JsonObject], str | None]:
+    """One page of the ws's answers, oldest first, plus the next cursor key
+    (#178): ``item_id``, ``answer_event_id``, and ``judgment_status``/``gap``
+    (issue #129). Never ``actual`` or ``expected``.
 
     ``judgment_status``/``gap`` come from the answer's ``drill.judged`` event
     (#65, #134 review), looked up per answer; an answer with none yet reads
     back ``judgment_status: "unjudged"``, ``gap: None``.
     """
-    pairs = DrillAnswersView.list(tx, key_prefix=f"{ws_id}/")
-    ordered = sorted(pairs, key=lambda pair: int(pair[0].rsplit("/", 1)[-1]))
+    pairs, next_cursor = DrillAnswersView.list(tx, key_prefix=f"{ws_id}/", after=after, limit=limit)
     answers: list[JsonObject] = []
-    for _, doc in ordered:
+    for _, doc in pairs:
         event_id = str(doc["event_id"])
         judgment = stored_judgment(tx, event_id)
         answers.append(
@@ -141,4 +154,4 @@ def list_answers(tx: EventTransactionV2, ws_id: str) -> list[JsonObject]:
                 "gap": judgment.payload["gap"] if judgment is not None else None,
             }
         )
-    return answers
+    return answers, next_cursor
