@@ -88,6 +88,23 @@ def test_every_resource_has_its_own_path_file() -> None:
         assert (V2_DIR / "paths" / f"{resource}.yaml").is_file(), f"missing paths/{resource}.yaml"
 
 
+def test_notebook_search_and_build_contracts_exist() -> None:
+    assert {"get"} <= set(ROOT["paths"]["/notebook/search"].str_keys())
+    assert {"post"} <= set(ROOT["paths"]["/notebook/workspace/build"].str_keys())
+
+
+def test_notebook_build_schema_is_closed_and_labels_unique() -> None:
+    build = MERGED_SPEC["paths"]["/notebook/workspace/build"]["post"]
+    request = build["requestBody"]["content"]["application/json"]["schema"]
+    assert request["properties"]["labels"]["uniqueItems"] is True
+    response = build["responses"]["201"]["content"]["application/json"]["schema"]
+    assert response["additionalProperties"] is False
+    assert set(response["properties"]) == {"workspace", "documents", "drills"}
+    assert response["properties"]["workspace"]["additionalProperties"] is False
+    # A drill's `expected` answer must not be a legal field of the response.
+    assert "expected" not in response["properties"]["drills"]["items"]["properties"]
+
+
 def test_merge_is_the_union_of_every_path_file() -> None:
     expected: set[str] = set()
     for path_file in sorted((V2_DIR / "paths").glob("*.yaml")):
