@@ -2,11 +2,8 @@
 # file. Owned by this skeleton PR (#44); a resource PR does not edit this file
 # — it adds its own components/<resource>.yaml instead (see ../README.md).
 #
-# Problem carries over the v0.1 RFC 9457 shape verbatim (contracts/openapi/v0.1.yaml
-# components.schemas.Problem), so error handling is identical across v0.1 and
-# v0.2 clients. The `code` enum is closed here again because v0.2 is a fresh
-# document (ADR-0015: contracts are frozen per document, not shared by $ref
-# across major versions).
+# Problem is the RFC 9457 shape the v0.1 API used, carried over verbatim. The
+# `code` enum is closed per document (ADR-0015).
 Problem:
   title: Problem details
   description: |

@@ -1,9 +1,9 @@
-"""RFC 9457 problem responses (``contracts/openapi/v0.1.yaml``, ``Problem``).
+"""RFC 9457 problem responses (``contracts/openapi/v0.2/components/common.yaml``,
+``Problem``).
 
-The routing layer never builds an error body by hand: core raises a
-:class:`~harness.core.loop.errors.LoopError` carrying the closed ``code`` and
-its status, and :func:`problem_body` renders it. The handlers here only add the
-two failures that happen before core is reached -- a body that fails its request
+Routes return :func:`problem` for their own failures. The handlers here add the
+failures that happen before a route answers -- an event that fails its contract
+schema (422 ``validation-failed``), a body that fails its request
 schema (422 ``validation-failed``) and a malformed body or query parameter
 (400 ``invalid-request``) -- a reused ``Idempotency-Key`` with a different
 body (409 ``idempotency-key-reused``, v2), and a catch-all for an unexpected exception
@@ -21,7 +21,6 @@ from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException
 
 from harness.core.contract_schemas import ContractValidationError
-from harness.core.loop import LoopError, problem_body
 from harness.core.ports import PlainJson
 from harness.core.ports.events_v2 import EventIdConflictError
 
@@ -48,13 +47,6 @@ def problem(
     return JSONResponse(body, status_code=status, media_type=PROBLEM_MEDIA_TYPE)
 
 
-def loop_problem(error: LoopError) -> JSONResponse:
-    """The problem response for a failure core raised."""
-    return JSONResponse(
-        problem_body(error), status_code=error.status, media_type=PROBLEM_MEDIA_TYPE
-    )
-
-
 def _split(message: str) -> dict[str, str]:
     """``"$.payload.x: is too long"`` -> ``{"path": ..., "message": ...}``."""
     path, separator, detail = message.partition(": ")
@@ -71,13 +63,6 @@ def _location(error: Any) -> str:
 def install_handlers(app: FastAPI) -> None:
     """Register the exception handlers on ``app`` (also used on WebSocket routes,
     where Starlette turns the response into a handshake denial)."""
-
-    @app.exception_handler(LoopError)
-    async def _loop_error(request: Request, exc: Exception) -> Response:
-        assert isinstance(exc, LoopError)
-        if exc.status >= 500:
-            logger.warning("%s on %s: %s", exc.code, request.url.path, exc.detail)
-        return loop_problem(exc)
 
     @app.exception_handler(ContractValidationError)
     async def _contract_error(request: Request, exc: Exception) -> Response:

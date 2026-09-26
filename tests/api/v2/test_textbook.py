@@ -37,7 +37,7 @@ def _check(body: Any, url: str) -> None:
 
 @pytest.fixture(scope="module")
 def client() -> Any:
-    app, _ = build_app()
+    app = build_app()
     app.state.pack_v2 = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
     app.state.generated_documents = InMemoryGeneratedDocumentStore()
     with TestClient(app) as c:

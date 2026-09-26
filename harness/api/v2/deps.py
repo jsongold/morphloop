@@ -9,7 +9,7 @@ connection.
 Tests: inject an `InMemoryEventStoreV2` either by setting
 `app.state.event_store_v2` before the first request, or by overriding
 `event_store_v2_of` in `app.dependency_overrides` (same idiom as
-`harness.api.routes.backend_of` / `harness.api.app.check_db`).
+`harness.api.app.check_db`).
 
 Shared per-request inputs every resource route uses (#77) -- a resource
 never adds its own env var or loader:
@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from importlib.metadata import PackageNotFoundError, version
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -59,6 +60,17 @@ from harness.core.ports.generated_documents import GeneratedDocumentStore
 from harness.core.ports.json_types import JsonObject
 from harness.core.settings import Settings
 from harness.core.ws import WsNotFoundError, get_ws
+
+
+def harness_version() -> str:
+    """The harness version recorded as provenance (ADR-0010); `HARNESS_VERSION` overrides."""
+    override = Settings().harness_version
+    if override:
+        return override
+    try:
+        return version("morphloop")
+    except PackageNotFoundError:  # pragma: no cover - an installed harness has metadata
+        return "0.0.0"
 
 
 def build_event_store_v2() -> EventStoreV2:

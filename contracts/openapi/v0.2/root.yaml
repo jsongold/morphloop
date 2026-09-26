@@ -4,10 +4,8 @@ info:
   version: 0.2.0
   summary: Skeleton of the v0.2.0 resource-centric HTTP contract (ADR-0018, issue #34).
   description: |
-    Boundary contract between the harness API (`harness/api/`) and any UI,
-    same role as `contracts/openapi/v0.1.yaml` (ADR-0015). v0.1 stays
-    untouched and reachable while v0.2 is built up resource by resource
-    (parallel migration, issue #34).
+    Boundary contract between the harness API (`harness/api/`) and any UI
+    (ADR-0015).
 
     This document is the root of a multi-file OpenAPI 3.1 spec. `paths`
     below is intentionally always empty: each resource owns a URL -> Path

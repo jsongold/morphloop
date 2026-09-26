@@ -1,7 +1,7 @@
 """`/v2` lab artifact routes and terminal socket (#62), over in-memory fakes.
 
 The app is the SDK app with the SWE extension; the client never enters the
-lifespan, so the v0.1 backend is not wired and the idle reaper does not start.
+lifespan, so the idle reaper does not start.
 The store tracks connections (``SingleConnectionStore``): a route that read,
 or opened a second transaction, while its request transaction is open fails.
 """

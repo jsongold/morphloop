@@ -28,7 +28,7 @@ from harness.core.pack.canonical_json import canonicalize as old_canonicalize
 from harness.core.pack.parsing import is_document_path, parse_document
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CONTENTS_DIR = REPO_ROOT / "contents"
+CONTENTS_DIR = REPO_ROOT / "apps" / "swe" / "pack"
 
 
 def _pack_documents() -> list[tuple[str, Any]]:
@@ -39,7 +39,7 @@ def _pack_documents() -> list[tuple[str, Any]]:
 PACK_DOCUMENTS = _pack_documents()
 
 
-# --- Real fixtures: every JSON/YAML document under contents/, loaded exactly
+# --- Real fixtures: every JSON/YAML document of the SWE pack, loaded exactly
 # as the importer loads it (harness.core.pack.parsing.parse_document). -------
 
 

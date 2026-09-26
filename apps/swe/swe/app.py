@@ -8,7 +8,6 @@ another one.
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from fastapi import FastAPI
 
@@ -25,9 +24,9 @@ EXTENSION = AppExtension(
 )
 
 
-def create_swe_app(backend: Any | None = None) -> FastAPI:
-    """The SDK app with the SWE extension; ``backend`` is passed through."""
-    app = create_app(backend, extensions=[EXTENSION])
+def create_swe_app() -> FastAPI:
+    """The SDK app with the SWE extension."""
+    app = create_app(extensions=[EXTENSION])
     if not os.environ.get("MORPHLOOP_PACK_V2_DIR"):
         app.state.pack_v2 = import_pack_v2(PACK_DIR, artifact_types=EXTENSION.artifact_types)
     return app
