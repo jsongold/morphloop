@@ -45,7 +45,9 @@ class OidcAuthProvider:
         self.audience = audience
         self.algorithms = list(algorithms)
         self.leeway = leeway
-        self.jwks_client = jwks_client or jwt.PyJWKClient(jwks_url, timeout=5)
+        # ponytail: a 5 s refetch cooldown lets a rotated key in promptly while
+        # capping unknown-kid refetches at one per 5 s; make it a knob if an IdP needs less.
+        self.jwks_client = jwks_client or jwt.PyJWKClient(jwks_url, timeout=5, cooldown_duration=5)
 
     def user_id(self, token: str | None) -> str:
         if not token:
@@ -61,8 +63,13 @@ class OidcAuthProvider:
                 leeway=self.leeway,
                 options={"require": ["exp", "iat", "sub"]},
             )
-        except (jwt.PyJWKClientConnectionError, json.JSONDecodeError) as exc:
-            raise AuthUnavailableError(f"could not fetch the JWKS: {exc}") from exc
+        except (jwt.PyJWKClientConnectionError, jwt.PyJWKSetError, json.JSONDecodeError) as exc:
+            raise AuthUnavailableError(f"could not use the JWKS: {exc}") from exc
+        except jwt.PyJWKClientError as exc:
+            # PyJWT has one error class for both; only an unknown kid is the token's fault.
+            if str(exc).startswith("Unable to find a signing key"):
+                raise AuthError(str(exc)) from exc
+            raise AuthUnavailableError(f"could not use the JWKS: {exc}") from exc
         except jwt.PyJWTError as exc:
             raise AuthError(str(exc)) from exc
         if not claims["sub"]:

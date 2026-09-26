@@ -216,3 +216,16 @@ def test_dev_provider_is_refused_in_production(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("MORPHLOOP_OIDC_AUDIENCE", AUD)
     with pytest.raises(RuntimeError):
         DevAuthProvider()
+
+
+@pytest.mark.parametrize("jwks", [{"keys": []}, {"keys": [{"kty": "RSA", "use": "enc"}]}, []])
+def test_unusable_jwks_is_unavailable(jwks: Any) -> None:
+    client = FakeJwks()
+    client.fetch_data = lambda: jwks  # type: ignore[method-assign]
+    with pytest.raises(AuthUnavailableError):
+        provider(client).user_id(token())
+
+
+def test_real_client_refetches_a_rotated_key_promptly() -> None:
+    auth = OidcAuthProvider(issuer=ISS, audience=AUD, jwks_url="https://idp.example.com/j")
+    assert auth.jwks_client.cooldown_duration <= 5
