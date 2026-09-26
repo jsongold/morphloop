@@ -1,8 +1,9 @@
 """Real Postgres 16 for the Postgres adapter tests.
 
 Uses ``TEST_DATABASE_URL`` when set. Otherwise starts a throwaway
-``postgres:16`` container on a free host port through the Docker SDK and
-removes it afterwards; the tests are skipped when Docker is unavailable.
+``pgvector/pgvector:pg16`` (Postgres 16 + pgvector) container on a free host
+port through the Docker SDK and removes it afterwards; the tests are skipped
+when Docker is unavailable.
 Either way the database is migrated to ``head`` with the repo's alembic setup.
 
 The event log cannot be emptied (it is append-only by design), so tests use
@@ -24,7 +25,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-_IMAGE = "postgres:16"
+# pgvector/pgvector:pg16 is postgres:16 plus the pgvector extension (#180).
+_IMAGE = "pgvector/pgvector:pg16"
 _USER = _PASSWORD = _DB = "morphloop_test"
 _READY_TIMEOUT_SECONDS = 60
 
