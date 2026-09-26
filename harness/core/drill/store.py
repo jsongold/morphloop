@@ -20,10 +20,15 @@ from harness.core.ports.json_types import JsonObject
 from harness.core.view import View
 
 
-def pack_items(pack: PackV2) -> list[DrillItem]:
-    """Every drill item bundled in ``pack``, in file path order."""
+def pack_items(pack: PackV2, *, include_holdout: bool = True) -> list[DrillItem]:
+    """Every drill item bundled in ``pack``, in file path order.
+
+    ``include_holdout=False`` drops ``sys:holdout`` items, for learner-facing
+    practice surfaces (the notebook) that must not reveal held-out tasks.
+    """
     drills = pack.documents.get("drills", {})
-    return [DrillItem.from_document(drills[path], origin="pack") for path in sorted(drills)]
+    items = [DrillItem.from_document(drills[path], origin="pack") for path in sorted(drills)]
+    return items if include_holdout else [item for item in items if HOLDOUT not in item.labels]
 
 
 def generated_items(documents: Iterable[GeneratedDocument]) -> list[DrillItem]:
