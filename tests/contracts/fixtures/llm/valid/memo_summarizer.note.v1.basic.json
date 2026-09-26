@@ -1,8 +1,0 @@
-{
-  "description": "Note for a highlight on a tutor reply about dig output.",
-  "schema": "schemas/llm/memo_summarizer.note/1.json",
-  "instance": {
-    "title": "The SERVER line in dig output",
-    "body": "`dig` prints `;; SERVER:` at the bottom: the resolver that actually answered. Compare it with `/etc/resolv.conf` to see whether the query went where you expected."
-  }
-}

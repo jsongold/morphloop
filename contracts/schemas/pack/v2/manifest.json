@@ -36,7 +36,14 @@
       "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/markdown"
     },
     "domain_adapters": {
-      "$ref": "https://morphloop.dev/contracts/schemas/pack/manifest.json#/properties/domain_adapters"
+      "description": "Domain adapter id -> accepted version range (ADR-0009).",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/adapter_id"
+      },
+      "additionalProperties": {
+        "$ref": "https://morphloop.dev/contracts/schemas/pack/defs.json#/$defs/version_range"
+      }
     },
     "labels": {
       "description": "The label vocabulary file (labels.json).",

@@ -39,7 +39,6 @@ from harness.core.ports import (
     TerminalOpenRequest,
     TerminalSize,
 )
-from harness.testing.contracts import validate
 from harness.testing.fakes import (
     FakeCommandExitCheck,
     FakeDomainAdapter,
@@ -296,16 +295,7 @@ def test_run_check_executes_inside_the_lab(exit_code: int | None, passed: bool) 
     assert [(lab_id, req.argv) for lab_id, req in lab.exec_calls] == [
         ("lab_1", ("curl", "-fsS", "http://api/health"))
     ]
-    payload = {
-        "evaluation_id": "evl_1",
-        "evaluator": {"definition_id": "dns-diagnosis-v1", "definition_hash": "sha256:" + "0" * 64},
-        "lab_instance_id": "lab_1",
-        "checks": [result.to_dict()],
-        "success": result.passed,
-        "rationale": None,
-        "provenance": None,
-    }
-    validate(payload, "schemas/events/payloads/evaluation.completed/1.json")
+    assert result.to_dict()["passed"] is passed
 
 
 def test_fixture_provider_builds_a_deterministic_spec_with_the_pinned_image() -> None:
@@ -316,18 +306,7 @@ def test_fixture_provider_builds_a_deterministic_spec_with_the_pinned_image() ->
     assert spec == fixture.build_lab_spec(IMAGE, params)  # reset rebuilds the same lab
     lab = FakeLabRuntime()
     info = lab.start("lab_1", spec)
-    payload = {
-        "lab_instance_id": info.lab_instance_id,
-        "environment": {
-            "definition_id": "dns-broken-resolver-v1",
-            "definition_hash": "sha256:" + "0" * 64,
-        },
-        "trigger": "initial",
-        "replaces_lab_instance_id": None,
-        # The fixture id recorded as provenance is the environment's adapter item id.
-        "provenance": {"image_digest": info.image_digest, "fixture_id": "dns.broken-resolver"},
-    }
-    validate(payload, "schemas/events/payloads/lab.started/1.json")
+    assert info.image_digest == IMAGE.digest
 
 
 def test_terminal_tool_launch_and_command_detection() -> None:

@@ -1,5 +1,1 @@
-"""PostgreSQL adapter: engine construction and the EventStore Port implementation."""
-
-from harness.adapters.postgres.event_store import LEARNER_LOCK_NAMESPACE, PostgresEventStore
-
-__all__ = ["LEARNER_LOCK_NAMESPACE", "PostgresEventStore"]
+"""PostgreSQL adapter: engine construction, the v2 event store and generated documents."""

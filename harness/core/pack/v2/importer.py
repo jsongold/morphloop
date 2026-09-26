@@ -29,11 +29,11 @@ from types import MappingProxyType
 from harness.core.artifact import Artifact, registered_artifact_types
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.canonical_json import pack_content_hash
-from harness.core.pack.model import MANIFEST_NAMES
 from harness.core.pack.parsing import PackParseError, parse_document, parse_text
 from harness.core.pack.v2 import validators
 from harness.core.ports import JsonObject, JsonValue, PlainJson
 
+MANIFEST_NAMES = ("manifest.json", "manifest.yaml", "manifest.yml")
 _V2 = "schemas/pack/v2/"
 MANIFEST_SCHEMA = _V2 + "manifest.json"
 KIND_SCHEMAS: Mapping[str, str] = MappingProxyType(

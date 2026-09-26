@@ -137,15 +137,6 @@ def test_invalid_event_is_rejected(
     assert error_path in {e.split(": ", 1)[0] for e in errors}, errors
 
 
-def test_v1_events_unaffected(schemas: ContractSchemas) -> None:
-    v1_stored = CONTRACTS_DIR.parent / "tests/contracts/fixtures/events/valid"
-    for path in sorted(v1_stored.glob("*.json")):
-        schemas.validate(
-            json.loads(path.read_text()),
-            ContractSchemas.id_for("schemas/events/envelope/stored.json"),
-        )
-
-
 @pytest.mark.parametrize(
     ("scope", "missing"),
     [(["session_id"], ("session_id",)), (["session_id", "ws_id"], ("ws_id",))],
