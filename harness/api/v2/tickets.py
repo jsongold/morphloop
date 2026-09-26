@@ -7,8 +7,9 @@ opens the socket with ``?ticket=`` (``contracts/schemas/websocket/README.md``).
 The ticket is a PyJWT HS256 token (``sub`` = the caller, a dedicated ``aud``,
 ``exp`` = ``MORPHLOOP_SOCKET_TICKET_TTL_SECONDS``, a random ``jti``) signed
 with ``MORPHLOOP_SOCKET_TICKET_SECRET``: stateless to verify, no DB round trip
-on issue. Single use is a per-process set of redeemed ``jti`` values, pruned
-as they expire.
+on issue. Single use holds across API processes: redeeming takes the claims
+lease ``socket-ticket:<jti>`` (``ClaimStore``, #192) until just after the
+ticket expires, so a second redemption on any worker is refused.
 """
 
 from __future__ import annotations
@@ -16,15 +17,20 @@ from __future__ import annotations
 import secrets
 import threading
 import time
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from starlette.requests import HTTPConnection
 
 from harness.core.ports.auth import AuthError
+from harness.core.ports.claims import ClaimStore
 from harness.core.settings import Settings
 
 AUDIENCE = "morphloop:socket-ticket"
+# The lease outlives the ticket by this much, so a store clock a little behind
+# this process's clock never frees a jti the ticket is still valid for.
+CLOCK_SKEW = timedelta(seconds=30)
 _build_lock = threading.Lock()
 
 
@@ -34,11 +40,6 @@ class SocketTickets:
     def __init__(self, *, secret: str, ttl_seconds: int) -> None:
         self.secret = secret
         self.ttl_seconds = ttl_seconds
-        # ponytail: redeemed jti set is per process; with several workers a
-        # ticket could be replayed once per worker within its TTL. Move it to
-        # a `claims` row keyed by jti (#174) when running multi-worker.
-        self.redeemed: dict[str, float] = {}
-        self.lock = threading.Lock()
 
     def issue(self, user_id: str) -> tuple[str, datetime]:
         now = int(time.time())
@@ -52,8 +53,9 @@ class SocketTickets:
         }
         return jwt.encode(claims, self.secret, algorithm="HS256"), datetime.fromtimestamp(exp, UTC)
 
-    def redeem(self, ticket: str) -> str:
-        """The ticket's user id; `AuthError` if it is invalid, expired or already used."""
+    def redeem(self, ticket: str, claims_store: ClaimStore) -> str:
+        """The ticket's user id; `AuthError` if it is invalid, expired or already
+        used (on any process sharing ``claims_store``)."""
         try:
             claims = jwt.decode(
                 ticket,
@@ -64,12 +66,12 @@ class SocketTickets:
             )
         except jwt.InvalidTokenError as exc:
             raise AuthError(f"invalid socket ticket: {exc}") from exc
-        now = time.time()
-        with self.lock:
-            self.redeemed = {jti: exp for jti, exp in self.redeemed.items() if exp > now}
-            if claims["jti"] in self.redeemed:
-                raise AuthError("socket ticket already used")
-            self.redeemed[claims["jti"]] = float(claims["exp"])
+        remaining = timedelta(seconds=max(float(claims["exp"]) - time.time(), 0.0))
+        # A fresh holder: the same holder would renew its own lease and win again.
+        if not claims_store.try_claim(
+            f"socket-ticket:{claims['jti']}", uuid.uuid4().hex, remaining + CLOCK_SKEW
+        ):
+            raise AuthError("socket ticket already used")
         return str(claims["sub"])
 
 
@@ -86,7 +88,7 @@ def socket_tickets_from_settings() -> SocketTickets:
 
 def socket_tickets_of(conn: HTTPConnection) -> SocketTickets:
     """The app's tickets; built from settings and cached on ``app.state`` on first use."""
-    # Locked: two racing builds would hold different dev secrets / redeemed sets.
+    # Locked: two racing builds would hold different dev secrets.
     with _build_lock:
         tickets: SocketTickets | None = getattr(conn.app.state, "socket_tickets", None)
         if tickets is None:
