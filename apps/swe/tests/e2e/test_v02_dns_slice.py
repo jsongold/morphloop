@@ -50,7 +50,6 @@ from harness.testing.fakes import (
     FakeFixtureProvider,
     FakeLabRuntime,
     FakeTerminalBridge,
-    InMemoryEventStore,
 )
 from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
 from swe.app import create_swe_app
@@ -213,9 +212,7 @@ def test_dns_slice_v02(pg_engine: Engine) -> None:
         adapters=adapters,
     )
 
-    # The real app, the real SWE pack (create_swe_app's own default); the client
-    # never enters the lifespan, so the v0.1 backend is never wired either
-    # (apps/swe/tests/test_lab_routes.py's own idiom).
+    # The real app, the real SWE pack (create_swe_app's own default).
     app = create_swe_app()
     app.dependency_overrides[user_id_of] = lambda: user_id
     app.state.event_store_v2 = store
@@ -378,8 +375,7 @@ def test_dns_slice_v02(pg_engine: Engine) -> None:
         client.get(f"/v2/ws/{ws_id}/artifacts/{artifact_id}").json(),
         answers.json(),
     )
-    replayed = rebuild_v2_views(InMemoryEventStore(), store)
-    assert replayed == 0  # no v0.1 events; the v1 store passed in is empty
+    assert rebuild_v2_views(store) == len(events)
     after = (
         client.get(f"/v2/sessions/{session_id}").json(),
         client.get(f"/v2/ws/{ws_id}").json(),
