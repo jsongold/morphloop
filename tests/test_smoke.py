@@ -2,8 +2,6 @@
 
 
 def test_import_packages() -> None:
-    import domains
     import harness
 
     assert harness is not None
-    assert domains is not None

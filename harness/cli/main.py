@@ -1,8 +1,10 @@
-"""The ``morphloop`` command line: ``rebuild`` (ADR-0017).
+"""The ``morphloop`` command line: ``rebuild``, ``migrate`` (ADR-0017).
 
-Run it as a module (``pyproject.toml`` declares no console script)::
+``pyproject.toml`` registers ``morphloop`` as a console script (``[project.scripts]``),
+so an installed SDK gets a ``morphloop`` executable. It can also be run as a module::
 
     uv run python -m harness.cli rebuild
+    uv run python -m harness.cli migrate
 
 Exit codes: ``0`` success, ``1`` a reported failure
 (:class:`~harness.cli.errors.CommandError`), ``2`` a usage error from typer.
@@ -16,6 +18,7 @@ from collections.abc import Sequence
 import typer
 from typer.exceptions import TyperException
 
+from harness.adapters.postgres.migrate import migrate
 from harness.cli import rebuild, wiring
 from harness.cli.errors import CommandError
 
@@ -42,6 +45,21 @@ def rebuild_cmd() -> int:
     with wiring.event_store_v2() as store_v2:
         replayed = rebuild.rebuild(store_v2)
     print(rebuild.format_result(replayed))
+    return 0
+
+
+@app.command(
+    "migrate",
+    short_help="upgrade the database at DATABASE_URL to head",
+    help=(
+        "Run the alembic migrations shipped inside this package (#159) against "
+        "DATABASE_URL, up to 'head'. Needs no repository checkout, so an app that "
+        "only depends on the installed SDK can migrate its own database."
+    ),
+)
+def migrate_cmd() -> int:
+    migrate(wiring.database_url())
+    print("migrated      head")
     return 0
 
 

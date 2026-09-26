@@ -2,8 +2,7 @@
 
 Adapter-independent: it composes Definitions from a candidate, validates them
 against the contract schemas and the registered domain adapters, and, for a
-lab-backed activity, runs the checks through the :class:`LabRuntime` Port. See
-:mod:`harness.cli.generate` for the pipeline around it.
+lab-backed activity, runs the checks through the :class:`LabRuntime` Port.
 """
 
 from __future__ import annotations

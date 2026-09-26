@@ -10,8 +10,8 @@
 # concrete types (lab, diagram, ...) and their state belong to the app built
 # on the SDK (ADR-0018 s19), so this document fixes the identity and status
 # fields and leaves type-specific state open (`additionalProperties: true`).
-# The SWE app's lab shape (`lab` object, `/check`) is apps/swe/swe/openapi/
-# artifact-lab.yaml; an app-specific operation is not declared here.
+# An app's type-specific shape and operations (e.g. a lab's `/check`) live in
+# the app's own repository and are not declared here.
 #
 # Every POST takes an optional `Idempotency-Key` (UUID) header: it becomes
 # the event id, and a resend by the same learner in the same ws returns the

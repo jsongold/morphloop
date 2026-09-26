@@ -74,6 +74,13 @@ def test_rebuild_is_a_named_command_taking_nothing() -> None:
     assert "Rebuild every registered v0.2 view" in result.output
 
 
+def test_migrate_is_a_named_command_taking_nothing() -> None:
+    result = runner.invoke(app, ["migrate", "--help"])
+
+    assert result.exit_code == 0
+    assert "alembic migrations" in result.output
+
+
 def test_a_command_is_required() -> None:
     result = runner.invoke(app, [])
 

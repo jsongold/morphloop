@@ -1,7 +1,0 @@
-{
-  "role": "judge",
-  "model": "gpt-5.4-2026-03-05",
-  "max_tokens": 16000,
-  "prompt": "llm/judge.md",
-  "output_schema": "https://morphloop.dev/contracts/schemas/llm/drill.gap/1.json"
-}

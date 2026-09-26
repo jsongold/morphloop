@@ -22,56 +22,53 @@ dependencies = [
     "uvicorn[standard]>=0.53.0",
 ]
 
+[project.scripts]
+morphloop = "harness.cli.main:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# The wheel ships contracts/ as package data (harness/contracts/), so an installed SDK
-# resolves them without the repository checkout (ADR-0018 s19). The repo top-level
-# contracts/ stays the single source: `sources` only rewrites the path inside the wheel
-# (an editable install keeps reading the checkout).
+# The wheel ships contracts/ and migrations/ as package data (harness/contracts/,
+# harness/migrations/), so an installed SDK resolves them -- and `morphloop migrate`
+# runs -- without the repository checkout (ADR-0018 s19, #159). The repo top-level
+# contracts/ and migrations/ stay the single source and are placed under harness/ in
+# the wheel: `sources` for contracts/ (no .py files, so the rewrite is transparent to
+# an editable install); `force-include` for migrations/ (it has .py files, and
+# `sources` on a .py-bearing directory breaks editable installs, see
+# https://github.com/pfmoore/editables/issues/20). An editable install keeps reading
+# the checkout either way; force-include additionally copies the migrations in.
 [tool.hatch.build.targets.wheel]
-only-include = ["harness", "domains", "contracts"]
+only-include = ["harness", "contracts"]
 sources = { "contracts" = "harness/contracts" }
 
-# Apps built on the SDK (apps/<app>/, ADR-0018 s19) are workspace members with their own
-# pyproject.toml and tests; they depend on this package by name. The dev group depends on
-# each app so `uv sync` installs it and the root gate (pytest, mypy, lint-imports) sees it;
-# the SDK's runtime dependencies and wheel never include an app.
-[tool.uv.workspace]
-members = ["apps/*"]
-
-[tool.uv.sources]
-morphloop-swe = { workspace = true }
+[tool.hatch.build.targets.wheel.force-include]
+"migrations" = "harness/migrations"
 
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = [".", "apps/swe"]
+src = ["."]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.mypy]
 strict = true
-packages = ["harness", "domains", "swe"]
+packages = ["harness"]
 
-# SDK tests only. An app's tests run as their own step (`uv run pytest -q apps/swe/tests`,
-# which picks up apps/swe/pyproject.toml): the SDK tests stand in test-only stubs for the
-# app's artifact types, and one process registers each type name once.
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # importlib: same-named test files in different dirs (tests/core/<r>/test_<r>.py,
 # tests/api/v2/test_<r>.py) do not collide.
 addopts = ["--import-mode=importlib"]
 # Dirs whose shared test helpers are imported as top-level modules.
-pythonpath = ["tests/api", "tests/cli", "tests/core", "tests/domains/dns"]
+pythonpath = ["tests/api", "tests/cli", "tests/core"]
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
     "import-linter>=2.15",
-    "morphloop-swe",
     "mypy>=2.3.1",
     "openapi-spec-validator>=0.9.0",
     "pytest>=9.1.1",

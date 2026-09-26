@@ -18,7 +18,7 @@ from contextlib import contextmanager
 
 from harness.adapters.fake_llm import FakeDevLLMProvider
 from harness.adapters.litellm import LiteLLMProvider
-from harness.adapters.postgres.engine import create_engine_from_env
+from harness.adapters.postgres.engine import create_engine_from_env, get_database_url
 from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
 from harness.cli.errors import CommandError
 from harness.core.contract_schemas import ContractSchemas, ContractsNotFoundError
@@ -33,6 +33,10 @@ def contract_schemas() -> ContractSchemas:
         return ContractSchemas.load()
     except ContractsNotFoundError as exc:
         raise CommandError(str(exc)) from exc
+
+
+def database_url() -> str:
+    return get_database_url()
 
 
 def llm_provider() -> LiteLLMProvider | FakeDevLLMProvider:

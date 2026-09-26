@@ -1,7 +1,8 @@
 """Test-only stand-ins for the artifact types the dns-pack fixture embeds (#95).
 
 The SDK registers no artifact type (ADR-0018 §19); the real ``lab`` and ``diagram``
-types belong to ``apps/swe``. SDK tests import the fixture pack with these stubs:
+types belong to the app (github.com/jsongold/browncircle). SDK tests import the
+fixture pack with these stubs:
 ``LabStub`` bounds the lab spec just enough for the importer tests (schema, then
 validator); ``DiagramStub`` accepts any spec.
 """
