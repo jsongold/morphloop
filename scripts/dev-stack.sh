@@ -10,7 +10,6 @@
 #   scripts/dev-stack.sh up [--fake-llm]            # build + start (SDK api only)
 #   scripts/dev-stack.sh down [-v]               # stop (and delete the db)
 #   scripts/dev-stack.sh logs [service]            # follow logs (api/db)
-#   scripts/dev-stack.sh test                       # e2e tests inside the api
 #
 # --fake-llm (or MORPHLOOP_LLM_PROVIDER=fake in the environment, #130): the api
 # answers chat / judge / generate with a deterministic fake LLM instead of a
@@ -46,12 +45,8 @@ case "$cmd" in
     shift
     docker compose logs -f "$@"
     ;;
-  test)
-    shift
-    docker compose exec -T api pytest tests/e2e "$@"
-    ;;
   *)
-    echo "usage: $(basename "$0") {up|down|logs|test}" >&2
+    echo "usage: $(basename "$0") {up|down|logs}" >&2
     exit 2
     ;;
 esac

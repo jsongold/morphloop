@@ -48,13 +48,6 @@ curl -s localhost:8000/health
 # {"status":"ok","db":"ok"}
 ```
 
-Import the pack (once per database; re-run after changing `contents/`):
-
-```sh
-docker compose exec -T api python -m harness.cli import contents/software-engineering
-# status  imported
-```
-
 If port 8000 is already in use, override the host port:
 
 ```sh
@@ -71,11 +64,9 @@ compose project name (`morphloop-<hash>`) and host port (api 17000+) from
 the worktree path:
 
 ```sh
-./scripts/dev-stack.sh up        # build + start + import the SE pack
+./scripts/dev-stack.sh up        # build + start (SDK api only)
 # api  http://localhost:17xxx   (project morphloop-2efd6458)
 ./scripts/dev-stack.sh logs api  # follow logs (api / db)
-./scripts/dev-stack.sh import    # (re)import the pack
-./scripts/dev-stack.sh test      # e2e tests in the api container
 ./scripts/dev-stack.sh down -v   # stop and delete the db volume
 ```
 
@@ -88,15 +79,6 @@ docker compose logs -f api      # or db
 docker compose down             # stop
 docker compose down -v          # stop and delete the database volume
 docker rm -f $(docker ps -aq --filter label=io.morphloop.lab.managed=docker_lab)  # remove leftover labs
-```
-
-### End-to-end check against the real stack
-
-With the stack running and the pack imported (the test reads the key from the shell):
-
-```sh
-set -a; . ./.env.local; set +a
-uv run pytest tests/e2e -q
 ```
 
 ### Try the DB-down behaviour
