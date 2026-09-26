@@ -12,8 +12,9 @@ Problem:
     unknown or expired `cursor`);
     `unauthorized` 401 (missing, malformed or expired bearer token or
     socket ticket);
-    `forbidden` 403 (authenticated, but the resource belongs to someone
-    else or the token lacks the needed permission);
+    `forbidden` 403 (authenticated, but the token lacks the needed
+    permission; another learner's resource is still `not-found` 404 so its
+    existence is not revealed);
     `not-found` 404;
     `idempotency-key-reused` 409 (same key, different body);
     `state-conflict` 409 (operation not allowed in the current state);
