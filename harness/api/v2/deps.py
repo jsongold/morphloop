@@ -47,10 +47,10 @@ from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.requests import HTTPConnection
 
-from harness.adapters.postgres.engine import create_engine_from_env
 from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
 from harness.adapters.postgres.generated_documents import PostgresGeneratedDocumentStore
 from harness.api.v2.auth import auth_provider_of
+from harness.api.v2.db import db_from_settings, db_of
 from harness.api.v2.tickets import socket_tickets_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import PackV2, import_pack_v2
@@ -79,15 +79,15 @@ def harness_version() -> str:
 
 
 def build_event_store_v2() -> EventStoreV2:
-    """The real, Postgres-backed store (`DATABASE_URL`, `contracts/`)."""
-    return PostgresEventStoreV2(create_engine_from_env(), ContractSchemas.load())
+    """The real, Postgres-backed store (`MORPHLOOP_DB_PROVIDER`, `contracts/`)."""
+    return PostgresEventStoreV2(db_from_settings()(), ContractSchemas.load())
 
 
 def event_store_v2_of(request: Request) -> EventStoreV2:
     """The wired store; built and cached on `app.state` on first use."""
     store: EventStoreV2 | None = getattr(request.app.state, "event_store_v2", None)
     if store is None:
-        store = build_event_store_v2()
+        store = PostgresEventStoreV2(db_of(request)(), ContractSchemas.load())
         request.app.state.event_store_v2 = store
     return store
 
@@ -125,7 +125,7 @@ def generated_documents_of(request: Request) -> GeneratedDocumentStore:
     """The wired store; Postgres, built and cached on `app.state` on first use."""
     store: GeneratedDocumentStore | None = getattr(request.app.state, "generated_documents", None)
     if store is None:
-        store = PostgresGeneratedDocumentStore(create_engine_from_env())
+        store = PostgresGeneratedDocumentStore(db_of(request)())
         request.app.state.generated_documents = store
     return store
 

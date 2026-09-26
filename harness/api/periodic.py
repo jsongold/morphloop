@@ -26,7 +26,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[impo
 from fastapi import FastAPI
 
 from harness.adapters.postgres.claims import PostgresClaimStore
-from harness.adapters.postgres.engine import create_engine_from_env
+from harness.api.v2.db import app_db
 from harness.core.ports.claims import MAX_COUNTER_WINDOW, ClaimStore, check_positive
 
 CLAIMS_PURGE = "claims-purge"
@@ -46,7 +46,7 @@ def app_claims(app: FastAPI) -> ClaimStore:
     """``app.state.claims``, or Postgres built and cached there (as ``ClaimsDep``)."""
     store: ClaimStore | None = getattr(app.state, "claims", None)
     if store is None:
-        store = PostgresClaimStore(create_engine_from_env())
+        store = PostgresClaimStore(app_db(app)())
         app.state.claims = store
     return store
 

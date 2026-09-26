@@ -53,8 +53,9 @@ def rebuild_cmd() -> int:
     short_help="upgrade the database at DATABASE_URL to head",
     help=(
         "Run the alembic migrations shipped inside this package (#159) against "
-        "DATABASE_URL, up to 'head'. Needs no repository checkout, so an app that "
-        "only depends on the installed SDK can migrate its own database."
+        "MORPHLOOP_DATABASE_DIRECT_URL (else DATABASE_URL), up to 'head'. Needs no "
+        "repository checkout, so an app that only depends on the installed SDK can "
+        "migrate its own database."
     ),
 )
 def migrate_cmd() -> int:
