@@ -207,7 +207,8 @@ def test_list_threads(client: Any) -> None:
                 "labels": ["mode:hint"],
                 "created_at": targeted["created_at"],
             },
-        ]
+        ],
+        "next_cursor": None,
     }
 
     filtered = client.get(f"/v2/ws/{ws['ws_id']}/threads", params={"target_highlight_id": "hl_1"})
@@ -216,7 +217,7 @@ def test_list_threads(client: Any) -> None:
     no_match = client.get(
         f"/v2/ws/{ws['ws_id']}/threads", params={"target_highlight_id": "hl_missing"}
     )
-    assert no_match.json() == {"items": []}
+    assert no_match.json() == {"items": [], "next_cursor": None}
 
 
 def test_list_threads_on_missing_or_other_users_ws_is_404(client: Any) -> None:
@@ -237,3 +238,44 @@ def test_list_threads_invalid_target_highlight_id_is_a_client_error(client: Any)
         f"/v2/ws/{ws['ws_id']}/threads", params={"target_highlight_id": "not-a-highlight-id"}
     )
     assert resp.status_code == 400
+
+
+def _pages(client: Any, url: str, **params: Any) -> list[list[str]]:
+    """Every page of ``url`` at ``limit=2``, following ``next_cursor``."""
+    pages, cursor = [], None
+    while True:
+        query = {**params, "limit": 2, **({"cursor": cursor} if cursor else {})}
+        body = client.get(f"/v2{url}", params=query).json()
+        pages.append([item.get("ws_id") or item.get("thread_id") for item in body["items"]])
+        cursor = body.get("next_cursor")
+        if cursor is None:
+            return pages
+
+
+def test_list_ws_is_paged_and_scoped_to_the_caller(client: Any) -> None:
+    ids = [
+        client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()["ws_id"]
+        for _ in range(3)
+    ]
+    client.app.dependency_overrides[user_id_of] = lambda: "usr_other"
+    try:
+        client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key())
+        assert _pages(client, "/ws") == [[client.store.read(user_id="usr_other")[0].ws_id]]
+    finally:
+        del client.app.dependency_overrides[user_id_of]
+
+    first = client.get("/v2/ws", params={"limit": 2}).json()
+    _check(first, "/ws", "get", "200")
+    assert _pages(client, "/ws") == [ids[:0:-1], ids[:1]]
+    assert _pages(client, "/ws", session_id="ses_1") == [ids[:0:-1], ids[:1]]
+
+
+def test_list_threads_is_paged_in_creation_order(client: Any) -> None:
+    ws = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()["ws_id"]
+    ids = [
+        client.post(
+            f"/v2/ws/{ws}/threads", json={"target": {"kind": "artifact"}}, headers=_key()
+        ).json()["payload"]["thread_id"]
+        for _ in range(3)
+    ]
+    assert _pages(client, f"/ws/{ws}/threads") == [ids[:2], ids[2:]]

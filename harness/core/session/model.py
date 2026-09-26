@@ -50,7 +50,7 @@ class SessionView(View):
             "id": event.session_id,
             # Not part of the API response (stripped by the route's
             # `_document`): the view key is `ses_<event uuid>`, unrelated to
-            # creation order, so `position` is what `list_sessions` sorts by
+            # creation order, so `position` is what `SessionsByUserView` keys by
             # (README "Events and views"; #89 review).
             "position": event.position,
             "user_id": event.user_id,
@@ -58,3 +58,28 @@ class SessionView(View):
             **to_plain_object(event.payload),
         }
         tx.put_view(cls.name, event.session_id, doc)
+
+
+class SessionsByUserView(View):
+    """Per-user session index (#175): a listing reads one key range, not
+    every session.
+
+    Keyed ``<user_id>/<zero-padded position>`` (a user id is ``usr_`` +
+    alphanumerics, so the ``/`` is unambiguous): key order is creation order.
+    The document is only the ``session_id``; ``SessionView`` stays the one
+    copy of the session (its pinned tree can be large).
+    """
+
+    name = "session.by_user"
+    handles: ClassVar[frozenset[str]] = frozenset({"session.created"})
+
+    @classmethod
+    def apply(cls, event: StoredEventV2, tx: ViewDocumentStore) -> None:
+        if event.session_id is None:
+            raise ValueError("session.created without a session_id")
+        key = f"{cls.prefix(event.user_id)}{event.position:019d}"
+        tx.put_view(cls.name, key, {"session_id": event.session_id})
+
+    @classmethod
+    def prefix(cls, user_id: str) -> str:
+        return f"{user_id}/"
