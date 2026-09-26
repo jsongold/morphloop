@@ -87,6 +87,7 @@ def test_valid_token_resolves_to_uuid5_user_id() -> None:
         {"exp": None},
         {"iat": None},
         {"sub": None},
+        {"sub": ""},
     ],
 )
 def test_bad_claims_are_unauthorized(claims: dict[str, Any]) -> None:

@@ -65,4 +65,6 @@ class OidcAuthProvider:
             raise AuthUnavailableError(f"could not fetch the JWKS: {exc}") from exc
         except jwt.PyJWTError as exc:
             raise AuthError(str(exc)) from exc
+        if not claims["sub"]:
+            raise AuthError("the token's sub claim is empty")
         return user_id_for(self.issuer, claims["sub"])

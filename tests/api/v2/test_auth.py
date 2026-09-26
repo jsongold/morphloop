@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from harness.adapters.auth import DevAuthProvider, OidcAuthProvider
-from harness.api.app import create_app
+from harness.api.app import check_db, create_app
 from harness.api.problems import install_handlers
 from harness.api.v2.auth import auth_provider_from_settings
 from harness.api.v2.deps import UserIdDep, event_store_v2_of
@@ -110,3 +110,25 @@ def test_v2_authenticates_before_opening_the_database() -> None:
     app.dependency_overrides[event_store_v2_of] = no_db
     response = TestClient(app).get("/v2/ws")
     assert response.status_code == 401
+
+
+def test_production_with_dev_provider_refuses_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")
+    with pytest.raises(RuntimeError), TestClient(create_app()):
+        pass
+
+
+def test_explicit_auth_ignores_unused_provider_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")
+    monkeypatch.setenv("MORPHLOOP_AUTH_PROVIDER", "oidc")  # incomplete, and unused
+    app = create_app(auth=StubAuth())
+    app.dependency_overrides[check_db] = lambda: True
+    with probe_app(app) as client:
+        assert client.get("/health").json()["status"] == "ok"
+        assert client.get("/whoami", headers={"Authorization": "Bearer good"}).status_code == 200
+
+
+def test_local_dev_needs_no_token() -> None:
+    """An app built on the SDK (e.g. browncircle) running locally with defaults."""
+    with probe_app(create_app()) as client:
+        assert client.get("/whoami").json() == {"user_id": "usr_local"}

@@ -1,9 +1,9 @@
 """Choosing the ``AuthProvider`` (#171, #186): the SDK offers, the app chooses.
 
 ``create_app(auth=...)`` stores the app's provider on ``app.state.auth_provider``
-and it wins. Otherwise the provider is built once from
-``MORPHLOOP_AUTH_PROVIDER`` (``dev`` by default; ``Settings`` refuses ``dev``
-in production) and cached there on first use.
+and it wins. Otherwise the provider is built from ``MORPHLOOP_AUTH_PROVIDER``
+(``dev`` by default) at app startup -- so production with ``dev``, or with an
+incomplete oidc/supabase config, refuses to start -- and cached there.
 """
 
 from __future__ import annotations
@@ -26,12 +26,18 @@ def auth_provider_from_settings() -> AuthProvider:
             leeway=settings.morphloop_oidc_leeway,
         )
     if settings.morphloop_auth_provider == "oidc":
-        if not settings.morphloop_oidc_jwks_url:
-            raise RuntimeError("MORPHLOOP_AUTH_PROVIDER=oidc needs MORPHLOOP_OIDC_JWKS_URL")
+        issuer = settings.morphloop_oidc_issuer
+        audience = settings.morphloop_oidc_audience
+        jwks_url = settings.morphloop_oidc_jwks_url
+        if not (issuer and audience and jwks_url):
+            raise ValueError(
+                "MORPHLOOP_AUTH_PROVIDER=oidc needs MORPHLOOP_OIDC_ISSUER, "
+                "MORPHLOOP_OIDC_AUDIENCE and MORPHLOOP_OIDC_JWKS_URL"
+            )
         return OidcAuthProvider(
-            issuer=settings.morphloop_oidc_issuer or "",
-            audience=settings.morphloop_oidc_audience or "",
-            jwks_url=settings.morphloop_oidc_jwks_url,
+            issuer=issuer,
+            audience=audience,
+            jwks_url=jwks_url,
             algorithms=settings.oidc_algorithms,
             leeway=settings.morphloop_oidc_leeway,
         )

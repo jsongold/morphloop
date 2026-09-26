@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, ValidationInfo, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
 
 # Symmetric algorithms need a shared secret, not a public JWKS endpoint --
@@ -160,23 +160,3 @@ class Settings(BaseSettings):
                 "JWKS-based verification needs an asymmetric algorithm (e.g. RS256, ES256)"
             )
         return value
-
-    @model_validator(mode="after")
-    def _production_requires_auth(self) -> Settings:
-        if self.morphloop_environment != "production":
-            return self
-        # MORPHLOOP_AUTH_PROVIDER=dev is refused by DevAuthProvider itself, not
-        # here: an app passing create_app(auth=...) never selects it (#171).
-        if self.morphloop_auth_provider == "oidc" and (
-            self.effective_oidc_issuer is None or self.effective_oidc_audience is None
-        ):
-            raise ValueError(
-                "MORPHLOOP_ENVIRONMENT=production with MORPHLOOP_AUTH_PROVIDER=oidc requires "
-                "MORPHLOOP_OIDC_ISSUER and MORPHLOOP_OIDC_AUDIENCE"
-            )
-        if self.morphloop_auth_provider == "supabase" and self._supabase_base_url() is None:
-            raise ValueError(
-                "MORPHLOOP_ENVIRONMENT=production with MORPHLOOP_AUTH_PROVIDER=supabase "
-                "requires MORPHLOOP_SUPABASE_PROJECT_REF or MORPHLOOP_SUPABASE_URL"
-            )
-        return self
