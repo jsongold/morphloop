@@ -20,7 +20,9 @@ expecting the next read to see the new value.
 
 from __future__ import annotations
 
-from pydantic import Field, field_validator, model_validator
+from typing import Literal
+
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 # Symmetric algorithms need a shared secret, not a public JWKS endpoint --
@@ -56,9 +58,10 @@ class Settings(BaseSettings):
 
     # v0.4 (#169): provider selectors for the auth platform (#152), the same
     # shape as MORPHLOOP_LLM_PROVIDER. "dev" is today's fixed MORPHLOOP_USER_ID
-    # and is refused in production (see the validator below).
-    morphloop_auth_provider: str = "dev"  # dev | oidc | supabase
-    morphloop_db_provider: str = "postgres"  # postgres | supabase
+    # and is refused in production (see the validator below). Literal types
+    # (not a production-only check) so a typo is rejected in every environment.
+    morphloop_auth_provider: Literal["dev", "oidc", "supabase"] = "dev"
+    morphloop_db_provider: Literal["postgres", "supabase"] = "postgres"
 
     # Generic OIDC fields (auth_provider="oidc"). No default issuer/audience:
     # production must set them. Example for a self-hosted OIDC provider:
@@ -67,7 +70,9 @@ class Settings(BaseSettings):
     morphloop_oidc_issuer: str | None = None
     morphloop_oidc_audience: str | None = None
     morphloop_oidc_jwks_url: str | None = None
-    morphloop_oidc_algorithms: str = "RS256"
+    # Supabase may sign with either RS256 or ES256, so both are allowed by
+    # default; a self-hosted OIDC provider that only issues one can narrow this.
+    morphloop_oidc_algorithms: str = "RS256,ES256"
     morphloop_oidc_leeway: int = Field(default=60, ge=0, le=60)
 
     # Supabase preset (auth_provider="supabase"): only project_ref or url is
@@ -89,11 +94,17 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        """The CORS ``allow_origins`` list: ``web_origins`` split on commas, or
-        ``[web_origin]`` when unset."""
-        if self.web_origins is None:
-            return [self.web_origin]
-        return [origin.strip() for origin in self.web_origins.split(",") if origin.strip()]
+        """The CORS ``allow_origins`` list: ``web_origin`` plus ``web_origins``'
+        comma-separated extras (deduplicated, order preserved)."""
+        extra = self.web_origins.split(",") if self.web_origins else []
+        origins = [self.web_origin, *(origin.strip() for origin in extra)]
+        seen: set[str] = set()
+        deduped = []
+        for origin in origins:
+            if origin and origin not in seen:
+                seen.add(origin)
+                deduped.append(origin)
+        return deduped
 
     @property
     def oidc_algorithms(self) -> list[str]:
@@ -131,11 +142,11 @@ class Settings(BaseSettings):
             return f"{base}/auth/v1/.well-known/jwks.json" if base else None
         return self.morphloop_oidc_jwks_url
 
-    @field_validator("morphloop_oidc_jwks_url")
+    @field_validator("morphloop_oidc_jwks_url", "morphloop_supabase_url")
     @classmethod
-    def _jwks_url_is_https(cls, value: str | None) -> str | None:
+    def _jwks_url_is_https(cls, value: str | None, info: ValidationInfo) -> str | None:
         if value is not None and not value.startswith("https://"):
-            raise ValueError("morphloop_oidc_jwks_url must be an https:// URL")
+            raise ValueError(f"{info.field_name} must be an https:// URL")
         return value
 
     @field_validator("morphloop_oidc_algorithms")

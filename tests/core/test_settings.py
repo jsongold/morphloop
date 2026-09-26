@@ -15,7 +15,19 @@ def test_cors_origins_falls_back_to_web_origin(monkeypatch: pytest.MonkeyPatch) 
     assert Settings().cors_origins == ["http://localhost:3000"]
 
 
-def test_web_origins_configures_several_cors_origins(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_web_origins_extends_web_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WEB_ORIGIN", "https://old.example.com")
+    monkeypatch.setenv("WEB_ORIGINS", "https://a.example.com, https://b.example.com")
+
+    assert Settings().cors_origins == [
+        "https://old.example.com",
+        "https://a.example.com",
+        "https://b.example.com",
+    ]
+
+
+def test_web_origins_deduplicates_against_web_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WEB_ORIGIN", "https://a.example.com")
     monkeypatch.setenv("WEB_ORIGINS", "https://a.example.com, https://b.example.com")
 
     assert Settings().cors_origins == ["https://a.example.com", "https://b.example.com"]
@@ -40,6 +52,12 @@ def test_oidc_algorithms_split_on_commas(monkeypatch: pytest.MonkeyPatch) -> Non
     assert Settings().oidc_algorithms == ["RS256", "ES256"]
 
 
+def test_oidc_algorithms_default_allows_rs256_and_es256(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MORPHLOOP_OIDC_ALGORITHMS", raising=False)
+
+    assert Settings().oidc_algorithms == ["RS256", "ES256"]
+
+
 def test_oidc_algorithms_rejects_symmetric_hs256(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MORPHLOOP_OIDC_ALGORITHMS", "HS256")
 
@@ -50,6 +68,20 @@ def test_oidc_algorithms_rejects_symmetric_hs256(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.parametrize("leeway", [-1, 61])
 def test_oidc_leeway_out_of_range_is_rejected(monkeypatch: pytest.MonkeyPatch, leeway: int) -> None:
     monkeypatch.setenv("MORPHLOOP_OIDC_LEEWAY", str(leeway))
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_unknown_auth_provider_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_AUTH_PROVIDER", "deev")  # typo
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_supabase_url_must_be_https(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_SUPABASE_URL", "http://abcdefgh.supabase.co")
 
     with pytest.raises(ValidationError):
         Settings()
