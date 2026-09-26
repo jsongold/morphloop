@@ -32,9 +32,11 @@ class DrillItem:
     labels: tuple[str, ...]
     choices: tuple[str, ...] | None = None
     artifact_ref: str | None = None
-    required_checks: tuple[str, ...] = ()
-    """The artifact spec's ``allowed_checks`` for an ``artifact`` item: every one
-    must have a current result before the judge accepts the answer (#124)."""
+    required_checks: tuple[JsonObject, ...] = ()
+    """The target conditions of an ``artifact`` item, ``{"check", "params"}`` each
+    (the artifact spec's ``checks``): the judge counts only check results with
+    that check id and exactly those params, and needs a current one for every
+    target (#124)."""
 
     @classmethod
     def from_document(
@@ -42,7 +44,7 @@ class DrillItem:
         doc: JsonObject,
         *,
         origin: Origin,
-        required_checks: Sequence[str] = (),
+        required_checks: Sequence[JsonObject] = (),
     ) -> DrillItem:
         """Build from a schema-valid drill-item document."""
         labels = doc["labels"]

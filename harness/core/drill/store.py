@@ -17,24 +17,28 @@ from harness.core.labels import HOLDOUT
 from harness.core.pack.v2 import PackV2
 from harness.core.ports.events_v2 import EventTransactionV2, StoredEventV2, ViewDocumentStore
 from harness.core.ports.generated_documents import GeneratedDocument
-from harness.core.ports.json_types import JsonObject
+from harness.core.ports.json_types import JsonObject, to_plain_object
 from harness.core.view import View
 
 
-def _artifact_checks(specs: Iterable[Mapping[str, object]]) -> dict[str, tuple[str, ...]]:
-    """``artifact id -> spec.allowed_checks``, the checks an item must have run (#124)."""
-    out: dict[str, tuple[str, ...]] = {}
+def _targets(checks: object) -> tuple[JsonObject, ...]:
+    """``[{"check", "params"}]`` target conditions, or ``()`` if absent."""
+    if not isinstance(checks, Sequence) or isinstance(checks, str | bytes):
+        return ()
+    return tuple(to_plain_object(cast(JsonObject, c)) for c in checks if isinstance(c, Mapping))
+
+
+def _artifact_checks(specs: Iterable[Mapping[str, object]]) -> dict[str, tuple[JsonObject, ...]]:
+    """``artifact id -> spec.checks``, the target conditions an item is judged by (#124)."""
+    out: dict[str, tuple[JsonObject, ...]] = {}
     for spec in specs:
         body = spec.get("spec")
-        if not isinstance(body, Mapping):
-            continue
-        checks = body.get("allowed_checks")
-        if isinstance(checks, Sequence) and not isinstance(checks, str | bytes):
-            out[str(spec.get("id"))] = tuple(str(check) for check in checks)
+        if isinstance(body, Mapping):
+            out[str(spec.get("id"))] = _targets(body.get("checks"))
     return out
 
 
-def _required(doc: JsonObject, specs: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
+def _required(doc: JsonObject, specs: dict[str, tuple[JsonObject, ...]]) -> tuple[JsonObject, ...]:
     return specs.get(str(doc.get("artifact_ref")), ())
 
 
@@ -64,7 +68,8 @@ def generated_items(
     """Generated items (``resource = 'drill'``, drill-item shaped bodies).
 
     ``artifacts`` are the generated artifact specs an ``artifact`` item may
-    reference; their ``allowed_checks`` become the item's required checks (#124).
+    reference; the checks the generator validated them with (kept in provenance,
+    not the body) become the item's target conditions (#124).
     ``pack`` supplies the pack artifacts a generated item still points at (the
     generator keeps the pack artifact when it makes no lab variant, #124 review),
     so those checks are required too.
@@ -73,8 +78,8 @@ def generated_items(
     specs: list[Mapping[str, object]] = (
         [*pack.documents.get("artifacts", {}).values()] if pack is not None else []
     )
-    specs += [artifact.body for artifact in artifacts]
     required = _artifact_checks(specs)
+    required |= {a.id: _targets(a.provenance.get("checks")) for a in artifacts}
     return [
         DrillItem.from_document(
             doc.body, origin="generated", required_checks=_required(doc.body, required)

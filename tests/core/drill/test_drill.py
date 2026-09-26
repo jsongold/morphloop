@@ -171,7 +171,7 @@ def test_generated_item_takes_required_checks_from_the_pack_artifact() -> None:
         "artifact_ref": "dns-broken-resolver-lab",
     }
     item = generated_items([_generated(body)], pack=pack)[0]
-    assert item.required_checks == ("dns.name_resolves", "dns.command_exit")
+    assert [t["check"] for t in item.required_checks] == ["dns.name_resolves", "dns.command_exit"]
 
 
 def test_validator_checks_choices_and_artifact_ref(tmp_path: Path) -> None:

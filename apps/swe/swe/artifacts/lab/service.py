@@ -289,7 +289,11 @@ class LabArtifactService:
             raise _invalid(str(exc)) from exc
         except LabRuntimeError as exc:
             raise _unavailable(f"check {check_id!r} could not run: {exc}") from exc
-        payload = {"artifact_id": artifact_id, **result.to_dict()}
+        payload = {
+            "artifact_id": artifact_id,
+            **result.to_dict(),
+            "params": to_plain_object(params),
+        }
         return self._append(
             tx, _scope_of(document), event_id, "artifact.checked", actor, payload
         ).payload

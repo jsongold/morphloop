@@ -112,18 +112,21 @@ def artifact_evidence(
     *,
     answer: StoredEventV2,
     spec_id: str | None,
-    required: Sequence[str] = (),
+    required: Sequence[JsonObject] = (),
 ) -> list[dict[str, object]]:
-    """The check facts the judge may see for an artifact answer: the latest result
-    of each check on the answer's artifact, made after its last reset or learner
-    command and before the answer, and only if that artifact was started from the
-    item's own spec.
+    """The check facts the judge may see for an artifact answer: for each of the
+    item's target conditions (``{"check", "params"}``), the latest result of that
+    check run with exactly those params on the answer's artifact, made after its
+    last reset or learner command and before the answer, and only if that
+    artifact was started from the item's own spec.
 
-    A check that predates the last ``artifact.input`` (a learner command that may
-    have changed the lab) is stale and does not count (#124 review). Every
-    ``required`` check must have a current result, so a subset of checks cannot
-    stand in for the item's full check set.
+    A check run with other params (another name, a harmless command) says nothing
+    about the target and is ignored (#124 review). A check that predates the last
+    ``artifact.input`` (a learner command that may have changed the lab) is stale.
+    Every target must have a current result, so a subset cannot stand in for all.
     """
+    if not required:
+        raise DrillJudgeError("the item's artifact declares no target checks to judge by")
     artifact_id = answer.payload.get("artifact_id")
     own = [
         e
@@ -138,22 +141,27 @@ def artifact_evidence(
     fresh_after = max(
         (e.position for e in own if e.type in {"artifact.reset", "artifact.input"}), default=0
     )
-    latest: dict[str, dict[str, object]] = {}
+    latest: dict[int, dict[str, object]] = {}
     for e in own:
-        if e.type == "artifact.checked" and e.position > fresh_after:
-            latest[str(e.payload["check_id"])] = {
-                "check_id": e.payload["check_id"],
-                "passed": e.payload["passed"],
-                "observed": e.payload["observed"],
-            }
+        if e.type != "artifact.checked" or e.position <= fresh_after:
+            continue
+        for index, target in enumerate(required):
+            if e.payload["check_id"] == target["check"] and e.payload.get("params") == target.get(
+                "params"
+            ):
+                latest[index] = {
+                    "check_id": e.payload["check_id"],
+                    "passed": e.payload["passed"],
+                    "observed": e.payload["observed"],
+                }
     if not latest:
-        raise DrillJudgeError("no artifact.checked facts for this answer")
-    not_run = sorted(set(required) - set(latest))
+        raise DrillJudgeError("no artifact.checked facts for this answer's target checks")
+    not_run = [str(t["check"]) for i, t in enumerate(required) if i not in latest]
     if not_run:
         raise DrillJudgeError(
             f"artifact checks not run since the last lab change: {', '.join(not_run)}"
         )
-    return list(latest.values())
+    return [latest[i] for i in range(len(required))]
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,7 +197,7 @@ def save_judge_inputs(
                 "labels": list(item.labels),
                 "choices": list(item.choices) if item.choices is not None else None,
                 "artifact_ref": item.artifact_ref,
-                "required_checks": list(item.required_checks),
+                "required_checks": cast(list[PlainJson], list(item.required_checks)),
             },
             "pack": {
                 "pack_id": pack.pack_id,
@@ -221,7 +229,7 @@ def load_judge_inputs(tx: EventTransactionV2, answer_id: str) -> tuple[DrillItem
         artifact_ref=str(raw_item["artifact_ref"])
         if raw_item["artifact_ref"] is not None
         else None,
-        required_checks=tuple(cast(Sequence[str], required))
+        required_checks=tuple(cast(Sequence[JsonObject], required))
         if isinstance(required, Sequence)
         else (),
     )

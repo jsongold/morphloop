@@ -41,6 +41,7 @@ schemas:
       check_id: {type: string}
       passed: {type: boolean}
       observed: {type: object}
+      params: {type: object}
     additionalProperties: false
 paths:
   /ws/{ws_id}/artifacts/{artifact_id}/check:

@@ -16,6 +16,10 @@
       }
     },
     "allowed_fixtures": ["dns.broken-resolver"],
-    "allowed_checks": ["dns.name_resolves", "dns.command_exit"]
+    "allowed_checks": ["dns.name_resolves", "dns.command_exit"],
+    "checks": [
+      {"check": "dns.name_resolves", "params": {"name": "api.internal"}},
+      {"check": "dns.command_exit", "params": {"argv": ["curl", "-fsS", "http://api.internal/"], "expected_exit_code": 0}}
+    ]
   }
 }

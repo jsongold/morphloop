@@ -78,11 +78,25 @@ def _artifact_event(
     )
 
 
+TARGET_PARAMS: dict[str, JsonObject] = {
+    "dns.name_resolves": {"name": "api.internal"},
+    "dns.command_exit": {"argv": ["curl", "-fsS", "http://api.internal/"], "expected_exit_code": 0},
+}
+
+
 def _check(
-    position: int, check_id: str = "dns.name_resolves", passed: bool = False
+    position: int,
+    check_id: str = "dns.name_resolves",
+    passed: bool = False,
+    params: JsonObject | None = None,
 ) -> StoredEventV2:
     return _artifact_event(
-        "artifact.checked", position, check_id=check_id, passed=passed, observed={"p": position}
+        "artifact.checked",
+        position,
+        check_id=check_id,
+        passed=passed,
+        observed={"p": position},
+        params=TARGET_PARAMS[check_id] if params is None else params,
     )
 
 
@@ -313,7 +327,33 @@ def test_judge_inputs_snapshot_carries_the_items_required_checks() -> None:
         save_judge_inputs(tx, answer, item, pack)
         loaded = load_judge_inputs(tx, answer.id)
     assert loaded is not None
-    assert loaded[0].required_checks == ("dns.name_resolves", "dns.command_exit")
+    assert loaded[0].required_checks == tuple(
+        {"check": check, "params": params} for check, params in TARGET_PARAMS.items()
+    )
+
+
+def test_artifact_checks_on_other_targets_are_not_evidence() -> None:
+    # #124 review: learner-chosen params can point a check at a harmless command
+    # or an unrelated name; such passes must not stand in for the item's targets.
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    item = next(i for i in pack_items(pack) if i.id == "dns-fix-resolver-lab")
+    answer = _event(item.id, "artifact", position=5, artifact_id="art_1")
+    elsewhere = [
+        STARTED,
+        _check(2, "dns.name_resolves", passed=True, params={"name": "example.org"}),
+        _check(3, "dns.command_exit", passed=True, params={"argv": ["true"]}),
+    ]
+    with pytest.raises(DrillJudgeError, match="no artifact.checked"):
+        _judge(item, answer, FakeLLM({"missing": []}), artifact_events=elsewhere)
+    with pytest.raises(
+        DrillJudgeError, match="not run since the last lab change: dns.command_exit"
+    ):
+        _judge(
+            item,
+            answer,
+            FakeLLM({"missing": []}),
+            artifact_events=[*elsewhere, _check(4, "dns.name_resolves", passed=True)],
+        )
 
 
 def test_artifact_judgment_requires_every_check_the_item_expects() -> None:
