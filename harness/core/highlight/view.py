@@ -58,3 +58,20 @@ def active_highlights(tx: ViewDocumentStore, ws_id: str) -> list[JsonObject]:
     prefix = f"{ws_id}:"
     docs = [doc for _, doc in HighlightView.list(tx, key_prefix=prefix) if not doc.get("removed")]
     return sorted(docs, key=lambda doc: cast(int, doc["position"]))
+
+
+def active_highlights_page(
+    tx: ViewDocumentStore, ws_id: str, *, after: str | None, limit: int
+) -> tuple[list[JsonObject], str | None]:
+    """One bounded page of ``ws_id``'s current highlights (#176 keyset
+    pagination), in key (highlight_id) order -- unlike :func:`active_highlights`,
+    a page never re-sorts by ``position``, since a keyset page's items must
+    already be in the store's key order for the cursor to be valid.
+
+    A removed highlight is filtered out of the page's items, but
+    ``next_cursor`` still comes straight from the store: a page that is all
+    tombstones must not look like the last page just because it filters to
+    empty.
+    """
+    page, next_cursor = HighlightView.list(tx, key_prefix=f"{ws_id}:", after=after, limit=limit)
+    return [doc for _, doc in page if not doc.get("removed")], next_cursor

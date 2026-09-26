@@ -74,7 +74,22 @@ def test_append_then_list_round_trip(client: TestClient) -> None:
 
     listed = client.get("/v2/ws/ws_01/memo/entries")
     assert listed.status_code == 200
-    assert listed.json() == {"entries": [entry]}
+    assert listed.json() == {"entries": [entry], "next_cursor": None}
+
+
+def test_list_pages_with_cursor_and_limit(client: TestClient) -> None:
+    first = _post(client, "ws_01", {"actor": "learner", "body": "a"}).json()
+    second = _post(client, "ws_01", {"actor": "learner", "body": "b"}).json()
+
+    page1 = client.get("/v2/ws/ws_01/memo/entries", params={"limit": 1})
+    assert page1.status_code == 200
+    assert page1.json()["entries"] == [first]
+    cursor = page1.json()["next_cursor"]
+    assert cursor is not None
+
+    page2 = client.get("/v2/ws/ws_01/memo/entries", params={"limit": 1, "cursor": cursor})
+    assert page2.json()["entries"] == [second]
+    assert page2.json()["next_cursor"] is None
 
 
 def test_source_is_returned(client: TestClient) -> None:
