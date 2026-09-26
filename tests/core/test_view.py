@@ -72,6 +72,30 @@ def test_dispatch_updates_views_in_the_appending_transaction(tmp_path: Path) -> 
         assert notes.get(tx, "usr_01") == {"notes": ["a", "b"]}
 
 
+def test_list_pages_through_to_the_store(tmp_path: Path) -> None:
+    class Items(View):
+        name = "test_items"
+        handles: ClassVar[frozenset[str]] = frozenset({PROBE_EVENT_TYPE})
+
+        @classmethod
+        def apply(cls, event: StoredEventV2, tx: ViewDocumentStore) -> None:
+            tx.put_view(cls.name, event.payload["note"], {"note": event.payload["note"]})
+
+    store = InMemoryEventStoreV2(contract_schemas_with_probe(tmp_path))
+    with store.transaction() as tx:
+        for n, note in enumerate(["b", "a", "c"], start=1):
+            dispatch(tx.append(_event(n, note)).event, tx)
+
+    with store.transaction() as tx:
+        # Without a limit, existing (pre-#173) callers still get the whole list.
+        assert Items.list(tx) == [("a", {"note": "a"}), ("b", {"note": "b"}), ("c", {"note": "c"})]
+
+        page, cursor = Items.list(tx, limit=2, after=None)
+        assert [k for k, _ in page] == ["a", "b"] and cursor == "b"
+        page, cursor = Items.list(tx, limit=2, after=cursor)
+        assert [k for k, _ in page] == ["c"] and cursor is None
+
+
 def test_dispatch_skips_views_that_do_not_handle_the_type(tmp_path: Path) -> None:
     class Other(View):
         name = "test_other"
