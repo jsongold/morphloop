@@ -168,10 +168,30 @@ def test_append_and_views_commit_and_roll_back_together(store: EventStoreV2, use
     with store.transaction() as tx:
         assert tx.get_view(view, "b") == {"n": 2}
         assert tx.get_view(view, "c") is None
-        assert tx.list_view(view) == [("a", {"n": [1, 2.5, None]}), ("b", {"n": 2})]
-        assert tx.list_view(view, key_prefix="b") == [("b", {"n": 2})]
+        assert tx.list_view(view) == ([("a", {"n": [1, 2.5, None]}), ("b", {"n": 2})], None)
+        assert tx.list_view(view, key_prefix="b") == ([("b", {"n": 2})], None)
         tx.clear_view(view)
-        assert tx.list_view(view) == []
+        assert tx.list_view(view) == ([], None)
+
+
+def test_list_view_pages_by_keyset(store: EventStoreV2, user: str) -> None:
+    view = f"view_{_uid()}"
+    with store.transaction() as tx:
+        tx.append(_event(user))
+        for key in ["b", "a", "c", "ab"]:
+            tx.put_view(view, key, {"key": key})
+
+    with store.transaction() as tx:
+        page1, cursor1 = tx.list_view(view, limit=2)
+        assert [k for k, _ in page1] == ["a", "ab"] and cursor1 == "ab"
+        page2, cursor2 = tx.list_view(view, after=cursor1, limit=2)
+        assert [k for k, _ in page2] == ["b", "c"] and cursor2 is None
+
+    with store.transaction() as tx:
+        page, cursor = tx.list_view(view, key_prefix="a", limit=1)
+        assert [k for k, _ in page] == ["a"] and cursor == "a"
+        page, cursor = tx.list_view(view, key_prefix="a", after=cursor, limit=1)
+        assert [k for k, _ in page] == ["ab"] and cursor is None
 
 
 def test_transaction_cannot_be_used_after_it_ends(store: EventStoreV2, user: str) -> None:
