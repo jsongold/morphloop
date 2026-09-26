@@ -18,7 +18,11 @@ from dataclasses import dataclass
 from harness.core.labels import TOPIC_PREFIX
 from harness.core.pack.v2 import PackV2
 from harness.core.ports import JsonObject, PlainJson
-from harness.core.ports.generated_documents import GeneratedDocument, GeneratedDocumentStore
+from harness.core.ports.generated_documents import (
+    GeneratedDocument,
+    GeneratedDocumentStore,
+    belongs_to_pack,
+)
 from harness.core.ports.json_types import to_plain_object
 from harness.core.textbook.plaintext import block_plaintext
 
@@ -62,6 +66,20 @@ def _summary(doc: dict[str, PlainJson]) -> dict[str, PlainJson]:
     return {k: doc[k] for k in ("id", "title", "labels")}
 
 
+def _with_plaintext(doc: dict[str, PlainJson]) -> dict[str, PlainJson]:
+    blocks = doc.get("blocks")
+    if not isinstance(blocks, list):
+        raise ValueError("textbook doc has no blocks array")
+    for block in blocks:
+        if not isinstance(block, dict):
+            raise ValueError("textbook block has no text body")
+        body = block.get("body")
+        if not isinstance(body, str):
+            raise ValueError("textbook block has no text body")
+        block["plaintext"] = block_plaintext(body)
+    return doc
+
+
 @dataclass(frozen=True, slots=True)
 class Textbook:
     pack: PackV2
@@ -69,6 +87,30 @@ class Textbook:
 
     def _pack_docs(self) -> dict[str, JsonObject]:
         return {str(d["id"]): d for d in self.pack.documents["textbooks"].values()}
+
+    def _generated_docs(self, *, label: str | None = None) -> list[GeneratedDocument]:
+        """Generated docs whose recorded provenance belongs to this pack revision."""
+        return [
+            doc
+            for doc in self.generated.list(RESOURCE, label=label)
+            if belongs_to_pack(doc, pack_id=self.pack.pack_id, pack_hash=self.pack.pack_hash)
+        ]
+
+    def _all(self) -> Iterator[dict[str, PlainJson]]:
+        pack_docs = self._pack_docs()
+        for doc in pack_docs.values():
+            yield _with_origin(doc, ORIGIN_PACK)
+        for generated_doc in self._generated_docs():
+            if generated_doc.id not in pack_docs:
+                yield _generated(generated_doc)
+
+    def list_docs(self) -> list[dict[str, PlainJson]]:
+        """All visible doc summaries, including generated docs without pack-id shadows."""
+        return [_summary(doc) for doc in self._all()]
+
+    def all_docs(self) -> list[dict[str, PlainJson]]:
+        """Full pack and generated docs, each read once, with block plaintext."""
+        return [_with_plaintext(doc) for doc in self._all()]
 
     def reading_list(self, topic_id: str) -> list[dict[str, PlainJson]]:
         """Summaries (id, title, labels) of a topic's docs: base first, then generated."""
@@ -79,7 +121,7 @@ class Textbook:
         doc_ids = topic.get("docs", ())
         assert isinstance(doc_ids, Sequence)
         docs = [_with_origin(pack_docs[str(i)], ORIGIN_PACK) for i in doc_ids]
-        for doc in self.generated.list(RESOURCE, label=TOPIC_PREFIX + topic_id):
+        for doc in self._generated_docs(label=TOPIC_PREFIX + topic_id):
             if doc.id not in pack_docs:
                 docs.append(_generated(doc))
         return [_summary(d) for d in docs]
@@ -91,12 +133,9 @@ class Textbook:
             out = _with_origin(found, ORIGIN_PACK)
         else:
             generated = self.generated.get(RESOURCE, doc_id)
-            if generated is None:
+            if generated is None or not belongs_to_pack(
+                generated, pack_id=self.pack.pack_id, pack_hash=self.pack.pack_hash
+            ):
                 raise TextbookNotFoundError(f"no textbook doc {doc_id!r}")
             out = _generated(generated)
-        blocks = out["blocks"]
-        assert isinstance(blocks, list)
-        for block in blocks:
-            assert isinstance(block, dict)
-            block["plaintext"] = block_plaintext(str(block["body"]))
-        return out
+        return _with_plaintext(out)

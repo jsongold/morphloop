@@ -47,3 +47,23 @@ test("registerArtifactRenderer registers a type's renderer", () => {
   pane.registerArtifactRenderer("probe", () => React.createElement("b", null, "probed"));
   assert.match(slot("probe", "x"), /probed/);
 });
+
+test("TerminalPane (xterm, needs window) is loaded client-only, not statically", () => {
+  const source = readFileSync(new URL("./index.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /^import TerminalPane\b/m, "must not statically import TerminalPane (SSR-unsafe: xterm touches window)");
+  assert.match(source, /dynamic\(\(\) => import\("@\/components\/TerminalPane"\), \{\s*ssr: false/, "must load TerminalPane via next/dynamic with ssr:false");
+});
+
+test("the diagram carries its stroke styles into the shadow tree", () => {
+  const spec = {
+    title: "DNS resolution",
+    diagram: {
+      actors: [{ id: "client", label: "Client" }, { id: "resolver", label: "Resolver" }],
+      steps: [{ id: "s1", from: "client", to: "resolver", label: "query", explanation: "asks" }],
+    },
+  };
+  const html = renderToStaticMarkup(React.createElement(pane.DiagramContent, { spec }));
+  assert.match(html, /\.viz-lifeline\s*\{[^}]*stroke:\s*var\(--border\)/);
+  assert.match(html, /\.viz-step line,\s*\.viz-step path\s*\{[^}]*stroke:\s*currentColor/);
+  assert.match(html, /class="viz-lifeline"/);
+});

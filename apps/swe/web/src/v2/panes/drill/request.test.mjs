@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { answeredItems, answerRequest, artifactOptions, drillArtifactRefs, drillPath } from "./request.ts";
+import { answeredItems, answerRequest, artifactOptions, canRetryLoad, canSubmit, drillArtifactRefs, drillPath } from "./request.ts";
 
 test("drill labels are repeated query parameters", () => {
   assert.equal(drillPath([]), "/drills");
@@ -51,6 +51,23 @@ test("artifact items ask only for the specs they reference and offer matching ar
   ];
   assert.deepEqual(artifactOptions(artifacts, "spec_one").map((a) => a.artifact_id), ["art_1"]);
   assert.deepEqual(artifactOptions(artifacts, "spec_missing"), []);
+});
+
+test("submitting waits for the active workspace's answer history to load", () => {
+  assert.equal(canSubmit("ws_one", "ws_one", "dns", false), true);
+  assert.equal(canSubmit(null, "ws_one", "dns", false), false);
+  assert.equal(canSubmit("ws_two", "ws_one", "dns", false), false);
+  assert.equal(canSubmit(null, null, "dns", false), false);
+  assert.equal(canSubmit("ws_one", "ws_one", "  ", false), false);
+  assert.equal(canSubmit("ws_one", "ws_one", "dns", true), false);
+});
+
+test("a failed answer-history load offers a retry, a loaded workspace does not", () => {
+  assert.equal(canRetryLoad(null, "ws_one", "boom"), true);
+  assert.equal(canRetryLoad("ws_two", "ws_one", "boom"), true);
+  assert.equal(canRetryLoad("ws_one", "ws_one", "boom"), false);
+  assert.equal(canRetryLoad(null, null, "boom"), false);
+  assert.equal(canRetryLoad(null, "ws_one", null), false);
 });
 
 test("CommonMark renders formatting without enabling raw HTML", async () => {
