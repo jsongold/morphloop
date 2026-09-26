@@ -28,6 +28,10 @@
     },
     "observed": {
       "type": "object"
+    },
+    "params": {
+      "description": "The params the check ran with, as requested. A drill judge counts a check only when check_id and params match a target the item's artifact declares.",
+      "type": "object"
     }
   },
   "additionalProperties": false

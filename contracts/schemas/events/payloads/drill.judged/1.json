@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/events/payloads/drill.judged/1.json",
+  "title": "drill.judged payload v1",
+  "description": "The gap between one drill item's expected understanding and the learner's answer.",
+  "x-envelope": 2,
+  "x-actors": ["system"],
+  "x-scope": ["session_id", "ws_id"],
+  "type": "object",
+  "required": ["answer_event_id", "gap", "provenance"],
+  "properties": {
+    "answer_event_id": {"$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/event_uuid"},
+    "gap": {
+      "type": "object",
+      "required": ["missing"],
+      "properties": {
+        "missing": {
+          "type": "array",
+          "items": {"$ref": "https://morphloop.dev/contracts/schemas/llm/drill.gap/1.json#/properties/missing/items"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["harness_version", "pack", "llm"],
+      "properties": {
+        "harness_version": {"$ref": "https://morphloop.dev/contracts/schemas/common/versions.json#/$defs/version_label"},
+        "pack": {"$ref": "https://morphloop.dev/contracts/schemas/common/provenance.json#/$defs/pack"},
+        "llm": {"anyOf": [{"$ref": "https://morphloop.dev/contracts/schemas/common/provenance.json#/$defs/llm"}, {"type": "null"}]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

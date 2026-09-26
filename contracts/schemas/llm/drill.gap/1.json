@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/llm/drill.gap/1.json",
+  "title": "Drill gap output v1",
+  "description": "Missing parts of the expected understanding, expressed using pack labels.",
+  "type": "object",
+  "required": ["missing"],
+  "properties": {
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "labels"],
+        "properties": {
+          "description": {"type": "string", "minLength": 1},
+          "labels": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

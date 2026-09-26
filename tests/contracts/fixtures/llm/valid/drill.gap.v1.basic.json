@@ -1,0 +1,7 @@
+{
+  "description": "A gap in one drill answer",
+  "schema": "schemas/llm/drill.gap/1.json",
+  "instance": {
+    "missing": [{"description": "Review how the resolver selects a server.", "labels": ["topic:network.dns.resolution"]}]
+  }
+}

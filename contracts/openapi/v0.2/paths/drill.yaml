@@ -77,7 +77,7 @@
       `text` / `choice` items take `actual` (for `choice`, one of the item's
       choices); `artifact` items take `artifact_id`. The ws must exist (404);
       the event's session is the ws's session and its user is the server's
-      single learner. The gap is judged separately.
+      single learner. The gap is judged after the answer commits.
     parameters:
       - {name: ws_id, in: path, required: true, schema: {type: string}}
       - {name: item_id, in: path, required: true, schema: {type: string}}
@@ -102,14 +102,16 @@
     responses:
       '201':
         description: |
-          The stored `drill.answered` event; its full shape is
+          The stored `drill.answered` event and judgment status. `pending`
+          means judgment could not finish; resending the same key retries it.
+          The event's full shape is
           `contracts/schemas/events/envelope/v2/stored.json` with payload
           `contracts/schemas/events/payloads/drill.answered/1.json`.
         content:
           application/json:
             schema:
               type: object
-              required: [id, position, type, created_at, actor, user_id, ws_id, payload]
+              required: [id, position, type, created_at, actor, user_id, ws_id, payload, judgment_status]
               properties:
                 id: {type: string}
                 position: {type: integer, minimum: 1}
@@ -120,6 +122,7 @@
                 session_id: {type: string}
                 ws_id: {type: string}
                 payload: {type: object}
+                judgment_status: {type: string, enum: [complete, pending]}
       default:
         $ref: '../root.yaml#/components/responses/Problem'
 

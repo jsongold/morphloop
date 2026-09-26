@@ -35,6 +35,20 @@
       "dns.name_resolves",
       "dns.http_status"
     ],
+    "checks": [
+      {
+        "check": "dns.resolver_answers",
+        "params": {"name": "ledger.corp.internal", "record_type": "A", "expected_value": "127.0.0.42"}
+      },
+      {
+        "check": "dns.name_resolves",
+        "params": {"name": "ledger.corp.internal", "expected_address": "127.0.0.42"}
+      },
+      {
+        "check": "dns.http_status",
+        "params": {"url": "http://ledger.corp.internal:9093/readyz", "expected_status": 200}
+      }
+    ],
     "idle_seconds": 1800
   }
 }

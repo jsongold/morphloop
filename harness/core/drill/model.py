@@ -32,9 +32,20 @@ class DrillItem:
     labels: tuple[str, ...]
     choices: tuple[str, ...] | None = None
     artifact_ref: str | None = None
+    required_checks: tuple[JsonObject, ...] = ()
+    """The target conditions of an ``artifact`` item, ``{"check", "params"}`` each
+    (the artifact spec's ``checks``): the judge counts only check results with
+    that check id and exactly those params, and needs a current one for every
+    target (#124)."""
 
     @classmethod
-    def from_document(cls, doc: JsonObject, *, origin: Origin) -> DrillItem:
+    def from_document(
+        cls,
+        doc: JsonObject,
+        *,
+        origin: Origin,
+        required_checks: Sequence[JsonObject] = (),
+    ) -> DrillItem:
         """Build from a schema-valid drill-item document."""
         labels = doc["labels"]
         choices = doc.get("choices")
@@ -48,6 +59,7 @@ class DrillItem:
             labels=(*(str(label) for label in labels), f"origin:{origin}"),
             choices=tuple(str(c) for c in choices) if isinstance(choices, Sequence) else None,
             artifact_ref=None if artifact_ref is None else str(artifact_ref),
+            required_checks=tuple(required_checks),
         )
 
     def for_learner(self) -> dict[str, PlainJson]:

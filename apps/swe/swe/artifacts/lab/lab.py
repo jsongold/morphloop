@@ -42,6 +42,15 @@ LAB_SPEC_SCHEMA: JsonObject = {
         "environment": {"$ref": _CONTRACTS + "pack/environment.json"},
         "allowed_fixtures": _ADAPTER_ITEM_IDS,
         "allowed_checks": _ADAPTER_ITEM_IDS,
+        "checks": {
+            "description": (
+                "The target conditions a drill on this lab is judged by: each check "
+                "(one of allowed_checks) with the exact params it must pass with."
+            ),
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": _CONTRACTS + "pack/activity-definition.json#/$defs/check_ref"},
+        },
         "idle_seconds": {
             "description": (
                 "Stop the lab after its ws has had no learner activity for this many "
@@ -78,7 +87,15 @@ class LabArtifact(Artifact):
             return [
                 f"environment fixture {environment.get('fixture')!r} is not in allowed_fixtures"
             ]
-        return ()
+        allowed = spec["allowed_checks"]
+        assert isinstance(allowed, Sequence)
+        targets = spec.get("checks", [])
+        assert isinstance(targets, Sequence)
+        return [
+            f"checks[{i}].check {t['check']!r} is not in allowed_checks"
+            for i, t in enumerate(targets)
+            if isinstance(t, Mapping) and t.get("check") not in allowed
+        ]
 
     @classmethod
     def learner_view(cls, spec: JsonObject) -> JsonObject:
