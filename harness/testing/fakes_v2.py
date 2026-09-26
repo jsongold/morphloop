@@ -93,9 +93,17 @@ class _Transaction:
     def get_view(self, view: str, key: str) -> JsonObject | None:
         return self._open().views.get(view, {}).get(key)
 
-    def list_view(self, view: str, *, key_prefix: str = "") -> Sequence[tuple[str, JsonObject]]:
+    def list_view(
+        self, view: str, *, key_prefix: str = "", after: str | None = None, limit: int | None = None
+    ) -> tuple[Sequence[tuple[str, JsonObject]], str | None]:
         docs = self._open().views.get(view, {})
-        return [(k, docs[k]) for k in sorted(docs) if k.startswith(key_prefix)]
+        matching = sorted(k for k in docs if k.startswith(key_prefix))
+        keys = [k for k in matching if after is None or k > after]
+        if limit is None:
+            return [(k, docs[k]) for k in keys], None
+        page = keys[:limit]
+        next_cursor = page[-1] if len(keys) > limit else None
+        return [(k, docs[k]) for k in page], next_cursor
 
     def put_view(self, view: str, key: str, document: JsonObject) -> None:
         self._open().views.setdefault(view, {})[key] = document

@@ -7,9 +7,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
+from harness.adapters.postgres.claims import PostgresClaimStore
 from harness.adapters.postgres.engine import create_engine_from_env
 from harness.adapters.supabase import supabase_engine
 from harness.api.app import create_app
+from harness.api.periodic import app_claims
 from harness.api.v2.db import db_from_settings
 from harness.cli import wiring
 
@@ -44,3 +46,12 @@ def test_migrations_prefer_the_direct_url(monkeypatch: pytest.MonkeyPatch) -> No
     assert wiring.database_url().endswith(":6543/postgres")
     monkeypatch.setenv("MORPHLOOP_DATABASE_DIRECT_URL", "postgresql+psycopg://u:p@db:5432/postgres")
     assert wiring.database_url().endswith(":5432/postgres")
+
+
+def test_claims_use_the_app_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_DB_PROVIDER", "supabase")
+    engine = create_engine("sqlite://")
+    app = create_app(db=lambda: engine)
+    store = app_claims(app)
+    assert isinstance(store, PostgresClaimStore)
+    assert store._engine is engine

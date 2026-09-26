@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 from sqlalchemy.engine import Engine
 
 from harness.adapters.postgres.engine import create_engine_from_env
@@ -26,6 +26,11 @@ def db_from_settings() -> DbProvider:
     return create_engine_from_env
 
 
-def db_of(request: Request) -> DbProvider:
-    provider: DbProvider | None = getattr(request.app.state, "db", None)
+def app_db(app: FastAPI) -> DbProvider:
+    """``app.state.db`` (set by ``create_app(db=...)``), else the settings' choice."""
+    provider: DbProvider | None = getattr(app.state, "db", None)
     return provider if provider is not None else db_from_settings()
+
+
+def db_of(request: Request) -> DbProvider:
+    return app_db(request.app)

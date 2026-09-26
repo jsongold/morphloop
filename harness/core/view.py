@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
-from typing import ClassVar
+from typing import ClassVar, overload
 
 from harness.core.ports.events_v2 import StoredEventV2, ViewDocumentStore
 from harness.core.ports.json_types import JsonObject
@@ -61,11 +61,31 @@ class View:
     def get(cls, tx: ViewDocumentStore, key: str) -> JsonObject | None:
         return tx.get_view(cls.name, key)
 
+    @overload
     @classmethod
     def list(
         cls, tx: ViewDocumentStore, *, key_prefix: str = ""
-    ) -> Sequence[tuple[str, JsonObject]]:
-        return tx.list_view(cls.name, key_prefix=key_prefix)
+    ) -> Sequence[tuple[str, JsonObject]]: ...
+
+    @overload
+    @classmethod
+    def list(
+        cls, tx: ViewDocumentStore, *, key_prefix: str = "", after: str | None, limit: int
+    ) -> tuple[Sequence[tuple[str, JsonObject]], str | None]: ...
+
+    @classmethod
+    def list(
+        cls,
+        tx: ViewDocumentStore,
+        *,
+        key_prefix: str = "",
+        after: str | None = None,
+        limit: int | None = None,
+    ) -> Sequence[tuple[str, JsonObject]] | tuple[Sequence[tuple[str, JsonObject]], str | None]:
+        """Every matching document (existing callers), or, when ``limit`` is
+        given, one page plus its next cursor (#173 keyset pagination)."""
+        page, next_cursor = tx.list_view(cls.name, key_prefix=key_prefix, after=after, limit=limit)
+        return (page, next_cursor) if limit is not None else page
 
 
 def registered_views() -> Mapping[str, type[View]]:
