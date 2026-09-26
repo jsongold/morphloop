@@ -18,10 +18,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=apps/swe/pyproject.toml,target=apps/swe/pyproject.toml \
     uv sync --locked --no-install-workspace --no-dev
 
-# The SDK and every app in the workspace; docker-compose picks the app to serve.
+# The SDK only: apps/* stay in the context for the lock, and each app builds its
+# own image (apps/swe/Dockerfile).
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --all-packages
+    uv sync --locked --no-dev
 
 FROM python:3.13-slim
 
@@ -32,5 +33,5 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
-# The bare SDK server; the stack (docker-compose.yml) overrides this with an app.
+# The bare SDK server.
 CMD ["sh", "-c", "alembic upgrade head && uvicorn harness.api.app:app --host 0.0.0.0 --port 8000"]
