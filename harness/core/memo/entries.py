@@ -73,6 +73,16 @@ class MemoEntries(View):
         """Every entry of `ws_id`, in append order."""
         return [doc for _, doc in cls.list(tx, key_prefix=f"{ws_id}/")]
 
+    @classmethod
+    def list_for_ws_page(
+        cls, tx: ViewDocumentStore, ws_id: str, *, after: str | None, limit: int
+    ) -> tuple[list[JsonObject], str | None]:
+        """One bounded page of `ws_id`'s entries, in append order (#176 keyset
+        pagination): the key is already `{ws_id}/{position}`, so the store's
+        key order is append order."""
+        page, next_cursor = cls.list(tx, key_prefix=f"{ws_id}/", after=after, limit=limit)
+        return [doc for _, doc in page], next_cursor
+
 
 def build_memo_appended(
     *,

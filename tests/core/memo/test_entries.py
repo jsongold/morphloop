@@ -148,3 +148,17 @@ def test_list_for_ws_is_append_order_and_scoped_to_one_ws(
 def test_source_is_carried_through(store: InMemoryEventStoreV2, pack: PackV2) -> None:
     entry = _append(store, pack, source={"highlight_id": "hl_abcdefgh"})
     assert entry["source"] == {"highlight_id": "hl_abcdefgh"}
+
+
+def test_list_for_ws_page_pages_in_append_order(store: InMemoryEventStoreV2, pack: PackV2) -> None:
+    first = _append(store, pack, ws_id="ws_a", body="a")
+    second = _append(store, pack, ws_id="ws_a", body="b")
+    third = _append(store, pack, ws_id="ws_a", body="c")
+
+    with store.transaction() as tx:
+        page, cursor = MemoEntries.list_for_ws_page(tx, "ws_a", after=None, limit=2)
+        assert page == [first, second]
+        assert cursor is not None
+        page2, cursor2 = MemoEntries.list_for_ws_page(tx, "ws_a", after=cursor, limit=2)
+        assert page2 == [third]
+        assert cursor2 is None
