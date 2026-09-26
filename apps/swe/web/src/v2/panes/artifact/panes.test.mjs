@@ -48,6 +48,12 @@ test("registerArtifactRenderer registers a type's renderer", () => {
   assert.match(slot("probe", "x"), /probed/);
 });
 
+test("TerminalPane (xterm, needs window) is loaded client-only, not statically", () => {
+  const source = readFileSync(new URL("./index.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /^import TerminalPane\b/m, "must not statically import TerminalPane (SSR-unsafe: xterm touches window)");
+  assert.match(source, /dynamic\(\(\) => import\("@\/components\/TerminalPane"\), \{\s*ssr: false/, "must load TerminalPane via next/dynamic with ssr:false");
+});
+
 test("the diagram carries its stroke styles into the shadow tree", () => {
   const spec = {
     title: "DNS resolution",

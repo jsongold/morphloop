@@ -10,8 +10,9 @@
 // <ArtifactPane/> independently, so what the inline slot starts is published to
 // a tiny module store both read.
 
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import TerminalPane, { type TerminalHandle } from "@/components/TerminalPane";
+import type { TerminalHandle } from "@/components/TerminalPane";
 import { get, post } from "../../api";
 import { useWorkspace } from "../../state";
 import type { ArtifactDirective } from "../types";
@@ -25,6 +26,12 @@ import {
   type Artifact,
   type CheckResult,
 } from "./artifacts";
+
+// xterm touches `window` at import time: client-only (see Workspace.tsx).
+const TerminalPane = dynamic(() => import("@/components/TerminalPane"), {
+  ssr: false,
+  loading: () => <div className="terminal muted">Loading terminal…</div>,
+});
 
 export type ArtifactRenderer = (directive: ArtifactDirective) => ReactNode;
 const renderers = new Map<string, ArtifactRenderer>();
