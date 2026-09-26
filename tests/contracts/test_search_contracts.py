@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 
-from harness.core.ports.search import SearchHit
+from harness.core.ports.search import KeywordSearchRequest, SearchHit, SemanticSearchRequest
 from harness.testing.contracts import CONTRACTS_DIR, ContractViolation, load_schema, validate
 
 REQUEST = "schemas/search/request.json"
@@ -65,7 +65,13 @@ def test_invalid_requests(instance: dict[str, Any]) -> None:
         {"results": []},
         {
             "results": [
-                {"kind": "textbook_block", "id": "blk_1", "score": 0.83, "source": "hybrid"},
+                {
+                    "kind": "textbook_block",
+                    "id": "blk_1",
+                    "parent_id": "doc_1",
+                    "score": 0.83,
+                    "source": "hybrid",
+                },
                 {"kind": "drill_item", "id": "item_1", "score": 0.5, "source": "keyword"},
             ]
         },
@@ -79,6 +85,11 @@ def test_valid_responses(instance: dict[str, Any]) -> None:
     "instance",
     [
         {"results": [{"kind": "textbook_block", "id": "blk_1", "score": 0.5}]},  # missing source
+        {
+            "results": [
+                {"kind": "memo_entry", "id": "e", "parent_id": "", "score": 1, "source": "keyword"}
+            ]
+        },
         {"results": [{"kind": "textbook_block", "id": "blk_1", "score": 0.5, "source": "vibes"}]},
         # a drill item's expected-answer field must never be a legal result property
         {
@@ -107,3 +118,17 @@ def test_search_hit_to_dict_matches_response_item_shape() -> None:
 def test_readme_states_drill_answers_are_never_searchable() -> None:
     readme = (CONTRACTS_DIR / "schemas" / "search" / "README.md").read_text(encoding="utf-8")
     assert "never searchable" in readme.lower()
+
+
+def test_search_hit_parent_id_round_trips_to_wire() -> None:
+    hit = SearchHit(kind="memo_entry", id="ent_1", parent_id="ws_1", score=1.0, source="keyword")
+    assert hit.to_dict()["parent_id"] == "ws_1"
+    validate({"results": [hit.to_dict()]}, RESPONSE)
+
+
+def test_search_requests_require_learner_scope() -> None:
+    with pytest.raises(ValueError, match="user_id"):
+        KeywordSearchRequest(text="ttl", user_id="", limit=5)
+    with pytest.raises(ValueError, match="user_id"):
+        SemanticSearchRequest(embedding=[0.1], user_id="", limit=5)
+    assert KeywordSearchRequest(text="ttl", user_id="u1", limit=5).user_id == "u1"

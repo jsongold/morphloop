@@ -26,8 +26,14 @@ entirely -- never embedded, never indexed, never returned as a result. This
 is enforced by each adapter's field allowlist when it writes a row, not by
 convention: no type in this module accepts or returns an expected-answer or
 reference-solution value. :class:`SearchHit`, the only result type, carries
-only ``kind``/``id``/``score``/``source`` (see
+only ``kind``/``id``/``parent_id``/``score``/``source`` (see
 ``contracts/schemas/search/README.md``).
+
+Every keyword/semantic query is scoped to one authenticated learner
+(``user_id``, from auth -- never from the request body). A backend returns a
+row only when it is shared corpus (pack content: textbook, drill questions) or
+owned by that learner (e.g. memos); the filter applies before ranking and
+``limit``, so another learner's rows never affect results or scores.
 
 Value types are frozen dataclasses; see ``harness.core.ports`` for why.
 """
@@ -48,21 +54,34 @@ class SearchHit:
 
     Matches ``contracts/schemas/search/response.json#/properties/results/items``.
     ``kind`` is a resource label (ADR-0018), not a closed enum; ``id`` is that
-    resource's own id, opaque here.
+    resource's own id, opaque here. ``parent_id`` is the owning resource's id
+    when re-fetching needs it (e.g. the document of a block, the workspace of a
+    memo entry); ``None`` for a top-level resource.
     """
 
     kind: str
     id: str
     score: float
     source: SearchSource
+    parent_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.kind or not self.id:
             raise ValueError("a search hit needs a non-empty kind and id")
+        if self.parent_id == "":
+            raise ValueError("parent_id must be non-empty when set")
 
     def to_dict(self) -> dict[str, str | float]:
         """Return the wire form, valid against ``search/response.json``'s result item."""
-        return {"kind": self.kind, "id": self.id, "score": self.score, "source": self.source}
+        wire: dict[str, str | float] = {
+            "kind": self.kind,
+            "id": self.id,
+            "score": self.score,
+            "source": self.source,
+        }
+        if self.parent_id is not None:
+            wire["parent_id"] = self.parent_id
+        return wire
 
 
 class SearchBackendError(Exception):
@@ -71,15 +90,19 @@ class SearchBackendError(Exception):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class KeywordSearchRequest:
-    """A deterministic keyword query. ``resources`` empty means every resource."""
+    """A deterministic keyword query for one learner. ``resources`` empty means every
+    resource. Only shared rows and rows owned by ``user_id`` are eligible."""
 
     text: str
+    user_id: str
     limit: int
     resources: Sequence[str] = ()
 
     def __post_init__(self) -> None:
         if not self.text:
             raise ValueError("a search request needs non-empty text")
+        if not self.user_id:
+            raise ValueError("a search request needs the authenticated user_id")
         if self.limit < 1:
             raise ValueError("limit must be >= 1")
 
@@ -89,7 +112,8 @@ class KeywordSearchBackend(Protocol):
     an LLM; every returned hit's ``source`` is ``"keyword"``."""
 
     def search(self, request: KeywordSearchRequest) -> Sequence[SearchHit]:
-        """Return hits ranked best-first, at most ``request.limit`` of them.
+        """Return hits ranked best-first, at most ``request.limit`` of them, never a row
+        owned by a learner other than ``request.user_id`` (filtered before ranking).
 
         Raises :class:`SearchBackendError` on a backend failure.
         """
@@ -98,15 +122,20 @@ class KeywordSearchBackend(Protocol):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SemanticSearchRequest:
-    """A similarity query over an already-embedded query vector (see :class:`EmbeddingProvider`)."""
+    """A similarity query for one learner over an already-embedded query vector (see
+    :class:`EmbeddingProvider`). Only shared rows and rows owned by ``user_id`` are
+    eligible."""
 
     embedding: Sequence[float]
+    user_id: str
     limit: int
     resources: Sequence[str] = ()
 
     def __post_init__(self) -> None:
         if not self.embedding:
             raise ValueError("a semantic search request needs a non-empty embedding")
+        if not self.user_id:
+            raise ValueError("a search request needs the authenticated user_id")
         if self.limit < 1:
             raise ValueError("limit must be >= 1")
 
@@ -116,7 +145,9 @@ class SemanticSearchBackend(Protocol):
     ``"semantic"``."""
 
     def search(self, request: SemanticSearchRequest) -> Sequence[SearchHit]:
-        """Return hits ranked best-first (highest similarity), at most ``request.limit``.
+        """Return hits ranked best-first (highest similarity), at most ``request.limit``,
+        never a row owned by a learner other than ``request.user_id`` (filtered before
+        ranking).
 
         Raises :class:`SearchBackendError` on a backend failure.
         """
