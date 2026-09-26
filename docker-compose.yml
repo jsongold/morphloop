@@ -1,5 +1,7 @@
-# Start the whole stack: docker compose up -d --build
-# Host ports default to 8000 (api) and 3000 (web); override with API_PORT / WEB_PORT.
+# The SDK's own stack: Postgres plus the bare SDK server (harness.api.app), for SDK
+# development and tests/e2e. The SWE app (with its web UI) runs from apps/swe
+# (apps/swe/README.md). Start: docker compose up -d --build
+# The api host port defaults to 8000; override with API_PORT.
 services:
   db:
     image: postgres:16
@@ -19,10 +21,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # The SWE app (apps/swe): the SDK server plus the lab and diagram artifacts,
-    # serving the SE pack under apps/swe/pack (ADR-0018 s19). The image's own CMD
-    # is the bare SDK server.
-    command: ["sh", "-c", "alembic upgrade head && uvicorn --factory swe.app:create_swe_app --host 0.0.0.0 --port 8000"]
     depends_on:
       db:
         condition: service_healthy
@@ -38,7 +36,6 @@ services:
       # LLM keys come from env_file above: a bare name here would override it
       # with nothing.
       - DATABASE_URL=postgresql+psycopg://morphloop:morphloop@db:5432/morphloop
-      - WEB_ORIGIN=http://localhost:${WEB_PORT:-3000}
       - DOCKER_HOST
       - MORPHLOOP_LLM_PROVIDER
     # The lab runtime starts learner containers as siblings, so the api needs
@@ -54,17 +51,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  web:
-    build:
-      context: ./apps/swe/web
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-8000}
-    depends_on:
-      - api
-    ports:
-      - "${WEB_PORT:-3000}:3000"
 
 volumes:
   db_data:

@@ -17,7 +17,12 @@ Start with:
 
 Requirements: Docker (with Compose v2). For local development also `uv` and `pnpm`.
 
-### Run the whole stack
+### Run the SWE app (web UI, labs, the v0.2 SE pack)
+
+The app lives in `apps/swe/` and runs from there: `cd apps/swe && ./scripts/dev.sh up`
+(`--fake-llm` for no key). See `apps/swe/README.md` for its env vars and E2E.
+
+### Run the SDK stack
 
 The software-engineering pack uses OpenAI models, so the API needs `OPENAI_API_KEY`
 (chat, evaluation and learner-model updates fail without it). Keep it in an
@@ -33,7 +38,7 @@ OPENAI_API_KEY=sk-...
 docker compose up -d --build
 ```
 
-This starts PostgreSQL, the API (it applies migrations on start) and the standard web UI.
+This starts PostgreSQL and the bare SDK API (it applies migrations on start); no web UI.
 The API starts learner lab containers on the host Docker, so Docker must be running.
 
 Check it:
@@ -50,11 +55,11 @@ docker compose exec -T api python -m harness.cli import contents/software-engine
 # status  imported
 ```
 
-If port 8000 or 3000 is already in use, override the host ports:
+If port 8000 is already in use, override the host port:
 
 ```sh
-API_PORT=18000 WEB_PORT=13000 docker compose up -d --build
-# then: curl -s localhost:18000/health, and open http://localhost:13000
+API_PORT=18000 docker compose up -d --build
+# then: curl -s localhost:18000/health
 ```
 
 ### Multiple worktrees (recommended for concurrent development)
@@ -62,14 +67,13 @@ API_PORT=18000 WEB_PORT=13000 docker compose up -d --build
 This repo is developed across several worktrees. Never run `docker compose`
 directly there: every worktree would reuse the same container names, network,
 db volume and host ports. Use the per-worktree wrapper, which derives a unique
-compose project name (`morphloop-<hash>`) and host ports (api 18000+,
-web 13000+) from the worktree path:
+compose project name (`morphloop-<hash>`) and host port (api 17000+) from
+the worktree path:
 
 ```sh
 ./scripts/dev-stack.sh up        # build + start + import the SE pack
-# api  http://localhost:18xxx   (project morphloop-2efd6458)
-# web  http://localhost:13xxx
-./scripts/dev-stack.sh logs api  # follow logs (api / web / db)
+# api  http://localhost:17xxx   (project morphloop-2efd6458)
+./scripts/dev-stack.sh logs api  # follow logs (api / db)
 ./scripts/dev-stack.sh import    # (re)import the pack
 ./scripts/dev-stack.sh test      # e2e tests in the api container
 ./scripts/dev-stack.sh down -v   # stop and delete the db volume
@@ -80,13 +84,16 @@ Another worktree's stack is reached with `docker compose -p morphloop-<hash> ...
 Logs and shutdown:
 
 ```sh
-docker compose logs -f api      # or web / db
+docker compose logs -f api      # or db
 docker compose down             # stop
 docker compose down -v          # stop and delete the database volume
 docker rm -f $(docker ps -aq --filter label=io.morphloop.lab.managed=docker_lab)  # remove leftover labs
 ```
 
 ### Try the DNS mission
+
+With the SDK stack up and the pack imported, run the web UI against it
+(`cd apps/swe/web && pnpm dev`, see Local development), then:
 
 1. Open http://localhost:3000 and choose **Start a session** (or **Resume** an earlier one).
 2. Choose the DNS activity. A lab container starts and its shell appears in the terminal pane.

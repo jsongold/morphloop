@@ -1,8 +1,9 @@
 // v0.2.0 GUI end-to-end (#106) against the *real* dev-stack with the fake LLM.
 //
-//   bash scripts/dev-stack.sh up --fake-llm   # prints the api/web ports
-//   E2E_BASE_URL=http://localhost:<web-port> pnpm test:e2e
-//   bash scripts/dev-stack.sh down -v
+//   cd apps/swe
+//   ./scripts/dev.sh up --fake-llm   # prints the api/web ports
+//   ./scripts/dev.sh e2e             # E2E_BASE_URL=http://localhost:<web-port> pnpm test:e2e
+//   ./scripts/dev.sh down -v
 //
 // One test walks the #106 checklist through the UI only (no API shortcuts; the
 // ids the test reads come from the URL the app itself wrote). Screenshots land
