@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from harness.api.periodic import CLAIMS_PURGE, PeriodicJob, claims_purge, run_once
+from harness.core.ports.claims import MAX_COUNTER_WINDOW
 from harness.testing.claims import InMemoryClaimStore
 
 EVERY = timedelta(minutes=5)
@@ -38,6 +39,18 @@ def test_one_worker_runs_each_interval_and_another_takes_over_when_it_stops() ->
     clock.now += EVERY + timedelta(seconds=1)
     assert run_once(job, store, "b") is True
     assert runs == ["ran"] * 3
+
+
+def test_claims_purge_keeps_the_longest_window_until_it_ends() -> None:
+    clock = Clock()
+    store = InMemoryClaimStore(clock)
+    assert store.consume("u", "calls", limit=1, window=MAX_COUNTER_WINDOW)
+    job = claims_purge(lambda: store)
+    # Hourly purges during the window never reset the counter.
+    for _ in range(int(MAX_COUNTER_WINDOW / timedelta(hours=1)) - 1):
+        clock.now += timedelta(hours=1)
+        job.run()
+        assert not store.consume("u", "calls", limit=1, window=MAX_COUNTER_WINDOW)
 
 
 def test_claims_purge_deletes_expired_leases() -> None:

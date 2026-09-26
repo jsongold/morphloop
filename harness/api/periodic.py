@@ -27,13 +27,10 @@ from fastapi import FastAPI
 
 from harness.adapters.postgres.claims import PostgresClaimStore
 from harness.adapters.postgres.engine import create_engine_from_env
-from harness.core.ports.claims import ClaimStore, check_positive
+from harness.core.ports.claims import MAX_COUNTER_WINDOW, ClaimStore, check_positive
 
 CLAIMS_PURGE = "claims-purge"
 PURGE_EVERY = timedelta(hours=1)
-# ponytail: fixed retention; a counter window longer than this would be reset
-# early. Replace the job by name (AppExtension) if an app uses longer windows.
-COUNTERS_KEPT = timedelta(days=7)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,11 +64,12 @@ def run_once(job: PeriodicJob, claims: ClaimStore, holder: str) -> bool:
 
 
 def claims_purge(store_of: Callable[[], ClaimStore]) -> PeriodicJob:
-    """The SDK's job: delete expired leases and old counter windows."""
+    """The SDK's job: delete expired leases and counter windows that have ended
+    (a window is at most ``MAX_COUNTER_WINDOW`` long, so older rows are over)."""
     return PeriodicJob(
         CLAIMS_PURGE,
         PURGE_EVERY,
-        lambda: store_of().purge_expired(counters_older_than=COUNTERS_KEPT),
+        lambda: store_of().purge_expired(counters_older_than=MAX_COUNTER_WINDOW),
     )
 
 
