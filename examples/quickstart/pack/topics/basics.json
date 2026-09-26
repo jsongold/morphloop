@@ -1,0 +1,6 @@
+{
+  "id": "basics",
+  "title": "Basics",
+  "description": "The one topic this quickstart pack teaches.",
+  "docs": ["intro"]
+}

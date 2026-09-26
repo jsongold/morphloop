@@ -1,0 +1,13 @@
+{
+  "pack_format": 2,
+  "pack_id": "quickstart",
+  "pack_version": "0.1.0",
+  "title": "Quickstart",
+  "domain_adapters": {},
+  "labels": "labels.json",
+  "topics": ["topics/basics.json"],
+  "textbooks": ["textbooks/intro.json"],
+  "drills": ["drills/choice.json"],
+  "artifacts": [],
+  "llm_roles": []
+}

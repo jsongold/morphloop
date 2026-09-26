@@ -137,6 +137,46 @@ pnpm typecheck && pnpm lint && pnpm build
 
 The standard UI is optional; any UI that follows the API contract in `contracts/` can replace it.
 
+### Quick start: the SDK alone
+
+`examples/quickstart/` is the smallest possible app on the SDK: one file
+(`app.py`) that calls `harness.sdk.create_app()` and points it at a tiny pack
+(`pack/`, one topic, one textbook doc, one choice drill) — no web UI, no labs,
+no app extension. It needs a Postgres to talk to (the event store, ADR-0008);
+a throwaway container is enough.
+
+```sh
+uv sync
+
+docker run -d --name morphloop-quickstart-db \
+  -e POSTGRES_USER=morphloop -e POSTGRES_PASSWORD=morphloop -e POSTGRES_DB=morphloop \
+  -p 5432:5432 postgres:16
+export DATABASE_URL=postgresql+psycopg://morphloop:morphloop@localhost:5432/morphloop
+uv run alembic upgrade head
+
+uv run uvicorn --app-dir examples/quickstart app:app --port 8000
+```
+
+In another shell:
+
+```sh
+curl -s localhost:8000/v2/topics
+# {"pack_id":"quickstart","pack_hash":"sha256:...","topics":[{"id":"basics", ...}]}
+
+curl -s -X POST localhost:8000/v2/sessions \
+  -H "Content-Type: application/json" -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"pack_id": "quickstart", "topic_id": "basics"}'
+# {"id":"ses_...","pack_id":"quickstart","topic_id":"basics", ...}
+
+curl -s localhost:8000/v2/drills
+# {"items":[{"id":"choice","question":"Which choice is correct?", ...}]}
+```
+
+Stop the server (Ctrl-C) and remove the throwaway database when done:
+`docker rm -f morphloop-quickstart-db`. `tests/test_quickstart.py` runs the
+same three calls against the example app with the in-memory `/v2` fakes
+(`harness.testing`), so CI catches a break with no database needed.
+
 ### Building an app on the SDK
 
 The SDK owns the `Artifact` base and the extension points; concrete artifact

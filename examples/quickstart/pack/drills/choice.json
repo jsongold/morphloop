@@ -1,0 +1,8 @@
+{
+  "id": "choice",
+  "question": "Which choice is correct?",
+  "expected": "A",
+  "answer_mode": "choice",
+  "choices": ["A", "B"],
+  "labels": ["topic:basics"]
+}
