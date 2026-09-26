@@ -20,6 +20,8 @@ from harness.api.app import AppExtension, create_app
 from harness.api.v2.deps import SocketUserIdDep
 from harness.api.v2.tickets import AUDIENCE, socket_tickets_from_settings
 from harness.core.ports.auth import AuthError
+from harness.core.ports.claims import ClaimStore
+from harness.testing.claims import InMemoryClaimStore
 from harness.testing.openapi_v2 import V2_DIR, load_merged_openapi_v2_spec
 
 SECRET = "test-socket-ticket-secret-0123456789abcdef"
@@ -32,7 +34,7 @@ class TwoUsers:
         return f"usr_{token}"
 
 
-def make_client(auth: object | None = None) -> TestClient:
+def make_client(auth: object | None = None, claims: ClaimStore | None = None) -> TestClient:
     router = APIRouter()
 
     @router.websocket("/probe")
@@ -41,7 +43,9 @@ def make_client(auth: object | None = None) -> TestClient:
         await websocket.send_text(user_id)
         await websocket.close()
 
-    return TestClient(create_app(extensions=[AppExtension(routers=(router,))], auth=auth))  # type: ignore[arg-type]
+    app = create_app(extensions=[AppExtension(routers=(router,))], auth=auth)  # type: ignore[arg-type]
+    app.state.claims = claims or InMemoryClaimStore()
+    return TestClient(app)
 
 
 @pytest.fixture(autouse=True)
@@ -97,6 +101,14 @@ def test_ticket_is_single_use() -> None:
     ticket = issue(client, "alice")
     assert connect(client, f"?ticket={ticket}") == "usr_alice"
     assert "already used" in denied(client, f"?ticket={ticket}").json()["detail"]
+
+
+def test_ticket_is_single_use_across_workers_sharing_a_claim_store() -> None:
+    claims = InMemoryClaimStore()
+    first, second = make_client(TwoUsers(), claims), make_client(TwoUsers(), claims)
+    ticket = issue(first, "alice")
+    assert connect(second, f"?ticket={ticket}") == "usr_alice"
+    assert "already used" in denied(first, f"?ticket={ticket}").json()["detail"]
 
 
 def test_expired_ticket_is_denied() -> None:
