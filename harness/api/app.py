@@ -26,6 +26,7 @@ from harness.adapters.postgres.engine import create_engine_from_env, ping
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
 from harness.core.artifact import Artifact
+from harness.core.ports.auth import AuthProvider
 from harness.core.settings import Settings
 
 REPLAYED_HEADER = "Idempotent-Replayed"
@@ -57,11 +58,15 @@ class AppExtension:
     artifact_types: tuple[type[Artifact], ...] = ()
 
 
-def create_app(*, extensions: Iterable[AppExtension] = ()) -> FastAPI:
+def create_app(
+    *, extensions: Iterable[AppExtension] = (), auth: AuthProvider | None = None
+) -> FastAPI:
     """Build the FastAPI application.
 
     ``extensions`` are an app's :class:`AppExtension` values. Without them the
     server registers no artifact type, so a pack that embeds artifacts is refused.
+    ``auth`` is the app's :class:`AuthProvider` (e.g. ``OidcAuthProvider`` or
+    ``supabase_auth(...)``); unset, ``MORPHLOOP_AUTH_PROVIDER`` picks one.
     """
     extensions = tuple(extensions)
     app = FastAPI(title="morphloop-api")
@@ -85,6 +90,8 @@ def create_app(*, extensions: Iterable[AppExtension] = ()) -> FastAPI:
         for router in extension.routers:
             v2.include_router(router)
     app.include_router(v2)
+    if auth is not None:
+        app.state.auth_provider = auth
     app.state.artifact_types = tuple(t for e in extensions for t in e.artifact_types)
     return app
 
