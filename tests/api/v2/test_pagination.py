@@ -39,5 +39,24 @@ def test_limit_over_the_max_is_rejected() -> None:
 
 
 def test_malformed_cursor_is_rejected() -> None:
+    # 400 invalid-request per contracts/openapi/v0.2/components/common.yaml
+    # CursorParam ("Unknown or expired -> 400 `invalid-request`"); the bare
+    # FastAPI app here has no Problem handlers installed, so the raw
+    # HTTPException status is what surfaces.
     resp = TestClient(_app()).get("/items", params={"cursor": "not-base64!"})
-    assert resp.status_code == 422
+    assert resp.status_code == 400
+
+
+def test_cursor_of_only_invalid_characters_is_rejected() -> None:
+    """#208: a correctly-padded but non-alphabet cursor must be rejected, not
+    silently decode to an empty/garbage key."""
+    for bad in ("!!!!", "%%%"):
+        resp = TestClient(_app()).get("/items", params={"cursor": bad})
+        assert resp.status_code == 400, bad
+
+
+def test_valid_cursor_with_garbage_appended_is_rejected() -> None:
+    resp = TestClient(_app()).get(
+        "/items", params={"cursor": encode_cursor("ws_1/highlight_7") + "!!!"}
+    )
+    assert resp.status_code == 400
