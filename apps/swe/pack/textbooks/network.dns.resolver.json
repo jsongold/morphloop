@@ -53,6 +53,13 @@
       "labels": [
         "section:failure_modes"
       ]
+    },
+    {
+      "id": "lab",
+      "body": "::artifact{type=lab ref=diagnose-dns-resolver-misconfiguration-lab}",
+      "labels": [
+        "topic:network.dns.resolution"
+      ]
     }
   ]
 }
