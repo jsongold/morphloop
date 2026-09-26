@@ -77,6 +77,11 @@ def test_claim_is_exclusive_until_release(store: ClaimStore, key: str) -> None:
     assert store.try_claim(key, "b", HOUR)
 
 
+def test_release_of_missing_key_with_empty_holder_is_a_no_op(store: ClaimStore, key: str) -> None:
+    """#206: the in-memory fake must match Postgres's DELETE ... no rows: no-op."""
+    store.release(key, "")
+
+
 def test_claim_is_free_again_after_ttl(store: ClaimStore, key: str) -> None:
     assert store.try_claim(key, "a", timedelta(milliseconds=200))
     assert not store.try_claim(key, "b", HOUR)
