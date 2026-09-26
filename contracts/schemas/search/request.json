@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/search/request.json",
+  "title": "Search request",
+  "description": "One query across the searchable corpus (issue #180): textbook blocks, drill questions and memos. 'mode' picks the backend leg(s): 'keyword' (deterministic Postgres tsvector 'simple' + pg_trgm, no LLM in the path, reproducible and explainable), 'semantic' (pgvector similarity over an embedded query), or 'hybrid' (both legs fused by RRF). Absent 'mode' means 'hybrid' -- a harness protocol default, not a pack tuning value (ADR-0002 governs pack content, not this). 'resources' filters by resource label (ADR-0018); the harness holds no closed enum of resources. Drill expected answers are never part of the searchable corpus at any mode -- see contracts/schemas/search/README.md.",
+  "type": "object",
+  "required": [
+    "query"
+  ],
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "mode": {
+      "description": "Backend leg(s) to use. Defaults to 'hybrid' when absent.",
+      "enum": [
+        "keyword",
+        "semantic",
+        "hybrid"
+      ]
+    },
+    "resources": {
+      "description": "Resource labels to search (ADR-0018), e.g. 'textbook_block'. Empty or absent means every searchable resource.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+      }
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    }
+  },
+  "additionalProperties": false
+}
