@@ -15,12 +15,14 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.v2.deps import user_id_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import import_pack_v2
 from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2
+from harness.testing.openapi_v2 import load_merged_openapi_v2_spec
 
 # api_harness owns the app-under-fakes builder (see tests/api/v2/test_router_autoinclude.py).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -68,7 +70,7 @@ def test_resend_of_the_same_idempotency_key_and_body_returns_the_same_session() 
     first = _create(client, "network", key=key)
     second = _create(client, "network", key=key)
     assert first.json()["id"] == second.json()["id"]
-    assert len(client.get("/v2/sessions").json()) == 1
+    assert len(client.get("/v2/sessions").json()["items"]) == 1
 
 
 def test_reused_idempotency_key_with_a_different_body_is_409() -> None:
@@ -84,7 +86,7 @@ def test_unknown_topic_is_404_and_stores_no_event() -> None:
     response = _create(client, "nope")
     assert response.status_code == 404
     assert response.json()["code"] == "not-found"
-    assert client.get("/v2/sessions").json() == []
+    assert client.get("/v2/sessions").json()["items"] == []
 
 
 def test_pack_id_that_is_not_the_loaded_pack_is_404() -> None:
@@ -113,13 +115,13 @@ def test_out_of_schema_body_is_422_and_stores_no_event(body: dict[str, Any]) -> 
         "/v2/sessions", json=body, headers={"Idempotency-Key": str(uuid.uuid4())}
     )
     assert response.status_code == 422
-    assert client.get("/v2/sessions").json() == []
+    assert client.get("/v2/sessions").json()["items"] == []
 
 
 def test_list_and_get_session() -> None:
     client = _client()
     created = _create(client, "network.dns.records").json()
-    listing = client.get("/v2/sessions").json()
+    listing = client.get("/v2/sessions").json()["items"]
     assert [s["id"] for s in listing] == [created["id"]]
     detail = client.get(f"/v2/sessions/{created['id']}")
     assert detail.status_code == 200
@@ -162,9 +164,9 @@ def test_list_and_get_are_scoped_to_the_configured_user() -> None:
     alice = _client(user_id="usr_alice", store=store)
     bob = _client(user_id="usr_bob", store=store)
     created = _create(alice, "network").json()
-    assert bob.get("/v2/sessions").json() == []
+    assert bob.get("/v2/sessions").json()["items"] == []
     assert bob.get(f"/v2/sessions/{created['id']}").status_code == 404
-    assert [s["id"] for s in alice.get("/v2/sessions").json()] == [created["id"]]
+    assert [s["id"] for s in alice.get("/v2/sessions").json()["items"]] == [created["id"]]
 
 
 def test_get_session_with_idle_minutes_never_reads_events_inside_an_open_transaction() -> None:
@@ -173,3 +175,15 @@ def test_get_session_with_idle_minutes_never_reads_events_inside_an_open_transac
     created = _create(client, "network").json()
     response = client.get(f"/v2/sessions/{created['id']}", params={"idle_minutes": 30})
     assert response.status_code == 200
+
+
+def test_list_sessions_is_paged_in_creation_order() -> None:
+    client = _client()
+    ids = [_create(client, "network").json()["id"] for _ in range(3)]
+    first = client.get("/v2/sessions", params={"limit": 2}).json()
+    assert [s["id"] for s in first["items"]] == ids[:2]
+    second = client.get("/v2/sessions", params={"limit": 2, "cursor": first["next_cursor"]}).json()
+    assert second == {"items": second["items"], "next_cursor": None}
+    assert [s["id"] for s in second["items"]] == ids[2:]
+    schema = load_merged_openapi_v2_spec()["paths"]["/sessions"]["get"]["responses"]["200"]
+    Draft202012Validator(schema["content"]["application/json"]["schema"]).validate(first)
