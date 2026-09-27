@@ -143,6 +143,8 @@ class _Transaction:
     ) -> tuple[Sequence[tuple[str, JsonObject]], str | None]:
         stmt = _view_select(view, key_prefix)
         if limit is None:
+            if after is not None:
+                stmt = stmt.where(_VIEW_DOCUMENTS.c.key.collate("C") > after)
             rows = self._conn().execute(stmt)
             return [(row.key, cast(JsonObject, row.document)) for row in rows], None
         page = select_page(

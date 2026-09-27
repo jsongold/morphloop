@@ -194,6 +194,20 @@ def test_list_view_pages_by_keyset(store: EventStoreV2, user: str) -> None:
         assert [k for k, _ in page] == ["ab"] and cursor is None
 
 
+def test_list_view_honors_after_with_no_limit(store: EventStoreV2, user: str) -> None:
+    """#207: an unbounded read (``limit=None``) must still apply the ``after``
+    keyset filter, matching the in-memory fake instead of returning every row."""
+    view = f"view_{_uid()}"
+    with store.transaction() as tx:
+        tx.append(_event(user))
+        for key in ["b", "a", "c", "ab"]:
+            tx.put_view(view, key, {"key": key})
+
+    with store.transaction() as tx:
+        page, cursor = tx.list_view(view, after="ab")
+        assert [k for k, _ in page] == ["b", "c"] and cursor is None
+
+
 def test_transaction_cannot_be_used_after_it_ends(store: EventStoreV2, user: str) -> None:
     with store.transaction() as tx:
         pass

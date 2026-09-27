@@ -17,13 +17,14 @@ from pydantic import Field
 from harness.api.problems import problem
 from harness.api.v2.deps import EventIdDep, EventStoreV2Dep, PackV2Dep, UserIdDep
 from harness.api.v2.models import Text, V2Model
+from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.chat import (
     AssistantConfig,
     AssistantError,
     ThreadNotFoundError,
-    list_messages,
     send_message,
 )
+from harness.core.chat.service import list_messages_page
 from harness.core.ports.json_types import JsonObject
 from harness.core.ports.llm import LLMError, LLMProvenance, LLMToolProvider
 
@@ -73,12 +74,18 @@ def _not_found(error: ThreadNotFoundError) -> JSONResponse:
 
 @router.get(PATH, response_model=None)
 def get_messages(
-    ws_id: str, thread_id: str, store: EventStoreV2Dep, user_id: UserIdDep
-) -> dict[str, list[JsonObject]] | JSONResponse:
+    ws_id: str, thread_id: str, store: EventStoreV2Dep, user_id: UserIdDep, page: CursorQuery
+) -> JsonObject | JSONResponse:
     try:
-        return {"messages": list(list_messages(store, user_id, ws_id, thread_id))}
+        messages, next_cursor = list_messages_page(
+            store, user_id, ws_id, thread_id, after=page.after, limit=page.limit
+        )
     except ThreadNotFoundError as error:
         return _not_found(error)
+    return {
+        "messages": list(messages),
+        "next_cursor": encode_cursor(next_cursor) if next_cursor else None,
+    }
 
 
 @router.post(PATH, response_model=None)

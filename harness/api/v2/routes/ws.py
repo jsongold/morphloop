@@ -9,6 +9,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from harness.api.v2.deps import EventIdDep, EventTransactionV2Dep, UserIdDep
 from harness.api.v2.models import Text, V2Model
+from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.ports.json_types import JsonObject, PlainJson
 from harness.core.ws import WsError, create_thread, create_ws, get_ws, list_threads, list_ws
 
@@ -76,9 +77,13 @@ def post_ws(
 def get_ws_list(
     tx: EventTransactionV2Dep,
     user_id: UserIdDep,
+    page: CursorQuery,
     session_id: Annotated[SessionId | None, Query()] = None,
 ) -> JsonObject:
-    return {"items": list_ws(tx, user_id=user_id, session_id=session_id)}
+    items, next_key = list_ws(
+        tx, user_id=user_id, session_id=session_id, after=page.after, limit=page.limit
+    )
+    return {"items": items, "next_cursor": encode_cursor(next_key) if next_key else None}
 
 
 @router.get("/ws/{ws_id}")
@@ -118,10 +123,21 @@ def get_threads(
     tx: EventTransactionV2Dep,
     user_id: UserIdDep,
     ws_id: str,
+    page: CursorQuery,
     target_highlight_id: Annotated[HighlightId | None, Query()] = None,
 ) -> JsonObject:
     try:
-        threads = list_threads(tx, ws_id, user_id=user_id, target_highlight_id=target_highlight_id)
+        threads, next_key = list_threads(
+            tx,
+            ws_id,
+            user_id=user_id,
+            target_highlight_id=target_highlight_id,
+            after=page.after,
+            limit=page.limit,
+        )
     except WsError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
-    return {"items": [_public_thread(doc) for doc in threads]}
+    return {
+        "items": [_public_thread(doc) for doc in threads],
+        "next_cursor": encode_cursor(next_key) if next_key else None,
+    }

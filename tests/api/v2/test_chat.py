@@ -63,7 +63,7 @@ def test_send_then_list(client: TestClient, llm: FakeToolProvider) -> None:
         .prompt_text
     )
     listed = client.get(URL)
-    assert listed.json() == {"messages": [body["sent"], body["reply"]]}
+    assert listed.json() == {"messages": [body["sent"], body["reply"]], "next_cursor": None}
 
 
 def test_llm_failure_is_502(client: TestClient, llm: FakeToolProvider) -> None:
@@ -95,4 +95,22 @@ def test_send_rejects_out_of_schema_body(client: TestClient, llm: FakeToolProvid
     assert client.post(URL, json={"text": "a\u0000b"}).status_code == 422
     assert client.post(URL, json={"text": ""}).status_code == 422
     assert llm.requests == []
-    assert client.get(URL).json() == {"messages": []}
+    assert client.get(URL).json() == {"messages": [], "next_cursor": None}
+
+
+def test_messages_page_by_cursor(client: TestClient, llm: FakeToolProvider) -> None:
+    # #177: one document per message, paged oldest first with an opaque cursor.
+    llm.script[:] = [text("r1"), text("r2")]
+    client.post(URL, json={"text": "q1"})
+    client.post(URL, json={"text": "q2"})
+    texts: list[str] = []
+    cursor = None
+    while True:
+        params = {"limit": 3, **({"cursor": cursor} if cursor else {})}
+        body = client.get(URL, params=params).json()
+        assert len(body["messages"]) <= 3
+        texts += [m["text"] for m in body["messages"]]
+        cursor = body["next_cursor"]
+        if cursor is None:
+            break
+    assert texts == ["q1", "r1", "q2", "r2"]
