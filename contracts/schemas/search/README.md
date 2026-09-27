@@ -33,6 +33,17 @@ serve once the backends exist. It mirrors the `kind`/`id` result shape
 `GET /notebook/search` (`contracts/openapi/v0.2/paths/notebook.yaml`)
 already uses, adding `mode`, `score` and `source`.
 
+## Writing the corpus
+
+`SearchIndex` (`harness/core/ports/search.py`) is the write side: it upserts
+and deletes `SearchDocument` rows keyed by (`kind`, `id`) in
+`search_documents` (`kind` is stored as `resource`, `id` as `source_id`).
+Each row carries its own `owner_user_id` (NULL = shared pack content) and
+`parent_id` (migration `c9e1f3a5b7d0_search_owner_parent.py`), so the learner
+filter and `SearchHit.parent_id` need no join to the owning resource.
+`harness/testing/search.py` is an in-memory fake of it (plus a naive keyword
+search over what it holds) for tests.
+
 ## Drill expected answers and holdout drills are never searchable
 
 Holdout drills (`sys:holdout`, the held-out transfer tasks of ADR-0011) are
@@ -51,7 +62,7 @@ type, carries only `kind`/`id`/`parent_id`/`score`/`source`.
 ## Ports
 
 `harness/core/ports/search.py` declares `KeywordSearchBackend`,
-`SemanticSearchBackend`, `Reranker` and `EmbeddingProvider` (ADR-0009): core
+`SemanticSearchBackend`, `Reranker`, `EmbeddingProvider` and `SearchIndex` (ADR-0009): core
 holds no implementation, only the Protocols an adapter under
 `harness/adapters/search/` (a later PR) implements.
 
