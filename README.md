@@ -203,6 +203,9 @@ morphloop migrate    # upgrade the database to head (MORPHLOOP_DATABASE_DIRECT_U
 morphloop rebuild    # rebuild the views from the event log
 ```
 
+`morphloop rebuild` rebuilds the SDK's own views only; an app that defines its own
+`View` subclasses must rebuild those itself (the CLI does not import app code).
+
 Environment variables (all optional unless noted; `create_app(...)` arguments win
 over them):
 

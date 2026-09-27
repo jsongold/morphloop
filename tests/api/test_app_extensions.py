@@ -4,7 +4,7 @@ artifact types are what `PackV2Dep` imports the pack with."""
 from __future__ import annotations
 
 import threading
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, ClassVar
 
@@ -119,7 +119,9 @@ def test_bare_app_schedules_the_sdk_claims_purge() -> None:
 
 def test_app_routes_use_the_v04_sdk_dependencies() -> None:
     app = build_app(extensions=[AppExtension(routers=(router,))])
-    app.state.claims = InMemoryClaimStore()
+    # A fixed clock: both calls land in the same rate-limit window.
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    app.state.claims = InMemoryClaimStore(clock=lambda: now)
     with TestClient(app) as client:
         first = client.get("/v2/probe/limited", params={"limit": 3})
         assert first.status_code == 200
