@@ -130,7 +130,7 @@ def create_app(
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=[REPLAYED_HEADER],
+        expose_headers=[REPLAYED_HEADER, "Retry-After"],
     )
 
     @app.get("/health")

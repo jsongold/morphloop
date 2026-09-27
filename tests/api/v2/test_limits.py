@@ -116,6 +116,21 @@ def test_rate_limit_refuses_past_limit_per_user(client: TestClient) -> None:
     assert client.get("/v2/fixed", headers=as_user("bob")).status_code == 200
 
 
+def test_cross_origin_429_exposes_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#238: an allowed browser origin must be able to read Retry-After on a 429."""
+    monkeypatch.delenv("WEB_ORIGINS", raising=False)
+    monkeypatch.setenv("WEB_ORIGIN", "http://localhost:3000")
+    client = make_client(InMemoryClaimStore())
+    headers = {**as_user("alice"), "Origin": "http://localhost:3000"}
+    for _ in range(2):
+        assert client.get("/v2/fixed", headers=headers).status_code == 200
+    response = client.get("/v2/fixed", headers=headers)
+    assert_rate_limited(response)
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    exposed = response.headers["access-control-expose-headers"].lower().split(", ")
+    assert "retry-after" in exposed
+
+
 def test_rate_limit_retry_after_comes_from_the_store_s_clock() -> None:
     """#240: Retry-After must be the store's own clock and window, not the worker's."""
     clock_time = datetime(2030, 1, 1, 0, 0, 10, tzinfo=UTC)  # far from wall-clock "now"
