@@ -140,6 +140,18 @@ def test_dev_provider_needs_no_ticket_or_token(monkeypatch: pytest.MonkeyPatch) 
     assert connect(client, f"?ticket={ticket}") == "usr_local"
 
 
+def test_ticket_issue_is_rate_limited_per_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_USER_SOCKET_TICKETS_PER_MINUTE", "1")
+    client = make_client(TwoUsers())
+    assert issue(client, "alice")
+    response = client.post("/v2/auth/socket-tickets", headers={"Authorization": "Bearer alice"})
+    assert response.status_code == 429
+    assert response.json()["code"] == "rate-limited"
+    assert int(response.headers["Retry-After"]) >= 1
+    # Another user has their own window.
+    assert issue(client, "bob")
+
+
 def test_production_requires_a_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MORPHLOOP_SOCKET_TICKET_SECRET")
     monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")

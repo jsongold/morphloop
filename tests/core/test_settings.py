@@ -184,3 +184,25 @@ def test_llm_timeout_seconds_must_be_positive(monkeypatch: pytest.MonkeyPatch, v
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_socket_tickets_per_minute_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MORPHLOOP_USER_SOCKET_TICKETS_PER_MINUTE", raising=False)
+
+    assert Settings().morphloop_user_socket_tickets_per_minute == 30
+
+
+def test_socket_tickets_per_minute_reads_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_USER_SOCKET_TICKETS_PER_MINUTE", "5")
+
+    assert Settings().morphloop_user_socket_tickets_per_minute == 5
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_socket_tickets_per_minute_must_be_positive(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("MORPHLOOP_USER_SOCKET_TICKETS_PER_MINUTE", value)
+
+    with pytest.raises(ValidationError):
+        Settings()
