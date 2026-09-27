@@ -12,7 +12,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from harness.core.ports.claims import ClaimStore, Refused, check_positive, check_window, slot_key
+from harness.core.ports.claims import ClaimStore, check_positive, check_window, slot_key
 
 
 def _utcnow() -> datetime:
@@ -43,7 +43,7 @@ class InMemoryClaimStore:
             if current is not None and current[0] == holder:
                 del self._leases[key]
 
-    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool | Refused:
+    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> float | None:
         secs = check_window(window)
         check_positive(limit=limit)
         with self._lock:
@@ -52,9 +52,9 @@ class InMemoryClaimStore:
             key = (subject, name, datetime.fromtimestamp(start_epoch, UTC))
             n = self._counters.get(key, 0)
             if n >= limit:
-                return Refused(start_epoch + secs - epoch)
+                return start_epoch + secs - epoch
             self._counters[key] = n + 1
-            return True
+            return None
 
     def acquire_slot(
         self, subject: str, name: str, *, holder: str, cap: int, ttl: timedelta

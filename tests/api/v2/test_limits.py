@@ -165,7 +165,7 @@ def exhaust_llm_quota(
     claims: InMemoryClaimStore, monkeypatch: pytest.MonkeyPatch, user: str
 ) -> None:
     monkeypatch.setenv("MORPHLOOP_USER_LLM_CALLS_PER_MINUTE", "1")
-    assert claims.consume(user, LLM, limit=1, window=timedelta(minutes=1))
+    assert claims.consume(user, LLM, limit=1, window=timedelta(minutes=1)) is None
 
 
 def test_notebook_generate_is_rate_limited(

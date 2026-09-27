@@ -95,33 +95,33 @@ def test_exactly_one_concurrent_claimant_wins(store: ClaimStore, key: str) -> No
 
 
 def test_consume_refuses_at_limit(store: ClaimStore, key: str) -> None:
-    """#240: a refusal is falsy but carries the store clock's window remainder."""
+    """#240: a refusal carries the store clock's window remainder, not just a bool."""
     results = [store.consume(key, "calls", limit=3, window=HOUR) for _ in range(5)]
-    assert results[:3] == [True, True, True]
+    assert results[:3] == [None, None, None]
     for refused in results[3:]:
-        assert not refused
+        assert refused is not None
         assert 0 < refused <= HOUR.total_seconds()
-    assert store.consume(key, "other", limit=3, window=HOUR)
-    assert store.consume(f"{key}_2", "calls", limit=3, window=HOUR)
+    assert store.consume(key, "other", limit=3, window=HOUR) is None
+    assert store.consume(f"{key}_2", "calls", limit=3, window=HOUR) is None
 
 
 def test_concurrent_consume_never_exceeds_limit(store: ClaimStore, key: str) -> None:
     allowed = race(THREADS, lambda _: store.consume(key, "calls", limit=5, window=HOUR))
-    assert allowed.count(True) == 5
+    assert allowed.count(None) == 5
     refused = store.consume(key, "calls", limit=5, window=HOUR)
-    assert not refused
+    assert refused is not None
     assert 0 < refused <= HOUR.total_seconds()
 
 
 def test_consume_starts_over_in_the_next_window(store: ClaimStore, key: str) -> None:
     window = timedelta(seconds=1)
     time.sleep(1 - time.time() % 1 + 0.05)  # just past a window boundary
-    assert store.consume(key, "calls", limit=1, window=window) is True
+    assert store.consume(key, "calls", limit=1, window=window) is None
     refused = store.consume(key, "calls", limit=1, window=window)
-    assert not refused
+    assert refused is not None
     assert 0 < refused <= 1
     time.sleep(1)
-    assert store.consume(key, "calls", limit=1, window=window) is True
+    assert store.consume(key, "calls", limit=1, window=window) is None
 
 
 def test_concurrent_slots_never_exceed_cap(store: ClaimStore, key: str) -> None:

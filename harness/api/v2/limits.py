@@ -58,7 +58,7 @@ def quota(
 
         def charge() -> None:
             left = claims.consume(user_id, name, limit=cap, window=window)
-            if not left:
+            if left is not None:
                 raise rate_limited(f"more than {cap} {name} calls per {window}", math.ceil(left))
 
         return charge

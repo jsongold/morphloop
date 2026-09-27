@@ -42,10 +42,10 @@ def test_lease_expires_after_ttl(store: InMemoryClaimStore, clock: Clock) -> Non
 def test_counter_resets_in_next_window(store: InMemoryClaimStore, clock: Clock) -> None:
     minute = timedelta(minutes=1)
     clock.now = T0 + timedelta(seconds=59)
-    assert store.consume("u", "calls", limit=1, window=minute)
-    assert not store.consume("u", "calls", limit=1, window=minute)
+    assert store.consume("u", "calls", limit=1, window=minute) is None
+    assert store.consume("u", "calls", limit=1, window=minute) is not None
     clock.now = T0 + timedelta(seconds=60)
-    assert store.consume("u", "calls", limit=1, window=minute)
+    assert store.consume("u", "calls", limit=1, window=minute) is None
 
 
 def test_refusal_returns_the_store_clock_s_window_remainder(
@@ -54,9 +54,8 @@ def test_refusal_returns_the_store_clock_s_window_remainder(
     """#240: Retry-After must come from the store's clock, not the caller's."""
     minute = timedelta(minutes=1)
     clock.now = T0 + timedelta(seconds=10)
-    assert store.consume("u", "calls", limit=1, window=minute) is True
+    assert store.consume("u", "calls", limit=1, window=minute) is None
     refused = store.consume("u", "calls", limit=1, window=minute)
-    assert not refused
     assert refused == 50  # window [T0, T0+60s), 10s elapsed -> 50s left
 
 
