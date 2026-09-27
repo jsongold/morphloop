@@ -23,7 +23,10 @@ The rest of the surface is what an artifact type with its own routes needs: the
 v2 event store Port and its value types, the ``View`` base, the per-request
 FastAPI dependencies of ``/v2`` (transaction, pack, user, event id, ``ws_or_404``),
 the problem response, the lab runtime / terminal bridge Ports with their Docker
-adapters, the domain adapter registry and the contract schemas. Test support
+adapters, the domain adapter registry and the contract schemas. v0.4 adds the
+WebSocket user dependency, cursor pagination, per-user limits, the claims Port,
+periodic jobs (``AppExtension(periodic_jobs=...)``) and the search Ports with
+their Postgres adapter. Test support
 (fakes, an in-memory store, contract validation) is ``harness.testing``. Anything
 not exported here is internal and may change between SDK versions.
 """
@@ -32,19 +35,26 @@ from harness.adapters.auth import DevAuthProvider, OidcAuthProvider
 from harness.adapters.docker_lab import DockerLabRuntime
 from harness.adapters.postgres import migrate
 from harness.adapters.postgres.engine import create_engine_from_env
+from harness.adapters.postgres.search_fts import PostgresSearchIndex
 from harness.adapters.pty import DockerTerminalBridge
 from harness.adapters.supabase import supabase_auth, supabase_engine
 from harness.api.app import AppExtension, create_app
+from harness.api.periodic import CLAIMS_PURGE, PeriodicJob
 from harness.api.problems import problem
+from harness.api.v2.claims import ClaimsDep
+from harness.api.v2.db import DbProvider
 from harness.api.v2.deps import (
     EventIdDep,
     EventTransactionV2Dep,
     PackV2Dep,
+    SocketUserIdDep,
     UserIdDep,
     build_event_store_v2,
     user_id_of,
     ws_or_404,
 )
+from harness.api.v2.limits import concurrency_slot, rate_limit
+from harness.api.v2.pagination import CursorPage, CursorQuery, encode_cursor
 from harness.core.artifact import (
     Artifact,
     UnknownArtifactTypeError,
@@ -63,6 +73,7 @@ from harness.core.domain_adapter import (
 )
 from harness.core.pack.v2 import PackV2, PackV2ImportError, import_pack_v2
 from harness.core.ports.auth import AuthError, AuthProvider, AuthUnavailableError
+from harness.core.ports.claims import ClaimStore
 from harness.core.ports.events_v2 import (
     ActorV2,
     EventIdConflictError,
@@ -82,6 +93,14 @@ from harness.core.ports.lab_runtime import (
     LabRuntimeError,
     LabSpec,
     ResourceLimits,
+)
+from harness.core.ports.search import (
+    KeywordSearchBackend,
+    KeywordSearchRequest,
+    SearchBackendError,
+    SearchDocument,
+    SearchHit,
+    SearchIndex,
 )
 from harness.core.ports.terminal_bridge import (
     TerminalBridge,
@@ -113,14 +132,19 @@ __all__ = [
     "OidcAuthProvider",
     "supabase_auth",
     # DB providers (the app picks one: create_app(db=...))
+    "DbProvider",
     "create_engine_from_env",
     "supabase_engine",
     # /v2 request dependencies and responses
+    "CursorPage",
+    "CursorQuery",
     "EventIdDep",
     "EventTransactionV2Dep",
     "PackV2Dep",
+    "SocketUserIdDep",
     "UserIdDep",
     "build_event_store_v2",
+    "encode_cursor",
     "problem",
     "user_id_of",
     "ws_or_404",
@@ -163,4 +187,20 @@ __all__ = [
     "DomainAdapterRegistry",
     "TerminalTool",
     "run_check",
+    # per-user limits, claims and periodic jobs (the app sets `app.state.claims`
+    # to replace the Postgres store; `AppExtension(periodic_jobs=...)`)
+    "CLAIMS_PURGE",
+    "ClaimStore",
+    "ClaimsDep",
+    "PeriodicJob",
+    "concurrency_slot",
+    "rate_limit",
+    # search Ports and the Postgres keyword/index adapter
+    "KeywordSearchBackend",
+    "KeywordSearchRequest",
+    "PostgresSearchIndex",
+    "SearchBackendError",
+    "SearchDocument",
+    "SearchHit",
+    "SearchIndex",
 ]
