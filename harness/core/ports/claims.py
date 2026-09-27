@@ -67,10 +67,12 @@ class ClaimStore(Protocol):
         """Drop ``holder``'s lease on ``key``; a no-op if it holds none."""
         ...
 
-    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool:
-        """Count one call in the current window; ``False`` (not counted) once
-        ``limit`` calls are already counted there. ``ValueError`` if ``window``
-        exceeds :data:`MAX_COUNTER_WINDOW`."""
+    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> float | None:
+        """Count one call in the current window; ``None`` once counted. Past
+        ``limit`` calls already counted there, refuse without counting: return
+        the seconds left in the window, read off the store's own clock (the
+        database clock for Postgres), for the caller's own ``Retry-After``
+        (#240). ``ValueError`` if ``window`` exceeds :data:`MAX_COUNTER_WINDOW`."""
         ...
 
     def acquire_slot(

@@ -19,7 +19,6 @@ across API processes.
 from __future__ import annotations
 
 import math
-import time
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import timedelta
@@ -50,17 +49,16 @@ def quota(
     Charge where the cost happens (e.g. each LLM call, via :class:`ChargedLLM`),
     so a replay or a call-free path is never refused. ``limit`` ``None`` reads
     ``MORPHLOOP_USER_LLM_CALLS_PER_MINUTE`` per request. Windows are aligned to
-    the epoch (the store's rule), so ``Retry-After`` is the time left in one.
+    the epoch (the store's rule); on refusal, ``Retry-After`` is the time left
+    in the window as the store's own clock sees it (#240).
     """
-    seconds = window.total_seconds()
 
     def dependency(claims: ClaimsDep, user_id: UserIdDep) -> Callable[[], None]:
         cap = limit if limit is not None else Settings().morphloop_user_llm_calls_per_minute
 
         def charge() -> None:
-            if not claims.consume(user_id, name, limit=cap, window=window):
-                # ponytail: worker clock, not the store's; off by the skew near a boundary.
-                left = seconds - time.time() % seconds
+            left = claims.consume(user_id, name, limit=cap, window=window)
+            if left is not None:
                 raise rate_limited(f"more than {cap} {name} calls per {window}", math.ceil(left))
 
         return charge
