@@ -26,6 +26,7 @@ from functools import partial
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from harness.adapters.litellm.provider import MAX_RETRIES
 from harness.adapters.postgres.engine import ping
 from harness.api.periodic import PeriodicJob, app_claims, claims_purge, start_scheduler
 from harness.api.problems import install_handlers
@@ -42,16 +43,19 @@ REPLAYED_HEADER = "Idempotent-Replayed"
 
 
 def check_llm_timeout_under_lease(settings: Settings | None = None) -> None:
-    """Refuse to start unless the LLM call timeout stays under the judge
-    single-flight lease TTL (#203): a call that outlives the lease can be
-    retried by another worker before the first reply lands, burning a second
-    LLM call (`harness.core.drill.judge.JUDGE_LEASE_TTL`)."""
+    """Refuse to start unless the LLM call's worst case -- one attempt plus
+    litellm's own retries, each with a fresh timeout -- stays under the judge
+    single-flight lease TTL (#203, #242): outliving the lease lets another
+    worker retry the same judgment before the first reply lands, burning a
+    second LLM call (`harness.core.drill.judge.JUDGE_LEASE_TTL`,
+    `harness.adapters.litellm.provider.MAX_RETRIES`)."""
     settings = settings or Settings()
-    llm_timeout = timedelta(seconds=settings.morphloop_llm_timeout_seconds)
-    if llm_timeout >= JUDGE_LEASE_TTL:
+    worst_case = timedelta(seconds=settings.morphloop_llm_timeout_seconds * (1 + MAX_RETRIES))
+    if worst_case >= JUDGE_LEASE_TTL:
         raise ValueError(
-            f"MORPHLOOP_LLM_TIMEOUT_SECONDS ({settings.morphloop_llm_timeout_seconds}s) must be "
-            f"less than the judge lease TTL ({JUDGE_LEASE_TTL.total_seconds()}s)"
+            f"MORPHLOOP_LLM_TIMEOUT_SECONDS ({settings.morphloop_llm_timeout_seconds}s) x "
+            f"(1 + {MAX_RETRIES} retries) = {worst_case.total_seconds()}s must be less than "
+            f"the judge lease TTL ({JUDGE_LEASE_TTL.total_seconds()}s)"
         )
 
 
