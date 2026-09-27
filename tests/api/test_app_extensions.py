@@ -6,17 +6,29 @@ from __future__ import annotations
 import threading
 from datetime import timedelta
 from pathlib import Path
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
 import pytest
 from api_harness import build_app
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, WebSocket
 from fastapi.testclient import TestClient
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
-from harness.api.periodic import CLAIMS_PURGE, PeriodicJob
-from harness.api.v2.deps import PackV2Dep
-from harness.sdk import AppExtension, Artifact, PackV2ImportError
+from harness.sdk import (
+    CLAIMS_PURGE,
+    AppExtension,
+    Artifact,
+    ClaimsDep,
+    CursorQuery,
+    PackV2Dep,
+    PackV2ImportError,
+    PeriodicJob,
+    SocketUserIdDep,
+    UserIdDep,
+    concurrency_slot,
+    encode_cursor,
+    rate_limit,
+)
 from harness.testing.claims import InMemoryClaimStore
 
 PACK_DIR = Path(__file__).parents[1] / "contracts/fixtures/pack-v2/valid/dns-pack"
@@ -27,11 +39,26 @@ class Probe(Artifact):
 
 
 router = APIRouter(prefix="/probe")
+LabSlot = Annotated[str, Depends(concurrency_slot("probe-lab", cap=1))]
 
 
 @router.get("/ping")
 def ping() -> dict[str, bool]:
     return {"ok": True}
+
+
+@router.get("/limited", dependencies=[Depends(rate_limit("probe", limit=1))])
+def limited(
+    user_id: UserIdDep, page: CursorQuery, claims: ClaimsDep, slot: LabSlot
+) -> dict[str, object]:
+    return {"user_id": user_id, "limit": page.limit, "slot": slot, "next": encode_cursor("k", "c")}
+
+
+@router.websocket("/socket")
+async def socket(websocket: WebSocket, user_id: SocketUserIdDep) -> None:
+    await websocket.accept()
+    await websocket.send_text(user_id)
+    await websocket.close()
 
 
 @router.get("/pack")
@@ -88,3 +115,17 @@ def test_bare_app_schedules_the_sdk_claims_purge() -> None:
     app = build_app()
     with TestClient(app):
         assert [j.id for j in app.state.scheduler.get_jobs()] == [CLAIMS_PURGE]
+
+
+def test_app_routes_use_the_v04_sdk_dependencies() -> None:
+    app = build_app(extensions=[AppExtension(routers=(router,))])
+    app.state.claims = InMemoryClaimStore()
+    with TestClient(app) as client:
+        first = client.get("/v2/probe/limited", params={"limit": 3})
+        assert first.status_code == 200
+        body = first.json()
+        assert (body["limit"], body["next"]) == (3, encode_cursor("k", "c"))
+        assert body["slot"].startswith("slot:")
+        assert client.get("/v2/probe/limited").status_code == 429
+        with client.websocket_connect("/v2/probe/socket") as ws:
+            assert ws.receive_text() == body["user_id"]

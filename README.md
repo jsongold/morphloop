@@ -188,8 +188,42 @@ validates every artifact `spec` with the type's schema and validator; a pack tha
 names another type is refused. `harness.sdk` also exports what
 an artifact type with routes needs (the v2 event store Port and value types, the
 `View` base, the `/v2` request dependencies, `problem()`, the lab and terminal
-Ports with their Docker adapters, the domain adapter registry); test support
-(fakes, the in-memory store, contract validation) is `harness.testing`.
+Ports with their Docker adapters, the domain adapter registry, and from v0.4
+`SocketUserIdDep`, `CursorQuery`/`encode_cursor`, `rate_limit`/`concurrency_slot`,
+the `ClaimStore` Port with `ClaimsDep`, `PeriodicJob` for
+`AppExtension(periodic_jobs=...)`, and the search Ports with `PostgresSearchIndex`);
+test support (fakes, the in-memory store, contract validation) is `harness.testing`.
+
+### Deploying (v0.4)
+
+Each deploy runs, in order, before starting the API:
+
+```sh
+morphloop migrate    # upgrade the database to head (MORPHLOOP_DATABASE_DIRECT_URL when set)
+morphloop rebuild    # rebuild the views from the event log
+```
+
+Environment variables (all optional unless noted; `create_app(...)` arguments win
+over them):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MORPHLOOP_ENVIRONMENT` | `development` | `production` refuses dev-only defaults at startup |
+| `DATABASE_URL` | local `morphloop` Postgres | the app's database |
+| `MORPHLOOP_DATABASE_DIRECT_URL` | unset | direct (non-pooled) URL for `morphloop migrate` |
+| `MORPHLOOP_DB_PROVIDER` | `postgres` | `postgres` or `supabase` |
+| `MORPHLOOP_AUTH_PROVIDER` | `dev` | `dev` (refused in production), `oidc` or `supabase` |
+| `MORPHLOOP_OIDC_ISSUER` / `_AUDIENCE` / `_JWKS_URL` | unset | required for `oidc` |
+| `MORPHLOOP_OIDC_ALGORITHMS` / `_LEEWAY` | `RS256,ES256` / `60` | JWT verification |
+| `MORPHLOOP_SUPABASE_PROJECT_REF` or `MORPHLOOP_SUPABASE_URL` | unset | required for `supabase` |
+| `MORPHLOOP_SOCKET_TICKET_SECRET` | unset | **required in production**: signs WebSocket tickets |
+| `MORPHLOOP_SOCKET_TICKET_TTL_SECONDS` | `60` | WebSocket ticket lifetime |
+| `MORPHLOOP_USER_LLM_CALLS_PER_MINUTE` | `20` | per-user LLM quota |
+| `MORPHLOOP_USER_MAX_CONCURRENT_LABS` | `1` | per-user `concurrency_slot` cap |
+| `MORPHLOOP_USER_SOCKET_TICKETS_PER_MINUTE` | `30` | per-user ticket issue rate |
+| `MORPHLOOP_LLM_TIMEOUT_SECONDS` | `60` | LLM call timeout (must stay under the judge lease) |
+| `MORPHLOOP_EMBEDDING_DIMS` | `1536` | pgvector column size, fixed at migration |
+| `WEB_ORIGINS` | unset | extra comma-separated CORS origins besides `WEB_ORIGIN` |
 
 ### Using Supabase (auth + DB)
 
@@ -245,11 +279,13 @@ app = create_app(auth=supabase_auth(project_ref="<ref>"), db=supabase_engine)
    revoke all on table
      public.events_v2, public.view_documents_v2, public.generated_documents,
      public.learning_events, public.projection_documents, public.claims,
-     public.usage_counters, public.search_documents, public.search_embeddings
+     public.usage_counters, public.search_documents, public.search_embeddings,
+     public.alembic_version
    from anon, authenticated;
    ```
 
-   This is the table list as of this SDK version (see `migrations/versions/`); an
+   This is the table list as of this SDK version (see `migrations/versions/`, plus
+   Alembic's own `alembic_version`); an
    upgrade that adds tables needs the close/migrate/revoke/reopen sequence again,
    naming the new tables too. Supabase is separately rolling out opt-in Data API
    exposure for newly created tables (no auto-grant unless you `grant` explicitly),
