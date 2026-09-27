@@ -105,6 +105,23 @@ def test_list_ws_invalid_session_id_is_a_client_error(client: Any) -> None:
     assert len(client.store.read()) == 0
 
 
+def test_list_ws_cursor_from_another_user_is_400(client: Any) -> None:
+    # #226: a syntactically valid cursor from another user's ws index must
+    # not silently page this user's key range.
+    for _ in range(2):
+        client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key())
+    page = client.get("/v2/ws", params={"limit": 1}).json()
+    foreign_cursor = page["next_cursor"]
+    assert foreign_cursor is not None
+    client.app.dependency_overrides[user_id_of] = lambda: "usr_other"
+    try:
+        response = client.get("/v2/ws", params={"cursor": foreign_cursor})
+    finally:
+        del client.app.dependency_overrides[user_id_of]
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid-request"
+
+
 def test_create_thread(client: Any) -> None:
     ws = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()
     key = _key()
@@ -238,6 +255,21 @@ def test_list_threads_invalid_target_highlight_id_is_a_client_error(client: Any)
         f"/v2/ws/{ws['ws_id']}/threads", params={"target_highlight_id": "not-a-highlight-id"}
     )
     assert resp.status_code == 400
+
+
+def test_list_threads_cursor_from_another_ws_is_400(client: Any) -> None:
+    # #221: a syntactically valid cursor for a different ws's threads must
+    # not silently page this ws's key range.
+    ws_a = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()["ws_id"]
+    ws_b = client.post("/v2/ws", json={"session_id": "ses_1"}, headers=_key()).json()["ws_id"]
+    client.post(f"/v2/ws/{ws_a}/threads", headers=_key())
+    client.post(f"/v2/ws/{ws_a}/threads", json={"target": {"kind": "artifact"}}, headers=_key())
+    page = client.get(f"/v2/ws/{ws_a}/threads", params={"limit": 1}).json()
+    foreign_cursor = page["next_cursor"]
+    assert foreign_cursor is not None
+    response = client.get(f"/v2/ws/{ws_b}/threads", params={"cursor": foreign_cursor})
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid-request"
 
 
 def _pages(client: Any, url: str, **params: Any) -> list[list[str]]:

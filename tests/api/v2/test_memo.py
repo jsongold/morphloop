@@ -197,6 +197,21 @@ def test_body_with_nul_is_422_and_nothing_is_stored(
     assert _memo_events(store) == []
 
 
+def test_cursor_from_another_ws_is_400(client: TestClient, store: ConnectionTrackingStore) -> None:
+    # #221: a syntactically valid cursor for a different ws must not silently
+    # page ws_b's key range; it must be rejected, not return 200.
+    seed_ws(store, "ws_a")
+    seed_ws(store, "ws_b")
+    _post(client, "ws_a", {"actor": "learner", "body": "a"})
+    _post(client, "ws_a", {"actor": "learner", "body": "b"})
+    page_a = client.get("/v2/ws/ws_a/memo/entries", params={"limit": 1}).json()
+    foreign_cursor = page_a["next_cursor"]
+    assert foreign_cursor is not None
+    response = client.get("/v2/ws/ws_b/memo/entries", params={"cursor": foreign_cursor})
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid-request"
+
+
 def test_list_is_scoped_to_its_own_ws(client: TestClient, store: ConnectionTrackingStore) -> None:
     seed_ws(store, "ws_a")
     seed_ws(store, "ws_b")

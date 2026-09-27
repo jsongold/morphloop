@@ -214,6 +214,20 @@ def test_highlights_are_scoped_to_their_ws(client: TestClient) -> None:
     assert other_ws.json() == {"highlights": [], "next_cursor": None}
 
 
+def test_cursor_from_another_ws_is_400(client: TestClient) -> None:
+    # #221: a syntactically valid cursor for a different ws must not silently
+    # page ws_b's key range; it must be rejected, not return 200 with an
+    # empty/wrong page.
+    client.post("/v2/ws/ws_a/highlights", json={"anchor": _anchor()})
+    client.post("/v2/ws/ws_a/highlights", json={"anchor": _anchor()})
+    page_a = client.get("/v2/ws/ws_a/highlights", params={"limit": 1}).json()
+    foreign_cursor = page_a["next_cursor"]
+    assert foreign_cursor is not None
+    response = client.get("/v2/ws/ws_b/highlights", params={"cursor": foreign_cursor})
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid-request"
+
+
 def test_create_resend_with_same_key_replays(client: TestClient) -> None:
     headers = {"Idempotency-Key": "0190f5a2-7c3e-7d4b-8a1f-0000000000aa"}
     first = client.post(

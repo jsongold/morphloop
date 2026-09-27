@@ -169,6 +169,22 @@ def test_list_and_get_are_scoped_to_the_configured_user() -> None:
     assert [s["id"] for s in alice.get("/v2/sessions").json()["items"]] == [created["id"]]
 
 
+def test_cursor_from_another_user_is_400() -> None:
+    # #226: a syntactically valid cursor from another user's session index
+    # must not silently page this user's key range.
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    alice = _client(user_id="usr_alice", store=store)
+    bob = _client(user_id="usr_bob", store=store)
+    _create(alice, "network")
+    _create(alice, "network")
+    page_alice = alice.get("/v2/sessions", params={"limit": 1}).json()
+    foreign_cursor = page_alice["next_cursor"]
+    assert foreign_cursor is not None
+    response = bob.get("/v2/sessions", params={"cursor": foreign_cursor})
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid-request"
+
+
 def test_get_session_with_idle_minutes_never_reads_events_inside_an_open_transaction() -> None:
     tracking_store = ConnectionTrackingStore(InMemoryEventStoreV2(ContractSchemas.load()))
     client = _client(store=tracking_store)
