@@ -37,8 +37,10 @@ class InMemoryClaimStore:
             return True
 
     def release(self, key: str, holder: str) -> None:
+        """A no-op if ``key`` has no lease, or its holder differs (#206)."""
         with self._lock:
-            if self._leases.get(key, ("",))[0] == holder:
+            current = self._leases.get(key)
+            if current is not None and current[0] == holder:
                 del self._leases[key]
 
     def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool:
