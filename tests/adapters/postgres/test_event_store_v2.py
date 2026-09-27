@@ -235,6 +235,41 @@ def test_concurrent_resends_store_one_event(store: EventStoreV2, user: str) -> N
     assert len(store.read(user_id=user)) == 1
 
 
+def test_lock_view_orders_same_key_appends_by_commit(store: EventStoreV2, user: str) -> None:
+    """#215: B locks the same document while A is open, so B appends only after
+    A commits; a keyset pager that saw A's key cannot skip B's (larger) one."""
+    view, lock = f"view_{_uid()}", "thread"
+    with store.transaction() as tx:
+        tx.put_view(view, lock, {})
+
+    def send(tx: EventTransactionV2) -> str:
+        tx.lock_view(view, lock)
+        position = tx.append(_event(user)).event.position
+        tx.put_view(view, f"m/{position:020d}", {})
+        return f"m/{position:020d}"
+
+    b_done = threading.Event()
+    b_key: list[str] = []
+
+    def other() -> None:
+        with store.transaction() as tx:
+            b_key.append(send(tx))
+        b_done.set()
+
+    b = threading.Thread(target=other)
+    with store.transaction() as tx:
+        a_key = send(tx)
+        b.start()
+        assert not b_done.wait(0.3), "B must wait for A's lock"
+    with store.transaction() as tx:
+        page, _ = tx.list_view(view, key_prefix="m/")
+        seen = [k for k, _ in page]
+    b.join()
+    with store.transaction() as tx:
+        rest, _ = tx.list_view(view, key_prefix="m/", after=seen[-1])
+    assert seen[0] == a_key and seen + [k for k, _ in rest] == [a_key, *b_key]
+
+
 _SEED = {
     "events_v2": "INSERT INTO events_v2 (id, type, actor, user_id, payload) "
     "VALUES (gen_random_uuid()::text, 'x.y', 'system', 'usr_1', '{}')",

@@ -90,6 +90,9 @@ class _Transaction:
     def get(self, event_id: str) -> StoredEventV2 | None:
         return self._open().by_id.get(event_id)
 
+    def lock_view(self, view: str, key: str) -> None:
+        self._open()  # every transaction already holds the store-wide lock
+
     def get_view(self, view: str, key: str) -> JsonObject | None:
         return self._open().views.get(view, {}).get(key)
 
