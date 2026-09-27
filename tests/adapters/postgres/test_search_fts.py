@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -13,8 +14,12 @@ from harness.core.ports.search import KeywordSearchRequest, SearchDocument
 
 
 @pytest.fixture
-def engine(pg_url: str) -> Engine:
-    return create_engine(pg_url)
+def engine(pg_url: str) -> Iterator[Engine]:
+    engine = create_engine(pg_url)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture
