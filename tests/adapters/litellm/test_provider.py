@@ -17,6 +17,7 @@ import pytest
 from litellm.types.utils import Choices, Message, ModelResponse
 
 from harness.adapters.litellm import LiteLLMProvider
+from harness.adapters.litellm.provider import MAX_RETRIES
 from harness.core.ports import (
     LLMError,
     LLMMessage,
@@ -153,6 +154,40 @@ def test_provider_timeout_wins_over_a_pack_declared_timeout() -> None:
     assert completion.calls[0]["timeout"] == 10
 
 
+def test_provenance_echoes_the_timeout_actually_sent_not_a_pack_declared_one() -> None:
+    # #243: a pack-declared "timeout" must not be echoed back once the
+    # provider has overridden it -- the persisted provenance must match what
+    # litellm.completion() actually received.
+    completion = _FakeCompletion([_response('{"rationale": "ok", "confidence": 0.5}')])
+    llm = _provenance(generation_parameters={"timeout": 999})
+
+    provenance = (
+        LiteLLMProvider(completion=completion, timeout=10)
+        .complete_structured(_request(llm=llm))
+        .provenance
+    )
+
+    assert provenance.generation_parameters["timeout"] == 10
+
+
+def test_kwargs_send_an_explicit_max_retries() -> None:
+    # #242: an explicit, known retry count (not litellm's own default) is
+    # what lets the startup check bound the worst case against the lease.
+    completion = _FakeCompletion([_response('{"rationale": "ok", "confidence": 0.5}')])
+
+    LiteLLMProvider(completion=completion).complete_structured(_request())
+
+    assert completion.calls[0]["max_retries"] == MAX_RETRIES
+
+
+def test_provenance_echoes_the_max_retries_actually_sent() -> None:
+    completion = _FakeCompletion([_response('{"rationale": "ok", "confidence": 0.5}')])
+
+    provenance = LiteLLMProvider(completion=completion).complete_structured(_request()).provenance
+
+    assert provenance.generation_parameters["max_retries"] == MAX_RETRIES
+
+
 # --- Success --------------------------------------------------------------
 
 
@@ -213,7 +248,7 @@ def test_provenance_records_the_model_actually_used_and_the_pack_prompt() -> Non
     completion = _FakeCompletion(
         [_response('{"rationale": "ok", "confidence": 0.5}', model="gpt-5-2025-08-07")]
     )
-    provider = LiteLLMProvider(completion=completion)
+    provider = LiteLLMProvider(completion=completion, timeout=10)
     request = _request()
 
     provenance = provider.complete_structured(request).provenance
@@ -223,7 +258,12 @@ def test_provenance_records_the_model_actually_used_and_the_pack_prompt() -> Non
         "model": "gpt-5-2025-08-07",
         "prompt_id": "evaluator-judgment",
         "prompt_version": "1",
-        "generation_parameters": {"max_tokens": 1024, "temperature": 0},
+        "generation_parameters": {
+            "max_tokens": 1024,
+            "temperature": 0,
+            "timeout": 10,
+            "max_retries": MAX_RETRIES,
+        },
     }
 
 

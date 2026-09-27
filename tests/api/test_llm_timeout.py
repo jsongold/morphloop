@@ -1,13 +1,17 @@
-"""Startup refuses an LLM timeout that leaves no margin under the judge lease (#203)."""
+"""Startup refuses an LLM timeout whose worst case (one attempt plus litellm's
+own retries) leaves no margin under the judge lease (#203, #242)."""
 
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
 
+from harness.adapters.litellm.provider import MAX_RETRIES
 from harness.api.app import check_llm_timeout_under_lease, create_app
 from harness.core.drill.judge import JUDGE_LEASE_TTL
 from harness.core.settings import Settings
+
+_ATTEMPTS = 1 + MAX_RETRIES
 
 
 def test_default_settings_pass_the_check(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -23,15 +27,27 @@ def test_timeout_equal_to_the_lease_is_rejected() -> None:
         check_llm_timeout_under_lease(settings)
 
 
-def test_timeout_over_the_lease_is_rejected() -> None:
-    settings = Settings(morphloop_llm_timeout_seconds=JUDGE_LEASE_TTL.total_seconds() + 1)
+def test_worst_case_equal_to_the_lease_is_rejected() -> None:
+    # Individually under the lease, but (1 + MAX_RETRIES) attempts reach it exactly.
+    settings = Settings(morphloop_llm_timeout_seconds=JUDGE_LEASE_TTL.total_seconds() / _ATTEMPTS)
 
     with pytest.raises(ValueError, match="judge lease TTL"):
         check_llm_timeout_under_lease(settings)
 
 
-def test_timeout_under_the_lease_is_accepted() -> None:
-    settings = Settings(morphloop_llm_timeout_seconds=JUDGE_LEASE_TTL.total_seconds() - 1)
+def test_worst_case_over_the_lease_is_rejected() -> None:
+    # This is #242: a per-attempt timeout that is individually well under the
+    # lease can still, across litellm's retries, run past it.
+    settings = Settings(morphloop_llm_timeout_seconds=JUDGE_LEASE_TTL.total_seconds() / 2)
+
+    with pytest.raises(ValueError, match="judge lease TTL"):
+        check_llm_timeout_under_lease(settings)
+
+
+def test_worst_case_under_the_lease_is_accepted() -> None:
+    settings = Settings(
+        morphloop_llm_timeout_seconds=JUDGE_LEASE_TTL.total_seconds() / _ATTEMPTS - 1
+    )
 
     check_llm_timeout_under_lease(settings)  # does not raise
 

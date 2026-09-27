@@ -77,6 +77,7 @@ checked against the declared tool's ``parameters`` like structured output.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, Protocol, cast
 
@@ -92,6 +93,7 @@ from harness.core.ports import (
 )
 from harness.core.ports.json_types import PlainJson, to_plain_object
 from harness.core.ports.llm import (
+    GenerationParameter,
     LLMMessage,
     LLMProvenance,
     LLMTool,
@@ -101,6 +103,14 @@ from harness.core.ports.llm import (
     LLMToolResult,
 )
 from harness.core.settings import Settings
+
+# #242: litellm's OpenAI path retries a timed-out request by default
+# (openai.DEFAULT_MAX_RETRIES = 2, litellm/llms/openai/openai.py), each
+# attempt getting a fresh `timeout`. Sending an explicit, known count here
+# (unchanged from that default) lets `harness.api.app.check_llm_timeout_under_lease`
+# bound the worst case (1 + MAX_RETRIES) * timeout against the judge lease
+# instead of trusting litellm's own default to stay put.
+MAX_RETRIES = 2
 
 
 class CompletionCallable(Protocol):
@@ -134,18 +144,26 @@ class LiteLLMProvider:
         )
         self._timeout = Settings().morphloop_llm_timeout_seconds if timeout is None else timeout
 
-    def _kwargs(self, llm: LLMProvenance) -> dict[str, PlainJson]:
-        """``generation_parameters`` plus this provider's timeout.
+    def _kwargs(self, llm: LLMProvenance) -> dict[str, GenerationParameter]:
+        """``generation_parameters`` plus this provider's timeout and retry count.
 
         Ours wins over a pack-declared ``timeout``: the safety margin under
         the judge lease (#203) is an app concern (ADR-0010), not a pack's to
         override, and a duplicate ``timeout=`` keyword would otherwise raise.
+        This is also the single dict actually sent to ``litellm.completion``,
+        so ``_echo`` reuses it verbatim for provenance (#243): what a pack
+        declared never overrides what was actually sent.
         """
-        return {**dict(llm.generation_parameters), "timeout": self._timeout}
+        return {
+            **dict(llm.generation_parameters),
+            "timeout": self._timeout,
+            "max_retries": MAX_RETRIES,
+        }
 
     def complete_structured(self, request: LLMRequest) -> LLMResponse:
         llm = request.llm
         provider = _provider_of(llm.model)
+        kwargs = self._kwargs(llm)
 
         try:
             response = self._completion(
@@ -161,18 +179,19 @@ class LiteLLMProvider:
                         "schema": to_plain_object(request.output_schema),
                     },
                 },
-                **self._kwargs(llm),
+                **kwargs,
             )
         except Exception as exc:
             raise LLMError(f"litellm call to {llm.model!r} failed: {exc}") from exc
 
         output = _extract_output(response)
         _validate_output(output, request.output_schema)
-        return LLMResponse(output=output, provenance=_echo(llm, provider, response))
+        return LLMResponse(output=output, provenance=_echo(llm, provider, response, kwargs))
 
     def complete_with_tools(self, request: LLMToolRequest) -> LLMToolResponse:
         llm = request.llm
         provider = _provider_of(llm.model)
+        kwargs = self._kwargs(llm)
 
         try:
             response = self._completion(
@@ -180,7 +199,7 @@ class LiteLLMProvider:
                 messages=[_wire_message(message) for message in request.messages],
                 tools=[_wire_tool(tool) for tool in request.tools],
                 tool_choice=request.tool_choice,
-                **self._kwargs(llm),
+                **kwargs,
             )
         except Exception as exc:
             raise LLMError(f"litellm call to {llm.model!r} failed: {exc}") from exc
@@ -200,12 +219,19 @@ class LiteLLMProvider:
         return LLMToolResponse(
             content=getattr(message, "content", None) or None,
             tool_calls=tool_calls,
-            provenance=_echo(llm, provider, response),
+            provenance=_echo(llm, provider, response, kwargs),
         )
 
 
-def _echo(llm: LLMProvenance, provider: str, response: Any) -> LLMProvenance:
-    return replace(llm, provider=provider, model=str(getattr(response, "model", None) or llm.model))
+def _echo(
+    llm: LLMProvenance, provider: str, response: Any, kwargs: Mapping[str, GenerationParameter]
+) -> LLMProvenance:
+    return replace(
+        llm,
+        provider=provider,
+        model=str(getattr(response, "model", None) or llm.model),
+        generation_parameters=kwargs,
+    )
 
 
 def _wire_tool(tool: LLMTool) -> dict[str, PlainJson]:
