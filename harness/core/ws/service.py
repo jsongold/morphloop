@@ -43,6 +43,12 @@ WsActor = Literal["learner", "system"]
 """Actors the ``ws.created`` contract allows (narrower than ``ActorV2``:
 ``thread.created`` also allows ``"assistant"``, ``ws.created`` does not)."""
 
+_HIGHLIGHT_SCAN_BATCH = 200
+"""Internal page size for the ``target_highlight_id``-filtered scan in
+:func:`list_threads`, independent of the caller's response ``limit`` (#241):
+a small ``limit`` against a rare/absent highlight no longer turns into one
+underlying page read per thread."""
+
 
 class WsError(Exception):
     """Base class; ``status`` is the HTTP status the API maps it to."""
@@ -202,7 +208,9 @@ def list_threads(
     e.g. the popup thread a highlight is discussed in. Filtered, this keeps
     reading underlying pages until ``limit`` matches are found or the range
     ends (#218), so a run of non-matching threads ahead of a match no longer
-    starves the page.
+    starves the page. Each underlying page reads ``_HIGHLIGHT_SCAN_BATCH``
+    threads regardless of ``limit`` (#241), so a small ``limit`` no longer
+    means one DB query per thread.
     """
     get_ws(tx, ws_id, user_id=user_id)
     if target_highlight_id is None:
@@ -210,8 +218,9 @@ def list_threads(
         return [doc for _key, doc in page], next_key
     matches: list[JsonObject] = []
     cursor = after
+    scan_batch = max(limit, _HIGHLIGHT_SCAN_BATCH)
     while True:
-        page, cursor = ThreadsView.list(tx, key_prefix=f"{ws_id}/", after=cursor, limit=limit)
+        page, cursor = ThreadsView.list(tx, key_prefix=f"{ws_id}/", after=cursor, limit=scan_batch)
         for key, doc in page:
             target = doc.get("target")
             if isinstance(target, dict) and target.get("highlight_id") == target_highlight_id:
