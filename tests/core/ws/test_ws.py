@@ -303,6 +303,72 @@ def test_list_threads_filters_by_target_highlight_id(store: InMemoryEventStoreV2
     assert [t["thread_id"] for t in threads] == [other.payload["thread_id"]]
 
 
+def test_list_threads_filter_pages_past_non_matching_threads(store: InMemoryEventStoreV2) -> None:
+    """A small ``limit`` no longer starves a match behind non-matching threads
+    (#218): the underlying key-range page (also sized ``limit``) holds none of
+    the ``target_highlight_id`` matches, so this must keep reading pages."""
+    with store.transaction() as tx:
+        ws = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
+    with store.transaction() as tx:
+        for _ in range(5):
+            create_thread(
+                tx,
+                event_id=str(uuid.uuid4()),
+                user_id=USER,
+                ws_id=ws.ws_id,
+                target={"kind": "artifact"},
+            )
+    with store.transaction() as tx:
+        match = create_thread(
+            tx,
+            event_id=str(uuid.uuid4()),
+            user_id=USER,
+            ws_id=ws.ws_id,
+            target={
+                "kind": "textbook_block",
+                "doc_id": "d",
+                "block_id": "b",
+                "highlight_id": "hl_1",
+            },
+        )
+        for _ in range(3):
+            create_thread(
+                tx,
+                event_id=str(uuid.uuid4()),
+                user_id=USER,
+                ws_id=ws.ws_id,
+                target={"kind": "artifact"},
+            )
+    with store.transaction() as tx:
+        threads, cursor = list_threads(
+            tx, ws.ws_id, user_id=USER, target_highlight_id="hl_1", limit=1
+        )
+    assert [t["thread_id"] for t in threads] == [match.payload["thread_id"]]
+    assert cursor is not None  # the match's own key; more (non-matching) range remains
+
+
+def test_list_threads_filter_returns_empty_and_no_cursor_past_end_of_range(
+    store: InMemoryEventStoreV2,
+) -> None:
+    with store.transaction() as tx:
+        ws = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
+    with store.transaction() as tx:
+        for _ in range(3):
+            create_thread(
+                tx,
+                event_id=str(uuid.uuid4()),
+                user_id=USER,
+                ws_id=ws.ws_id,
+                target={"kind": "artifact"},
+            )
+    with store.transaction() as tx:
+        threads, cursor = list_threads(
+            tx, ws.ws_id, user_id=USER, target_highlight_id="hl_none", limit=2
+        )
+    assert threads == []
+    assert cursor is None
+
+
 def test_list_threads_on_missing_or_other_users_ws_raises(store: InMemoryEventStoreV2) -> None:
     with pytest.raises(WsNotFoundError):
         with store.transaction() as tx:
