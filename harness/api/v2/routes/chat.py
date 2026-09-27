@@ -84,14 +84,14 @@ def get_messages(
             user_id,
             ws_id,
             thread_id,
-            after=page.after_in(f"{ws_id}/{thread_id}/"),
+            after=page.after_in(f"{ws_id}/{thread_id}/", "messages"),
             limit=page.limit,
         )
     except ThreadNotFoundError as error:
         return _not_found(error)
     return {
         "messages": list(messages),
-        "next_cursor": encode_cursor(next_cursor) if next_cursor else None,
+        "next_cursor": encode_cursor(next_cursor, "messages") if next_cursor else None,
     }
 
 

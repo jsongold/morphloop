@@ -21,6 +21,7 @@ from pack_artifact_types import PACK_ARTIFACT_TYPES
 from harness.api.problems import install_handlers
 from harness.api.v2 import build_v2_router
 from harness.api.v2.deps import event_store_v2_of, pack_v2_of, user_id_of
+from harness.api.v2.pagination import encode_cursor
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2.importer import import_pack_v2
 from harness.testing.fakes_v2 import ConnectionTrackingStore, InMemoryEventStoreV2, seed_ws
@@ -208,6 +209,16 @@ def test_cursor_from_another_ws_is_400(client: TestClient, store: ConnectionTrac
     foreign_cursor = page_a["next_cursor"]
     assert foreign_cursor is not None
     response = client.get("/v2/ws/ws_b/memo/entries", params={"cursor": foreign_cursor})
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid-request"
+
+
+def test_threads_cursor_for_the_same_ws_is_400(client: TestClient) -> None:
+    # #236: threads and memo entries share the `<ws_id>/...` key prefix; a
+    # threads cursor must not page memo entries.
+    _post(client, "ws_01", {"actor": "learner", "body": "a"})
+    cursor = encode_cursor(f"ws_01/{1:020d}", "threads")
+    response = client.get("/v2/ws/ws_01/memo/entries", params={"cursor": cursor})
     assert response.status_code == 400
     assert response.json()["code"] == "invalid-request"
 

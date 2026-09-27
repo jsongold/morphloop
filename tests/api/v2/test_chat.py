@@ -119,6 +119,6 @@ def test_messages_page_by_cursor(client: TestClient, llm: FakeToolProvider) -> N
 
 def test_cursor_from_another_thread_is_400(client: TestClient) -> None:
     # #215: GET messages checks the cursor against its own thread (CursorPage.after_in).
-    cursor = encode_cursor(f"{WS}/thr_other/{1:020d}")
+    cursor = encode_cursor(f"{WS}/thr_other/{1:020d}", "messages")
     resp = client.get(URL, params={"cursor": cursor})
     assert resp.status_code == 400, resp.text
