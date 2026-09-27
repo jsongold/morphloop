@@ -95,11 +95,11 @@ def create_session_route(
 def list_sessions_route(
     tx: EventTransactionV2Dep, user_id: UserIdDep, page: CursorQuery
 ) -> dict[str, PlainJson]:
-    after = page.after_in(SessionsByUserView.prefix(user_id))
+    after = page.after_in(SessionsByUserView.prefix(user_id), "sessions")
     docs, next_key = list_sessions(tx, user_id=user_id, after=after, limit=page.limit)
     return {
         "items": [_document(doc) for doc in docs],
-        "next_cursor": encode_cursor(next_key) if next_key else None,
+        "next_cursor": encode_cursor(next_key, "sessions") if next_key else None,
     }
 
 

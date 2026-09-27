@@ -114,18 +114,18 @@ def list_drills(
     page: CursorQuery,
     labels: Annotated[list[str] | None, Query()] = None,
 ) -> dict[str, PlainJson]:
-    # #245: items have no shared key prefix to check with `after_in` (they are
-    # keyed by their own pack-authored id, no ws/user scope), so validate the
-    # cursor against this collection's actual key space directly: a cursor
-    # from another view (or an invented id) never matches an item id here and
-    # would otherwise silently page from wherever it happens to sort (#221/#226).
+    # #245: items have no shared key prefix (they are keyed by their own
+    # pack-authored id, no ws/user scope), so beyond the collection tag also
+    # check the key is an actual item id: an invented id would otherwise
+    # silently page from wherever it happens to sort (#221/#226).
+    after = page.after_in("", "drills")
     catalog = service.list_items(labels or ())
-    if page.after is not None and not any(item.id == page.after for item in catalog):
+    if after is not None and not any(item.id == after for item in catalog):
         raise HTTPException(400, "cursor does not belong to this resource")
-    items, next_cursor = learner_items_page(catalog, after=page.after, limit=page.limit)
+    items, next_cursor = learner_items_page(catalog, after=after, limit=page.limit)
     return {
         "items": [item.for_learner() for item in items],
-        "next_cursor": encode_cursor(next_cursor) if next_cursor else None,
+        "next_cursor": encode_cursor(next_cursor, "drills") if next_cursor else None,
     }
 
 
@@ -258,9 +258,9 @@ def get_answers(
     ws_or_404(tx, ws_id, user_id=user_id)
     # #245: a syntactically valid cursor issued for a different ws (or another
     # view entirely) must not silently page this ws's answers view (#221/#226).
-    after = page.after_in(f"{ws_id}/")
+    after = page.after_in(f"{ws_id}/", "drill-answers")
     answers, next_cursor = list_answers(tx, ws_id, after=after, limit=page.limit)
     return {
         "items": answers,
-        "next_cursor": encode_cursor(next_cursor) if next_cursor else None,
+        "next_cursor": encode_cursor(next_cursor, "drill-answers") if next_cursor else None,
     }

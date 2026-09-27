@@ -81,11 +81,11 @@ def get_ws_list(
     page: CursorQuery,
     session_id: Annotated[SessionId | None, Query()] = None,
 ) -> JsonObject:
-    after = page.after_in(WsByUserView.prefix(user_id, session_id))
+    after = page.after_in(WsByUserView.prefix(user_id, session_id), "ws")
     items, next_key = list_ws(
         tx, user_id=user_id, session_id=session_id, after=after, limit=page.limit
     )
-    return {"items": items, "next_cursor": encode_cursor(next_key) if next_key else None}
+    return {"items": items, "next_cursor": encode_cursor(next_key, "ws") if next_key else None}
 
 
 @router.get("/ws/{ws_id}")
@@ -128,7 +128,7 @@ def get_threads(
     page: CursorQuery,
     target_highlight_id: Annotated[HighlightId | None, Query()] = None,
 ) -> JsonObject:
-    after = page.after_in(f"{ws_id}/")
+    after = page.after_in(f"{ws_id}/", "threads")
     try:
         threads, next_key = list_threads(
             tx,
@@ -142,5 +142,5 @@ def get_threads(
         raise HTTPException(exc.status, str(exc)) from exc
     return {
         "items": [_public_thread(doc) for doc in threads],
-        "next_cursor": encode_cursor(next_key) if next_key else None,
+        "next_cursor": encode_cursor(next_key, "threads") if next_key else None,
     }

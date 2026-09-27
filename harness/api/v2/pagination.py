@@ -21,9 +21,14 @@ DEFAULT_LIMIT = 50
 MAX_LIMIT = 100  # contracts/openapi/v0.2/components/common.yaml LimitParam
 
 
-def encode_cursor(key: str) -> str:
-    """The opaque cursor for a view document key."""
-    return base64.urlsafe_b64encode(key.encode()).decode()
+def encode_cursor(key: str, collection: str) -> str:
+    """The opaque cursor for a view document key of ``collection``.
+
+    The collection name is baked in so a cursor from one list route (e.g. a
+    ws's threads) is refused by another whose keys share the same prefix
+    (e.g. the same ws's memo entries) -- see `CursorPage.after_in` (#236).
+    """
+    return base64.urlsafe_b64encode(f"{collection}:{key}".encode()).decode()
 
 
 def _decode_cursor(cursor: str) -> str:
@@ -41,13 +46,15 @@ def _decode_cursor(cursor: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class CursorPage:
-    """Decoded page request: pass straight through to `View.list`/`list_view`."""
+    """Decoded page request; `after_in` yields the `View.list(after=...)` key."""
 
     after: str | None
     limit: int
 
-    def after_in(self, prefix: str) -> str | None:
-        """``self.after``, checked against the request's own ``View.list(key_prefix=...)``.
+    def after_in(self, prefix: str, collection: str) -> str | None:
+        """The view key in ``self.after``, checked against the request's own
+        ``collection`` (the name given to `encode_cursor`) and
+        ``View.list(key_prefix=...)``.
 
         A syntactically valid cursor (right base64/UTF-8) can still be one
         never issued for this resource, or issued for another ws/user -- its
@@ -55,11 +62,17 @@ class CursorPage:
         page from wherever it happens to sort, silently. Per
         `contracts/openapi/v0.2/components/common.yaml` `CursorParam`
         ("Unknown or expired -> 400 `invalid-request`"), that is a 400, not a
-        200 with a wrong/empty page (#221, #226).
+        200 with a wrong/empty page (#221, #226). Two collections can share a
+        key prefix (a ws's threads and memo entries are both ``<ws_id>/...``),
+        so the prefix alone is not enough: the cursor must also carry this
+        collection's name (#236, #256).
         """
-        if self.after is not None and not self.after.startswith(prefix):
+        if self.after is None:
+            return None
+        tag = f"{collection}:"
+        if not self.after.startswith(tag + prefix):
             raise HTTPException(400, "cursor does not belong to this resource")
-        return self.after
+        return self.after.removeprefix(tag)
 
 
 def cursor_page_of(
