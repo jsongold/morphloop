@@ -199,18 +199,28 @@ def list_threads(
     ``target_highlight_id`` filters to threads whose ``target`` carries that
     ``highlight_id`` -- a highlight-scoped thread's own extra field on
     ``target`` (only ``target.kind`` is this resource's business; ADR-0009),
-    e.g. the popup thread a highlight is discussed in.
+    e.g. the popup thread a highlight is discussed in. Filtered, this keeps
+    reading underlying pages until ``limit`` matches are found or the range
+    ends (#218), so a run of non-matching threads ahead of a match no longer
+    starves the page.
     """
     get_ws(tx, ws_id, user_id=user_id)
-    page, next_key = ThreadsView.list(tx, key_prefix=f"{ws_id}/", after=after, limit=limit)
-    threads = [doc for _key, doc in page]
     if target_highlight_id is None:
-        return threads, next_key
-    # ponytail: filtered within the page, so a page can hold fewer than
-    # `limit` items; add a per-highlight index if that matters to clients.
-    matches = []
-    for doc in threads:
-        target = doc.get("target")
-        if isinstance(target, dict) and target.get("highlight_id") == target_highlight_id:
-            matches.append(doc)
-    return matches, next_key
+        page, next_key = ThreadsView.list(tx, key_prefix=f"{ws_id}/", after=after, limit=limit)
+        return [doc for _key, doc in page], next_key
+    matches: list[JsonObject] = []
+    cursor = after
+    while True:
+        page, cursor = ThreadsView.list(tx, key_prefix=f"{ws_id}/", after=cursor, limit=limit)
+        for key, doc in page:
+            target = doc.get("target")
+            if isinstance(target, dict) and target.get("highlight_id") == target_highlight_id:
+                matches.append(doc)
+                if len(matches) == limit:
+                    # ponytail: the cursor is this match's own key even when
+                    # it's also the last thread overall, so the client's next
+                    # call returns an empty page instead of us looking ahead
+                    # to know for sure; add lookahead if that round trip matters.
+                    return matches, key
+        if cursor is None:
+            return matches, None
