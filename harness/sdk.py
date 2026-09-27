@@ -31,8 +31,9 @@ not exported here is internal and may change between SDK versions.
 from harness.adapters.auth import DevAuthProvider, OidcAuthProvider
 from harness.adapters.docker_lab import DockerLabRuntime
 from harness.adapters.postgres import migrate
+from harness.adapters.postgres.engine import create_engine_from_env
 from harness.adapters.pty import DockerTerminalBridge
-from harness.adapters.supabase import supabase_auth
+from harness.adapters.supabase import supabase_auth, supabase_engine
 from harness.api.app import AppExtension, create_app
 from harness.api.problems import problem
 from harness.api.v2.deps import (
@@ -111,6 +112,9 @@ __all__ = [
     "DevAuthProvider",
     "OidcAuthProvider",
     "supabase_auth",
+    # DB providers (the app picks one: create_app(db=...))
+    "create_engine_from_env",
+    "supabase_engine",
     # /v2 request dependencies and responses
     "EventIdDep",
     "EventTransactionV2Dep",

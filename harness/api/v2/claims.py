@@ -13,7 +13,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from harness.adapters.postgres.claims import PostgresClaimStore
-from harness.adapters.postgres.engine import create_engine_from_env
+from harness.api.v2.db import db_of
 from harness.core.ports.claims import ClaimStore
 
 
@@ -21,7 +21,7 @@ def claims_of(request: Request) -> ClaimStore:
     """The wired store; Postgres, built and cached on `app.state` on first use."""
     store: ClaimStore | None = getattr(request.app.state, "claims", None)
     if store is None:
-        store = PostgresClaimStore(create_engine_from_env())
+        store = PostgresClaimStore(db_of(request)())
         request.app.state.claims = store
     return store
 
