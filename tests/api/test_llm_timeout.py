@@ -37,9 +37,7 @@ def test_timeout_under_the_lease_is_accepted() -> None:
 
 
 def test_app_refuses_to_start_with_an_unsafe_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(
-        "MORPHLOOP_LLM_TIMEOUT_SECONDS", str(JUDGE_LEASE_TTL.total_seconds())
-    )
+    monkeypatch.setenv("MORPHLOOP_LLM_TIMEOUT_SECONDS", str(JUDGE_LEASE_TTL.total_seconds()))
 
     with pytest.raises(ValueError, match="judge lease TTL"):
         with TestClient(create_app()):
