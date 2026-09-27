@@ -7,7 +7,8 @@ schema (422 ``validation-failed``), a body that fails its request
 schema (422 ``validation-failed``) and a malformed body or query parameter
 (400 ``invalid-request``) -- a reused ``Idempotency-Key`` with a different
 body (409 ``idempotency-key-reused``, v2), a missing or invalid bearer token
-(401 ``unauthorized``), an unreachable identity provider (503
+(401 ``unauthorized``), a per-user limit (429 ``rate-limited`` with
+``Retry-After``), an unreachable identity provider (503
 ``auth-unavailable``), and a catch-all for an unexpected exception
 (500 ``internal``).
 """
@@ -37,6 +38,7 @@ _STATUS_CODES = {
     403: "forbidden",
     404: "not-found",
     409: "state-conflict",
+    429: "rate-limited",
 }
 
 
@@ -124,7 +126,9 @@ def install_handlers(app: FastAPI) -> None:
     async def _http_error(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, HTTPException)
         code = _STATUS_CODES.get(exc.status_code, "internal")
-        return problem(status=exc.status_code, code=code, detail=str(exc.detail))
+        response = problem(status=exc.status_code, code=code, detail=str(exc.detail))
+        response.headers.update(exc.headers or {})  # e.g. Retry-After on 429
+        return response
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> Response:

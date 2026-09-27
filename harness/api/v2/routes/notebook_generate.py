@@ -17,11 +17,13 @@ rejected.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
 from harness.api.v2.deps import GeneratedDocumentsDep, PackV2Dep
+from harness.api.v2.limits import LLM, quota
 from harness.api.v2.models import V2Model
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.generator.runtime import GeneratedResource, GenerateRequest, PreGenerator
@@ -70,12 +72,17 @@ def pregenerator_of(
     return generator
 
 
-@router.post("/notebook/generate", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/notebook/generate",
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def generate(
     body: GenerateBody,
     background: BackgroundTasks,
     generator: Annotated[PreGenerator, Depends(pregenerator_of)],
+    charge: Annotated[Callable[[], None], Depends(quota(LLM))],
 ) -> dict[str, str]:
+    charge()  # after body validation and generator setup: a failed request costs nothing
     background.add_task(
         generator.generate,
         GenerateRequest(resource=body.resource, memo_entries=body.memo_entries, gap=body.gap),
