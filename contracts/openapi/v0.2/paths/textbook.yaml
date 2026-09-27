@@ -21,6 +21,8 @@
         in: query
         required: true
         schema: {type: string, minLength: 1}
+      - $ref: '../root.yaml#/components/parameters/Cursor'
+      - $ref: '../root.yaml#/components/parameters/Limit'
     responses:
       '200':
         description: Doc summaries in reading order.
@@ -31,6 +33,9 @@
               required: [docs]
               additionalProperties: false
               properties:
+                next_cursor:
+                  type: [string, 'null']
+                  description: Opaque cursor for the next page; absent or null on the last page.
                 docs:
                   type: array
                   items:

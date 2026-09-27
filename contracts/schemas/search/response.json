@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morphloop.dev/contracts/schemas/search/response.json",
+  "title": "Search response",
+  "description": "Ranked results for one search request (issue #180). Each result is a reference only (`kind` + `id`, plus `parent_id` when the owning endpoint needs it) into the resource it came from, e.g. {kind: 'textbook_block', id: 'blk_...', parent_id: 'doc_...'}; the caller re-fetches full content through that resource's own endpoint. `score`: higher is more relevant; keyword mode is tsvector-rank scale, semantic mode is cosine similarity, hybrid mode is the fused RRF score -- scores are not comparable across modes. `source` says which leg(s) produced this hit; 'hybrid' means both the keyword and semantic legs matched. A drill item's expected-answer or reference-solution content, and any holdout drill (sys:holdout), is never a legal source of a result -- only a non-holdout drill's question/prompt text is ever indexed (contracts/schemas/search/README.md). Results are scoped to the authenticated learner: only shared corpus rows and rows that learner owns (e.g. their memos) are ever returned.",
+  "type": "object",
+  "required": [
+    "results"
+  ],
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "score",
+          "source"
+        ],
+        "properties": {
+          "kind": {
+            "description": "Resource label (ADR-0018), e.g. 'textbook_block', 'drill_item', 'memo_entry'.",
+            "$ref": "https://morphloop.dev/contracts/schemas/common/ids.json#/$defs/token"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parent_id": {
+            "description": "Id of the owning resource when re-fetching this result needs it, e.g. the document id of a 'textbook_block' or the workspace id of a 'memo_entry'. Absent for a top-level resource.",
+            "type": "string",
+            "minLength": 1
+          },
+          "score": {
+            "type": "number"
+          },
+          "source": {
+            "enum": [
+              "keyword",
+              "semantic",
+              "hybrid"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from harness.adapters.postgres.claims import PostgresClaimStore
-from harness.core.ports.claims import ClaimStore
+from harness.core.ports.claims import MAX_COUNTER_WINDOW, ClaimStore
 from harness.testing.claims import InMemoryClaimStore
 
 THREADS = 24
@@ -75,6 +75,11 @@ def test_claim_is_exclusive_until_release(store: ClaimStore, key: str) -> None:
     assert not store.try_claim(key, "b", HOUR)
     store.release(key, "a")
     assert store.try_claim(key, "b", HOUR)
+
+
+def test_release_of_missing_key_with_empty_holder_is_a_no_op(store: ClaimStore, key: str) -> None:
+    """#206: the in-memory fake must match Postgres's DELETE ... no rows: no-op."""
+    store.release(key, "")
 
 
 def test_claim_is_free_again_after_ttl(store: ClaimStore, key: str) -> None:
@@ -135,6 +140,8 @@ def test_invalid_arguments_are_refused(store: ClaimStore, key: str) -> None:
         store.try_claim(key, "a", timedelta(0))
     with pytest.raises(ValueError):
         store.consume(key, "calls", limit=0, window=HOUR)
+    with pytest.raises(ValueError):
+        store.consume(key, "calls", limit=1, window=MAX_COUNTER_WINDOW + timedelta(seconds=1))
     with pytest.raises(ValueError):
         store.acquire_slot(key, "run", holder="a", cap=0, ttl=HOUR)
 

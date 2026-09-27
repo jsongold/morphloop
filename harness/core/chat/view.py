@@ -8,7 +8,6 @@ from typing import ClassVar
 from harness.core.ports.events_v2 import StoredEventV2, ViewDocumentStore
 from harness.core.ports.json_types import (
     JsonObject,
-    JsonValue,
     PlainJson,
     format_timestamp,
     to_plain_json,
@@ -20,12 +19,17 @@ REPLIED = "chat.replied"
 THREAD_CREATED = "thread.created"
 
 
-def _key(ws_id: str, thread_id: str) -> str:
-    return f"{ws_id}/{thread_id}"
+def _prefix(ws_id: str, thread_id: str) -> str:
+    return f"{ws_id}/{thread_id}/"
 
 
 class ChatMessagesView(View):
-    """Key ``<ws_id>/<thread_id>``; document ``{"messages": [message, ...]}``."""
+    """One document per message, keyed ``<ws_id>/<thread_id>/<position:020d>`` (#177).
+
+    The zero-padded event ``position`` makes key order the thread's message
+    order, so a thread pages by keyset over its key prefix and each message is
+    one write (not a rewrite of the whole thread).
+    """
 
     name = "chat.messages"
     handles: ClassVar[frozenset[str]] = frozenset({SENT, REPLIED})
@@ -33,7 +37,7 @@ class ChatMessagesView(View):
     @classmethod
     def apply(cls, event: StoredEventV2, tx: ViewDocumentStore) -> None:
         p = event.payload
-        key = _key(str(event.ws_id), str(p["thread_id"]))
+        key = f"{_prefix(str(event.ws_id), str(p['thread_id']))}{event.position:020d}"
         message: dict[str, PlainJson] = {
             "message_id": str(p["message_id"]),
             "role": event.actor,
@@ -43,18 +47,22 @@ class ChatMessagesView(View):
         if event.type == REPLIED:
             message["in_reply_to"] = str(p["in_reply_to"])
             message["tool_calls"] = to_plain_json(p["tool_calls"])
-        messages = [to_plain_json(m) for m in cls._stored(tx, key)]
-        tx.put_view(cls.name, key, {"messages": [*messages, message]})
+        tx.put_view(cls.name, key, message)
 
     @classmethod
     def messages(cls, tx: ViewDocumentStore, ws_id: str, thread_id: str) -> Sequence[JsonObject]:
-        return [m for m in cls._stored(tx, _key(ws_id, thread_id)) if isinstance(m, Mapping)]
+        """Every message of the thread, oldest first."""
+        return [doc for _, doc in cls.list(tx, key_prefix=_prefix(ws_id, thread_id))]
 
     @classmethod
-    def _stored(cls, tx: ViewDocumentStore, key: str) -> Sequence[JsonValue]:
-        doc = cls.get(tx, key)
-        messages = doc.get("messages") if doc else None
-        return messages if isinstance(messages, list) else []
+    def page(
+        cls, tx: ViewDocumentStore, ws_id: str, thread_id: str, *, after: str | None, limit: int
+    ) -> tuple[Sequence[JsonObject], str | None]:
+        """One page of the thread's messages, oldest first, plus the next cursor."""
+        page, next_cursor = cls.list(
+            tx, key_prefix=_prefix(ws_id, thread_id), after=after, limit=limit
+        )
+        return [doc for _, doc in page], next_cursor
 
 
 class ChatThreadView(View):

@@ -75,6 +75,22 @@ def list_messages(
         return list(ChatMessagesView.messages(tx, ws_id, thread_id))
 
 
+def list_messages_page(
+    store: EventStoreV2,
+    user_id: str,
+    ws_id: str,
+    thread_id: str,
+    *,
+    after: str | None,
+    limit: int,
+) -> tuple[Sequence[JsonObject], str | None]:
+    """One page of the thread's messages plus the next cursor (a view key);
+    raises :class:`ThreadNotFoundError`."""
+    with store.transaction() as tx:
+        _find_thread(tx, store, user_id, ws_id, thread_id)
+        return ChatMessagesView.page(tx, ws_id, thread_id, after=after, limit=limit)
+
+
 def _append(
     tx: EventTransactionV2, ctx: ToolContext, event_id: str, type_: str, payload: JsonObject
 ) -> None:

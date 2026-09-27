@@ -67,10 +67,17 @@ def test_v040_revision_downgrades_and_upgrades_cleanly(pg_url: str, pg_engine: E
     config.set_main_option("script_location", str(locate_migrations_dir()))
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("DATABASE_URL", pg_url)
-        command.downgrade(config, "c4e8a2d6f1b3")
-        with pg_engine.connect() as conn:
-            assert conn.execute(text("select to_regclass('search_embeddings')")).scalar() is None
-        command.upgrade(config, "head")
+        try:
+            command.downgrade(config, "c4e8a2d6f1b3")
+            with pg_engine.connect() as conn:
+                assert (
+                    conn.execute(text("select to_regclass('search_embeddings')")).scalar() is None
+                )
+        finally:
+            # pg_url may be a persistent, shared TEST_DATABASE_URL rather than a throwaway
+            # container, so always restore head -- even if the assertion above fails -- to
+            # avoid leaving the new v0.4 tables dropped for other test runs (#191).
+            command.upgrade(config, "head")
 
     with pg_engine.connect() as conn:
         dims = conn.execute(

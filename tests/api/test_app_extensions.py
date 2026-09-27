@@ -3,6 +3,8 @@ artifact types are what `PackV2Dep` imports the pack with."""
 
 from __future__ import annotations
 
+import threading
+from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar
 
@@ -12,8 +14,10 @@ from fastapi import APIRouter
 from fastapi.testclient import TestClient
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
+from harness.api.periodic import CLAIMS_PURGE, PeriodicJob
 from harness.api.v2.deps import PackV2Dep
 from harness.sdk import AppExtension, Artifact, PackV2ImportError
+from harness.testing.claims import InMemoryClaimStore
 
 PACK_DIR = Path(__file__).parents[1] / "contracts/fixtures/pack-v2/valid/dns-pack"
 
@@ -63,3 +67,24 @@ def test_pack_is_imported_with_the_extension_types(monkeypatch: pytest.MonkeyPat
     app = build_app(extensions=[extension])
     with TestClient(app) as client:
         assert client.get("/v2/probe/pack").json() == {"pack_id": "software-engineering"}
+
+
+def test_periodic_jobs_start_and_stop_with_the_app_and_replace_the_sdk_job_by_name() -> None:
+    ran = threading.Event()
+    tick = PeriodicJob("tick", timedelta(milliseconds=50), ran.set)
+    purge = PeriodicJob(CLAIMS_PURGE, timedelta(days=1), lambda: None)
+    app = build_app(extensions=[AppExtension(periodic_jobs=(tick, purge))])
+    app.state.claims = InMemoryClaimStore()
+    with TestClient(app):
+        scheduler = app.state.scheduler
+        assert scheduler.running
+        assert sorted(j.id for j in scheduler.get_jobs()) == [CLAIMS_PURGE, "tick"]
+        assert scheduler.get_job(CLAIMS_PURGE).trigger.interval == timedelta(days=1)
+        assert ran.wait(timeout=5)
+    assert not scheduler.running
+
+
+def test_bare_app_schedules_the_sdk_claims_purge() -> None:
+    app = build_app()
+    with TestClient(app):
+        assert [j.id for j in app.state.scheduler.get_jobs()] == [CLAIMS_PURGE]

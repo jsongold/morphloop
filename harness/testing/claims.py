@@ -12,7 +12,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from harness.core.ports.claims import ClaimStore, check_positive, slot_key
+from harness.core.ports.claims import ClaimStore, check_positive, check_window, slot_key
 
 
 def _utcnow() -> datetime:
@@ -37,13 +37,15 @@ class InMemoryClaimStore:
             return True
 
     def release(self, key: str, holder: str) -> None:
+        """A no-op if ``key`` has no lease, or its holder differs (#206)."""
         with self._lock:
-            if self._leases.get(key, ("",))[0] == holder:
+            current = self._leases.get(key)
+            if current is not None and current[0] == holder:
                 del self._leases[key]
 
     def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool:
-        secs = window.total_seconds()
-        check_positive(limit=limit, window=secs)
+        secs = check_window(window)
+        check_positive(limit=limit)
         with self._lock:
             epoch = self._clock().timestamp()
             start = datetime.fromtimestamp(epoch // secs * secs, UTC)

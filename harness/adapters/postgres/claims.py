@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from harness.core.ports.claims import ClaimStore, check_positive, slot_key
+from harness.core.ports.claims import ClaimStore, check_positive, check_window, slot_key
 
 _CLAIM = text(
     """
@@ -65,8 +65,8 @@ class PostgresClaimStore:
             conn.execute(_RELEASE, {"key": key, "holder": holder})
 
     def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool:
-        secs = window.total_seconds()
-        check_positive(limit=limit, window=secs)
+        secs = check_window(window)
+        check_positive(limit=limit)
         params = {"subject": subject, "name": name, "limit": limit, "secs": secs}
         with self._engine.begin() as conn:
             return conn.execute(_CONSUME, params).one_or_none() is not None
