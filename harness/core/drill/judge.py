@@ -36,10 +36,13 @@ _INPUT_VIEW = "drill.judge_inputs"
 _JUDGED_NAMESPACE = uuid.UUID("3c1a5c0e-6b1f-4f1b-9c2e-7d4a2c5e9b11")
 _TOKEN = re.compile(r"[\w./:-]+")
 _DISTINCTIVE = re.compile(r"[/.:_-]|\d")
-# ponytail: the LLM call sets no timeout of its own (litellm's default is
-# 6000 s), so a call can outlive this lease; a retry then judges again. The
-# derived judgment id still keeps one drill.judged. Pass an LLM timeout below
-# this TTL when a second model call matters.
+# litellm's own default timeout is 600 s (verified against the installed
+# source, `litellm/main.py`) -- the same order of magnitude as this lease, not
+# a safe margin under it. `LiteLLMProvider` instead defaults to
+# `Settings().morphloop_llm_timeout_seconds`, and `harness.api.app` refuses to
+# start unless that stays below this TTL (#203). A call that still outlives
+# the lease lets a retry judge again; the derived judgment id keeps one
+# drill.judged either way.
 JUDGE_LEASE_TTL = timedelta(minutes=10)
 
 

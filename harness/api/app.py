@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from functools import partial
 
 from fastapi import APIRouter, Depends, FastAPI, Request
@@ -33,10 +34,25 @@ from harness.api.v2.auth import auth_provider_from_settings
 from harness.api.v2.db import DbProvider, db_of
 from harness.api.v2.deps import user_id_of
 from harness.core.artifact import Artifact
+from harness.core.drill.judge import JUDGE_LEASE_TTL
 from harness.core.ports.auth import AuthProvider
 from harness.core.settings import Settings
 
 REPLAYED_HEADER = "Idempotent-Replayed"
+
+
+def check_llm_timeout_under_lease(settings: Settings | None = None) -> None:
+    """Refuse to start unless the LLM call timeout stays under the judge
+    single-flight lease TTL (#203): a call that outlives the lease can be
+    retried by another worker before the first reply lands, burning a second
+    LLM call (`harness.core.drill.judge.JUDGE_LEASE_TTL`)."""
+    settings = settings or Settings()
+    llm_timeout = timedelta(seconds=settings.morphloop_llm_timeout_seconds)
+    if llm_timeout >= JUDGE_LEASE_TTL:
+        raise ValueError(
+            f"MORPHLOOP_LLM_TIMEOUT_SECONDS ({settings.morphloop_llm_timeout_seconds}s) must be "
+            f"less than the judge lease TTL ({JUDGE_LEASE_TTL.total_seconds()}s)"
+        )
 
 
 def check_db(request: Request) -> bool:
@@ -86,6 +102,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # #203: refuse to start if the LLM timeout leaves no margin under the
+        # judge single-flight lease TTL.
+        check_llm_timeout_under_lease()
         # Resolve the provider at startup, not at import (the module-level
         # `app` below must stay importable): production with the dev provider
         # or an incomplete oidc/supabase config refuses to start (#171).

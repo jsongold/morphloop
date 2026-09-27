@@ -124,6 +124,35 @@ def test_defaults_to_litellm_completion() -> None:
     assert LiteLLMProvider() is not None
 
 
+def test_timeout_defaults_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_LLM_TIMEOUT_SECONDS", "45")
+    completion = _FakeCompletion([_response('{"rationale": "ok", "confidence": 0.5}')])
+
+    LiteLLMProvider(completion=completion).complete_structured(_request())
+
+    assert completion.calls[0]["timeout"] == 45.0
+
+
+def test_timeout_argument_overrides_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_LLM_TIMEOUT_SECONDS", "45")
+    completion = _FakeCompletion([_response('{"rationale": "ok", "confidence": 0.5}')])
+
+    LiteLLMProvider(completion=completion, timeout=10).complete_structured(_request())
+
+    assert completion.calls[0]["timeout"] == 10
+
+
+def test_provider_timeout_wins_over_a_pack_declared_timeout() -> None:
+    # A pack's generation_parameters could declare its own "timeout"; the
+    # provider's (app-level, lease-safe) timeout must win, not collide.
+    completion = _FakeCompletion([_response('{"rationale": "ok", "confidence": 0.5}')])
+    llm = _provenance(generation_parameters={"timeout": 999})
+
+    LiteLLMProvider(completion=completion, timeout=10).complete_structured(_request(llm=llm))
+
+    assert completion.calls[0]["timeout"] == 10
+
+
 # --- Success --------------------------------------------------------------
 
 

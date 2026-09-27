@@ -160,3 +160,27 @@ def test_development_defaults_to_dev_auth_provider(monkeypatch: pytest.MonkeyPat
     settings = Settings()  # does not raise
 
     assert settings.morphloop_auth_provider == "dev"
+
+
+def test_llm_timeout_seconds_default_is_under_the_judge_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from harness.core.drill.judge import JUDGE_LEASE_TTL
+
+    monkeypatch.delenv("MORPHLOOP_LLM_TIMEOUT_SECONDS", raising=False)
+
+    assert Settings().morphloop_llm_timeout_seconds < JUDGE_LEASE_TTL.total_seconds()
+
+
+def test_llm_timeout_seconds_reads_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_LLM_TIMEOUT_SECONDS", "45")
+
+    assert Settings().morphloop_llm_timeout_seconds == 45.0
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_llm_timeout_seconds_must_be_positive(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("MORPHLOOP_LLM_TIMEOUT_SECONDS", value)
+
+    with pytest.raises(ValidationError):
+        Settings()
