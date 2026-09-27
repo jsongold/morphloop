@@ -16,7 +16,12 @@ from harness.core.drill.model import AnswerMode, DrillItem
 from harness.core.labels import LabelError, check_labels
 from harness.core.pack.v2.importer import PackV2
 from harness.core.ports.claims import ClaimStore
-from harness.core.ports.events_v2 import EventTransactionV2, EventV2, StoredEventV2
+from harness.core.ports.events_v2 import (
+    EventIdConflictError,
+    EventTransactionV2,
+    EventV2,
+    StoredEventV2,
+)
 from harness.core.ports.json_types import JsonObject, PlainJson, to_plain_object
 from harness.core.ports.llm import (
     LLMError,
@@ -369,31 +374,36 @@ def record_judgment(
     llm_provenance: LLMProvenance | None,
 ) -> StoredEventV2:
     """Append the judgment at the answer's derived id. A judgment a concurrent
-    retry already stored wins; an unrelated event squatting the id raises
-    ``EventIdConflictError`` from the append (409), never a false "complete"."""
+    retry already stored wins -- also when it commits between the read and the
+    append (a retry past the lease, #222); an unrelated event squatting the id
+    raises ``EventIdConflictError`` from the append (409), never a false "complete"."""
     existing = stored_judgment(tx, answer.id)
     if existing is not None:
         return existing
-    return tx.append(
-        EventV2(
-            id=judgment_id_of(answer.id),
-            type=JUDGED,
-            actor="system",
-            user_id=answer.user_id,
-            session_id=answer.session_id,
-            ws_id=answer.ws_id,
-            payload={
-                "answer_event_id": answer.id,
-                "gap": gap,
-                "provenance": {
-                    "harness_version": harness_version,
-                    "pack": {
-                        "pack_id": pack.pack_id,
-                        "pack_version": pack.pack_version,
-                        "pack_content_hash": pack.pack_hash,
-                    },
-                    "llm": llm_provenance.to_dict() if llm_provenance is not None else None,
+    event = EventV2(
+        id=judgment_id_of(answer.id),
+        type=JUDGED,
+        actor="system",
+        user_id=answer.user_id,
+        session_id=answer.session_id,
+        ws_id=answer.ws_id,
+        payload={
+            "answer_event_id": answer.id,
+            "gap": gap,
+            "provenance": {
+                "harness_version": harness_version,
+                "pack": {
+                    "pack_id": pack.pack_id,
+                    "pack_version": pack.pack_version,
+                    "pack_content_hash": pack.pack_hash,
                 },
+                "llm": llm_provenance.to_dict() if llm_provenance is not None else None,
             },
-        )
-    ).event
+        },
+    )
+    try:
+        return tx.append(event).event
+    except EventIdConflictError as exc:
+        if is_judgment_of(exc.existing, answer.id):
+            return exc.existing
+        raise
