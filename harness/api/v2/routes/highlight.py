@@ -11,9 +11,9 @@ The one constraint JSON Schema cannot express -- a ``TextPositionSelector``'s
 ``start < end`` -- is checked by :mod:`harness.core.highlight.anchor` from a
 pydantic validator, so it is also a 422 raised here, not a stored event that
 silently violates the invariant. Everything else (labels vocabulary,
-idempotent replay, the event append, the view read) is
-:mod:`harness.core.highlight.service`; this module does request/response
-shape and dependency wiring only.
+idempotent replay, the event append) is :mod:`harness.core.highlight.service`;
+the paged view read is :func:`harness.core.highlight.view.active_highlights_page`.
+This module does request/response shape and dependency wiring only.
 
 Responses strip the view's internal ``removed``/``position`` fields (see
 :func:`_public`): the ``Highlight`` contract schema forbids additional
@@ -39,13 +39,14 @@ from harness.api.v2.deps import (
     ws_or_404,
 )
 from harness.api.v2.models import Text, V2Model
+from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.highlight.anchor import check_text_position
 from harness.core.highlight.service import (
     HighlightNotFoundError,
     create_highlight,
-    list_highlights,
     remove_highlight,
 )
+from harness.core.highlight.view import active_highlights_page
 from harness.core.labels import LabelError
 from harness.core.ports.json_types import JsonObject, JsonValue
 
@@ -158,10 +159,14 @@ def create(
 
 @router.get("", response_model=None)
 def list_(
-    ws_id: WsIdPath, tx: EventTransactionV2Dep, user_id: UserIdDep
-) -> dict[str, list[JsonObject]]:
+    ws_id: WsIdPath, tx: EventTransactionV2Dep, user_id: UserIdDep, page: CursorQuery
+) -> dict[str, JsonValue]:
     ws_or_404(tx, ws_id, user_id=user_id)
-    return {"highlights": [_public(doc) for doc in list_highlights(tx, ws_id)]}
+    docs, next_cursor = active_highlights_page(tx, ws_id, after=page.after, limit=page.limit)
+    return {
+        "highlights": [_public(doc) for doc in docs],
+        "next_cursor": encode_cursor(next_cursor) if next_cursor is not None else None,
+    }
 
 
 @router.delete("/{highlight_id}", status_code=204, response_model=None)

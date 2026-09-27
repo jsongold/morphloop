@@ -18,7 +18,7 @@ targetless request instead of creating a second one.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import ClassVar, cast
+from typing import ClassVar
 
 from harness.core.ports.events_v2 import StoredEventV2, ViewDocumentStore
 from harness.core.ports.json_types import JsonObject, format_timestamp, to_plain_json
@@ -72,18 +72,56 @@ class WsView(View):
         tx.put_view(cls.name, event.ws_id, {**doc, "main_thread_event_id": event.id})
 
 
-def _thread_key(ws_id: str, thread_id: str) -> str:
-    return f"{ws_id}/{thread_id}"
+_POSITION_DIGITS = 19  # a Postgres bigint position fits in 19 digits
+
+
+def position_key(position: int) -> str:
+    """``position`` zero-padded, so key order is creation order."""
+    return f"{position:0{_POSITION_DIGITS}d}"
+
+
+def newest_first_key(position: int) -> str:
+    """``position`` inverted and zero-padded, so key order is newest first."""
+    return position_key(10**_POSITION_DIGITS - 1 - position)
+
+
+class WsByUserView(View):
+    """Per-user ws index (#175), so listing reads one key range, not every ws.
+
+    Keyed ``<user>/<session_id or *>/<newest-first position>``: each ws is
+    indexed twice, once under ``*`` (every ws of the user) and once under its
+    session, so both listings are one prefix. The document is only the
+    ``ws_id``; ``WsView`` stays the one copy of the ws itself.
+    """
+
+    name = "ws.by_user"
+    handles: ClassVar[frozenset[str]] = frozenset({WS_CREATED})
+
+    @classmethod
+    def apply(cls, event: StoredEventV2, tx: ViewDocumentStore) -> None:
+        if event.ws_id is None:
+            raise ValueError("ws.created without a ws_id")
+        doc: JsonObject = {"ws_id": event.ws_id}
+        tail = newest_first_key(event.position)
+        tx.put_view(cls.name, f"{cls.prefix(event.user_id, None)}{tail}", doc)
+        if event.session_id is not None:
+            tx.put_view(cls.name, f"{cls.prefix(event.user_id, event.session_id)}{tail}", doc)
+
+    @classmethod
+    def prefix(cls, user_id: str, session_id: str | None) -> str:
+        # user/session ids are `usr_`/`ses_` + alphanumerics (contracts ids.json),
+        # so the `/` separators are unambiguous and `*` is never a session id.
+        return f"{user_id}/{session_id or '*'}/"
 
 
 class ThreadsView(View):
-    """Every thread of a ws, keyed ``<ws_id>/<thread_id>`` (#129).
+    """Every thread of a ws, keyed ``<ws_id>/<position>`` (#129, #175).
 
     A second index over the same ``thread.created`` events ``WsView`` already
     handles: ``WsView`` only tracks the ws's *main* thread, and ``thread_id``
-    is a uuid-derived id (not creation order), so listing needs its own
-    prefix-listable key plus the creating event's ``position`` to sort by
-    (same trick as ``HighlightView``, issue #60). Distinct from
+    is a uuid-derived id (not creation order), so the key carries the
+    creating event's zero-padded ``position``: key order is creation order,
+    and a page is one key range. Distinct from
     ``harness.core.chat.view.ChatThreadView``, which is chat's own
     single-thread lookup (keyed by ``thread_id`` alone) and never imported
     here (ADR-0009).
@@ -105,11 +143,4 @@ class ThreadsView(View):
             "created_at": format_timestamp(event.created_at),
             "position": event.position,
         }
-        tx.put_view(cls.name, _thread_key(event.ws_id, thread_id), doc)
-
-    @classmethod
-    def list_for_ws(cls, tx: ViewDocumentStore, ws_id: str) -> list[JsonObject]:
-        """Every thread of ``ws_id``, in creation order (the creating event's
-        ``position`` -- never the ``thread_id``/uuid key order)."""
-        docs = [doc for _, doc in cls.list(tx, key_prefix=f"{ws_id}/")]
-        return sorted(docs, key=lambda doc: cast(int, doc["position"]))
+        tx.put_view(cls.name, f"{event.ws_id}/{position_key(event.position)}", doc)
