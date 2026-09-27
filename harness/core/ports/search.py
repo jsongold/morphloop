@@ -13,6 +13,8 @@ picks concrete adapters (ADR-0009) and no implementation lives in core:
   Port).
 - :class:`EmbeddingProvider` -- provider-neutral text embedding call (e.g.
   via ``litellm.embedding()``), mirroring :class:`~harness.core.ports.llm.LLMProvider`.
+- :class:`SearchIndex` -- the write side: upserts/deletes the
+  :class:`SearchDocument` rows both query legs read (``search_documents``).
 
 Fusing the keyword and semantic legs into one ``hybrid`` ranking (RRF) and
 picking which concrete backends serve a given mode is wiring, not a Port
@@ -37,6 +39,10 @@ Every keyword/semantic query is scoped to one authenticated learner
 row only when it is shared corpus (pack content: textbook, drill questions) or
 owned by that learner (e.g. memos); the filter applies before ranking and
 ``limit``, so another learner's rows never affect results or scores.
+
+The owner/parent of a row are stored with it (:class:`SearchDocument`
+``owner_user_id``/``parent_id``, migration ``c9e1f3a5b7d0``), so the learner
+filter and :attr:`SearchHit.parent_id` need no lookup elsewhere.
 
 Value types are frozen dataclasses; see ``harness.core.ports`` for why.
 """
@@ -88,7 +94,53 @@ class SearchHit:
 
 
 class SearchBackendError(Exception):
-    """Base class for keyword/semantic search and reranker backend failures."""
+    """Base class for keyword/semantic search, reranker and index backend failures."""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SearchDocument:
+    """One indexable row: learner-visible ``text`` for resource ``kind``/``id``.
+
+    ``kind``/``id``/``parent_id`` become the :class:`SearchHit` fields. ``owner_user_id``
+    is ``None`` for shared corpus (pack content) and the owning learner's id otherwise
+    (e.g. a memo). ``text`` must already be allowlisted by the caller: never a drill
+    item's expected answer, a reference solution or a holdout drill.
+    """
+
+    kind: str
+    id: str
+    text: str
+    owner_user_id: str | None = None
+    parent_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.kind or not self.id:
+            raise ValueError("a search document needs a non-empty kind and id")
+        if not self.text:
+            raise ValueError("a search document needs non-empty text")
+        if self.owner_user_id == "":
+            raise ValueError("owner_user_id must be non-empty when set")
+        if self.parent_id == "":
+            raise ValueError("parent_id must be non-empty when set")
+
+
+class SearchIndex(Protocol):
+    """Write side of the search corpus (the ``search_documents`` table), keyed by
+    (``kind``, ``id``). Idempotent, so a replay or backfill can re-run it."""
+
+    def upsert(self, documents: Sequence[SearchDocument]) -> None:
+        """Insert or replace each document (text, owner and parent) by (``kind``, ``id``).
+
+        Raises :class:`SearchBackendError` on a backend failure.
+        """
+        ...
+
+    def delete(self, kind: str, id: str) -> None:
+        """Remove the document and its embeddings; a no-op when absent.
+
+        Raises :class:`SearchBackendError` on a backend failure.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

@@ -13,7 +13,12 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 
-from harness.core.ports.search import KeywordSearchRequest, SearchHit, SemanticSearchRequest
+from harness.core.ports.search import (
+    KeywordSearchRequest,
+    SearchDocument,
+    SearchHit,
+    SemanticSearchRequest,
+)
 from harness.testing.contracts import CONTRACTS_DIR, ContractViolation, load_schema, validate
 
 REQUEST = "schemas/search/request.json"
@@ -135,3 +140,11 @@ def test_search_requests_require_learner_scope() -> None:
     with pytest.raises(ValueError, match="model"):
         SemanticSearchRequest(embedding=[0.1], model="", user_id="u1", limit=5)
     assert KeywordSearchRequest(text="ttl", user_id="u1", limit=5).user_id == "u1"
+
+
+def test_search_document_maps_onto_a_hit_with_parent_id() -> None:
+    doc = SearchDocument(
+        kind="memo_entry", id="ent_1", parent_id="ws_1", owner_user_id="u1", text="x"
+    )
+    hit = SearchHit(kind=doc.kind, id=doc.id, parent_id=doc.parent_id, score=1.0, source="keyword")
+    validate({"results": [hit.to_dict()]}, RESPONSE)

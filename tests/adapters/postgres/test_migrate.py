@@ -90,3 +90,26 @@ def test_v040_revision_downgrades_and_upgrades_cleanly(pg_url: str, pg_engine: E
         tables = ("claims", "usage_counters", "search_documents")
         for table in tables:
             assert conn.execute(text("select to_regclass(:t)"), {"t": table}).scalar() == table
+
+
+def test_search_owner_parent_revision_downgrades_and_upgrades(
+    pg_url: str, pg_engine: Engine
+) -> None:
+    config = Config()
+    config.set_main_option("script_location", str(locate_migrations_dir()))
+    columns = text(
+        "select column_name from information_schema.columns "
+        "where table_name = 'search_documents' and column_name in ('owner_user_id', 'parent_id')"
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("DATABASE_URL", pg_url)
+        try:
+            command.downgrade(config, "b8d2f4a6c0e3")
+            with pg_engine.connect() as conn:
+                assert conn.execute(columns).scalars().all() == []
+        finally:
+            command.upgrade(config, "head")  # shared TEST_DATABASE_URL: always restore (#191)
+
+    with pg_engine.connect() as conn:
+        assert sorted(conn.execute(columns).scalars()) == ["owner_user_id", "parent_id"]
+        assert conn.execute(text("select to_regclass('search_documents_owner_idx')")).scalar()
