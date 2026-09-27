@@ -12,6 +12,7 @@ from harness.api.v2.models import Text, V2Model
 from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.ports.json_types import JsonObject, PlainJson
 from harness.core.ws import WsError, create_thread, create_ws, get_ws, list_threads, list_ws
+from harness.core.ws.view import WsByUserView
 
 router = APIRouter(tags=["ws"])
 
@@ -80,8 +81,9 @@ def get_ws_list(
     page: CursorQuery,
     session_id: Annotated[SessionId | None, Query()] = None,
 ) -> JsonObject:
+    after = page.after_in(WsByUserView.prefix(user_id, session_id))
     items, next_key = list_ws(
-        tx, user_id=user_id, session_id=session_id, after=page.after, limit=page.limit
+        tx, user_id=user_id, session_id=session_id, after=after, limit=page.limit
     )
     return {"items": items, "next_cursor": encode_cursor(next_key) if next_key else None}
 
@@ -126,13 +128,14 @@ def get_threads(
     page: CursorQuery,
     target_highlight_id: Annotated[HighlightId | None, Query()] = None,
 ) -> JsonObject:
+    after = page.after_in(f"{ws_id}/")
     try:
         threads, next_key = list_threads(
             tx,
             ws_id,
             user_id=user_id,
             target_highlight_id=target_highlight_id,
-            after=page.after,
+            after=after,
             limit=page.limit,
         )
     except WsError as exc:

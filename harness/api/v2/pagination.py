@@ -46,6 +46,21 @@ class CursorPage:
     after: str | None
     limit: int
 
+    def after_in(self, prefix: str) -> str | None:
+        """``self.after``, checked against the request's own ``View.list(key_prefix=...)``.
+
+        A syntactically valid cursor (right base64/UTF-8) can still be one
+        never issued for this resource, or issued for another ws/user -- its
+        decoded key then falls outside ``prefix`` and the store would just
+        page from wherever it happens to sort, silently. Per
+        `contracts/openapi/v0.2/components/common.yaml` `CursorParam`
+        ("Unknown or expired -> 400 `invalid-request`"), that is a 400, not a
+        200 with a wrong/empty page (#221, #226).
+        """
+        if self.after is not None and not self.after.startswith(prefix):
+            raise HTTPException(400, "cursor does not belong to this resource")
+        return self.after
+
 
 def cursor_page_of(
     cursor: Annotated[str | None, Query()] = None,

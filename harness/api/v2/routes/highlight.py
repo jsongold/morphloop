@@ -162,7 +162,8 @@ def list_(
     ws_id: WsIdPath, tx: EventTransactionV2Dep, user_id: UserIdDep, page: CursorQuery
 ) -> dict[str, JsonValue]:
     ws_or_404(tx, ws_id, user_id=user_id)
-    docs, next_cursor = active_highlights_page(tx, ws_id, after=page.after, limit=page.limit)
+    after = page.after_in(f"{ws_id}:")
+    docs, next_cursor = active_highlights_page(tx, ws_id, after=after, limit=page.limit)
     return {
         "highlights": [_public(doc) for doc in docs],
         "next_cursor": encode_cursor(next_cursor) if next_cursor is not None else None,

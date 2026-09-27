@@ -25,6 +25,7 @@ from harness.api.v2.deps import (
 from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.ports import JsonObject, PlainJson, format_timestamp, to_plain_object
 from harness.core.ports.events_v2 import EventIdConflictError
+from harness.core.session.model import SessionsByUserView
 from harness.core.session.service import (
     PackMismatchError,
     TopicNotFoundError,
@@ -94,7 +95,8 @@ def create_session_route(
 def list_sessions_route(
     tx: EventTransactionV2Dep, user_id: UserIdDep, page: CursorQuery
 ) -> dict[str, PlainJson]:
-    docs, next_key = list_sessions(tx, user_id=user_id, after=page.after, limit=page.limit)
+    after = page.after_in(SessionsByUserView.prefix(user_id))
+    docs, next_key = list_sessions(tx, user_id=user_id, after=after, limit=page.limit)
     return {
         "items": [_document(doc) for doc in docs],
         "next_cursor": encode_cursor(next_key) if next_key else None,
