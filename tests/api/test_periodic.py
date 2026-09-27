@@ -3,6 +3,8 @@ across workers; the SDK's claims purge job deletes expired rows."""
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 
 from harness.api.periodic import CLAIMS_PURGE, PeriodicJob, claims_purge, run_once
@@ -39,6 +41,33 @@ def test_one_worker_runs_each_interval_and_another_takes_over_when_it_stops() ->
     clock.now += EVERY + timedelta(seconds=1)
     assert run_once(job, store, "b") is True
     assert runs == ["ran"] * 3
+
+
+def test_run_once_renews_the_lease_while_the_job_outruns_its_interval() -> None:
+    # Real wall clock (InMemoryClaimStore's default): the renewer thread ticks
+    # in real time regardless of what a fake clock says.
+    store = InMemoryClaimStore()
+    every = timedelta(milliseconds=80)
+    started = threading.Event()
+    finish = threading.Event()
+    job = PeriodicJob("slow", every, lambda: (started.set(), finish.wait(2)))
+
+    runner = threading.Thread(target=run_once, args=(job, store, "a"))
+    runner.start()
+    assert started.wait(1)
+
+    # Outlast the interval several times over while "a" is still running: its
+    # lease keeps getting renewed, so another worker stays refused.
+    assert not finish.wait(every.total_seconds() * 4)
+    assert run_once(PeriodicJob("slow", every, lambda: None), store, "b") is False
+
+    finish.set()
+    runner.join(1)
+    assert not runner.is_alive()
+
+    # Once "a" stops renewing and its last lease expires, "b" can take over.
+    time.sleep(every.total_seconds() * 1.5)
+    assert run_once(PeriodicJob("slow", every, lambda: None), store, "b") is True
 
 
 def test_claims_purge_keeps_the_longest_window_until_it_ends() -> None:

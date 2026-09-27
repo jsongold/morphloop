@@ -7,9 +7,12 @@ a sync job runs in the event loop's default thread pool
 
 APScheduler 3 has no cross-process run-once, so each tick first takes the
 claims lease ``periodic:<name>`` (TTL = the job's interval, never released).
-The worker that holds it renews it on its next tick; the others are refused
-until it expires, so the job runs once per interval however many workers there
-are, and another worker takes over when the holder dies.
+The worker that holds it renews it on its next tick, and also from a
+background thread every half interval while ``job.run()`` is in progress, so a
+run that outlasts the interval keeps the lease instead of another worker's
+``try_claim`` winning it mid-run (#211). The others are refused until the
+lease expires, so the job runs once per interval however many workers there
+are, and another worker takes over when the holder dies (or hangs).
 
 An app chooses its jobs with ``AppExtension(periodic_jobs=...)``. The SDK adds
 one, :data:`CLAIMS_PURGE`; an app job with the same name replaces it.
@@ -17,6 +20,7 @@ one, :data:`CLAIMS_PURGE`; an app job with the same name replaces it.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -54,13 +58,32 @@ def app_claims(app: FastAPI) -> ClaimStore:
 def run_once(job: PeriodicJob, claims: ClaimStore, holder: str) -> bool:
     """Run ``job`` if ``holder`` wins (or renews) its lease; ``True`` if it ran.
 
-    ponytail: a job slower than its interval can overlap on another worker
-    once the lease expires; renew the lease while running if that matters.
+    A background thread renews the lease every ``job.every / 2`` while
+    ``job.run()`` is in progress, so a run slower than the interval keeps the
+    lease instead of letting another worker's ``try_claim`` win it mid-run (#211).
     """
-    if not claims.try_claim(f"periodic:{job.name}", holder, job.every):
+    key = f"periodic:{job.name}"
+    if not claims.try_claim(key, holder, job.every):
         return False
-    job.run()
+    stop = threading.Event()
+    renewer = threading.Thread(
+        target=_renew_until_stopped, args=(claims, key, holder, job.every, stop)
+    )
+    renewer.start()
+    try:
+        job.run()
+    finally:
+        stop.set()
+        renewer.join()
     return True
+
+
+def _renew_until_stopped(
+    claims: ClaimStore, key: str, holder: str, every: timedelta, stop: threading.Event
+) -> None:
+    """Re-claim ``key`` every half interval until ``stop`` is set."""
+    while not stop.wait(every.total_seconds() / 2):
+        claims.try_claim(key, holder, every)
 
 
 def claims_purge(store_of: Callable[[], ClaimStore]) -> PeriodicJob:
