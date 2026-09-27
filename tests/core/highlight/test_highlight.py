@@ -12,7 +12,12 @@ from harness.core.highlight.service import (
     list_highlights,
     remove_highlight,
 )
-from harness.core.highlight.view import HighlightView, active_highlights, highlight_key
+from harness.core.highlight.view import (
+    HighlightView,
+    active_highlights,
+    active_highlights_page,
+    highlight_key,
+)
 from harness.core.labels import LabelError
 from harness.core.ports.json_types import JsonObject
 from harness.testing.fakes_v2 import InMemoryEventStoreV2
@@ -312,3 +317,86 @@ def test_active_highlights_scoped_by_ws_id(schemas: ContractSchemas) -> None:
     with store.transaction() as tx:
         assert len(active_highlights(tx, "ws_a")) == 1
         assert len(active_highlights(tx, "ws_b")) == 1
+
+
+def _paging_event_id(n: int) -> str:
+    # .hex sorts ascending in n, so the derived highlight_id (key order) is
+    # 1, 2, 3 -- matching creation order for this test's assertions.
+    return f"00000000-0000-4000-8000-{n:012d}"
+
+
+def test_active_highlights_page_pages_through_the_ws(schemas: ContractSchemas) -> None:
+    store = InMemoryEventStoreV2(schemas)
+    with store.transaction() as tx:
+        docs = [
+            create_highlight(
+                tx,
+                event_id=_paging_event_id(n),
+                user_id="usr_01",
+                session_id="ses_01",
+                ws_id=WS_ID,
+                anchor=_anchor(),
+                labels=[],
+                label_vocabulary=VOCAB,
+                topic_ids=TOPIC_IDS,
+            )
+            for n in (1, 2, 3)
+        ]
+
+    with store.transaction() as tx:
+        page, cursor = active_highlights_page(tx, WS_ID, after=None, limit=2)
+        assert [doc["highlight_id"] for doc in page] == [d["highlight_id"] for d in docs[:2]]
+        assert cursor is not None
+
+        page2, cursor2 = active_highlights_page(tx, WS_ID, after=cursor, limit=2)
+        assert [doc["highlight_id"] for doc in page2] == [docs[2]["highlight_id"]]
+        assert cursor2 is None
+
+
+def test_active_highlights_page_does_not_stop_early_on_an_all_removed_page(
+    schemas: ContractSchemas,
+) -> None:
+    """A page that filters down to zero active highlights (because the raw
+    page was all tombstones) must still hand back a next_cursor (#176)."""
+    store = InMemoryEventStoreV2(schemas)
+    with store.transaction() as tx:
+        first = create_highlight(
+            tx,
+            event_id=_paging_event_id(1),
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id=WS_ID,
+            anchor=_anchor(),
+            labels=[],
+            label_vocabulary=VOCAB,
+            topic_ids=TOPIC_IDS,
+        )
+        second = create_highlight(
+            tx,
+            event_id=_paging_event_id(2),
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id=WS_ID,
+            anchor=_anchor(),
+            labels=[],
+            label_vocabulary=VOCAB,
+            topic_ids=TOPIC_IDS,
+        )
+    with store.transaction() as tx:
+        remove_highlight(
+            tx,
+            event_id=_paging_event_id(3),
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id=WS_ID,
+            highlight_id=first["highlight_id"],
+        )
+
+    with store.transaction() as tx:
+        page, cursor = active_highlights_page(tx, WS_ID, after=None, limit=1)
+        assert page == []
+        assert cursor is not None  # the removed highlight's key, not the end
+
+        page2, cursor2 = active_highlights_page(tx, WS_ID, after=cursor, limit=1)
+        assert [doc["highlight_id"] for doc in page2] == [second["highlight_id"]]
+        assert cursor2 is None

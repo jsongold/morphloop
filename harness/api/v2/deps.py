@@ -49,6 +49,7 @@ from starlette.requests import HTTPConnection
 
 from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
 from harness.adapters.postgres.generated_documents import PostgresGeneratedDocumentStore
+from harness.api.periodic import app_claims
 from harness.api.v2.auth import auth_provider_of
 from harness.api.v2.db import db_from_settings, db_of
 from harness.api.v2.tickets import socket_tickets_of
@@ -161,7 +162,7 @@ def user_id_of(
     if conn.scope["type"] == "websocket":
         ticket = conn.query_params.get("ticket")
         if ticket:
-            return socket_tickets_of(conn).redeem(ticket)
+            return socket_tickets_of(conn).redeem(ticket, app_claims(conn.app))
         return auth_provider_of(conn).user_id(None)
     token = credentials.credentials if credentials else None
     return auth_provider_of(conn).user_id(token)

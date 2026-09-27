@@ -18,7 +18,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Query
 
 DEFAULT_LIMIT = 50
-MAX_LIMIT = 200
+MAX_LIMIT = 100  # contracts/openapi/v0.2/components/common.yaml LimitParam
 
 
 def encode_cursor(key: str) -> str:
@@ -27,10 +27,16 @@ def encode_cursor(key: str) -> str:
 
 
 def _decode_cursor(cursor: str) -> str:
+    # urlsafe_b64decode has no `validate` param, so translate the urlsafe
+    # alphabet (-_ -> +/) ourselves and call b64decode(validate=True), which
+    # rejects non-alphabet characters instead of silently discarding them.
     try:
-        return base64.urlsafe_b64decode(cursor.encode()).decode()
+        translated = cursor.encode().translate(bytes.maketrans(b"-_", b"+/"))
+        return base64.b64decode(translated, validate=True).decode()
     except (binascii.Error, UnicodeDecodeError) as exc:
-        raise HTTPException(422, "cursor is not a recognized page cursor") from exc
+        # contracts/openapi/v0.2/components/common.yaml CursorParam: unknown
+        # or malformed cursor -> 400 `invalid-request`, not 422.
+        raise HTTPException(400, "cursor is not a recognized page cursor") from exc
 
 
 @dataclass(frozen=True, slots=True)
