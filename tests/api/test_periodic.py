@@ -39,10 +39,12 @@ class _StallingRenewalStore(InMemoryClaimStore):
         self._calls = 0
         self._stall = stall
         self._stall_at = stall_at
+        self.stalled = threading.Event()
 
     def try_claim(self, key: str, holder: str, ttl: timedelta) -> bool:
         self._calls += 1
         if self._calls == self._stall_at:
+            self.stalled.set()
             self._stall.wait(5)
         return super().try_claim(key, holder, ttl)
 
@@ -110,11 +112,18 @@ def test_renewer_stops_renewing_a_hung_job_so_another_worker_takes_over() -> Non
     store = InMemoryClaimStore()
     every = timedelta(milliseconds=80)
     finish = threading.Event()
-    job = PeriodicJob("hung", every, lambda: finish.wait(5))
+    started = threading.Event()
 
-    runner = threading.Thread(target=run_once, args=(job, store, "a"))
+    def hang() -> None:
+        started.set()
+        finish.wait(5)
+
+    runner = threading.Thread(target=run_once, args=(PeriodicJob("hung", every, hang), store, "a"))
     runner.start()
     try:
+        # "a" must hold the lease before "b" starts polling, or "b" could win
+        # it outright without exercising the renewal deadline (#263).
+        assert started.wait(2)
         deadline = time.monotonic() + 3
         took_over = False
         while time.monotonic() < deadline:
@@ -155,12 +164,14 @@ def test_run_once_returns_even_if_a_renewal_call_stalls() -> None:
     every = timedelta(milliseconds=80)
     stall = threading.Event()
     store = _StallingRenewalStore(stall, stall_at=2)
-    job = PeriodicJob("stalled", every, lambda: time.sleep(every.total_seconds() * 1.5))
+    # The job only returns once a renewal call is demonstrably stuck (#264).
+    job = PeriodicJob("stalled", every, lambda: store.stalled.wait(2))
 
     start = time.monotonic()
     try:
         assert run_once(job, store, "a") is True
         elapsed = time.monotonic() - start
+        assert store.stalled.is_set()
         assert elapsed < 1.0
     finally:
         stall.set()

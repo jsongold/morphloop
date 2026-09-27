@@ -16,12 +16,9 @@ are, and another worker takes over when the holder dies (or hangs).
 
 That renewer thread is bounded three ways: it gives up after
 ``MAX_RENEWALS_FACTOR`` intervals so a ``job.run()`` that hangs forever
-eventually loses exclusivity instead of renewing forever (#231); each renewal
-attempt runs in its own short-lived daemon thread, at most one in flight, so
-a ``try_claim`` call that stalls or raises (e.g. a transient DB error) is
-logged and left behind rather than wedging the renewer loop itself -- the
-deadline/stop checks above keep running on schedule instead of getting stuck
-waiting on that one call (#232); and ``run_once`` only waits up to
+eventually loses exclusivity instead of renewing forever (#231); a renewal
+that raises (e.g. a transient DB error) is logged and retried next cycle
+instead of killing the thread (#232); and ``run_once`` only waits up to
 ``MAX_RENEWER_JOIN`` (capped by the job's own interval) for the renewer loop
 to notice it should stop, so a stalled renewal can't block the caller -- an
 APScheduler job-executor thread -- and make APScheduler skip future ticks
@@ -112,51 +109,20 @@ def _renew_until_stopped(
     """Re-claim ``key`` every half interval until ``stop`` is set, or until the
     run has outlasted ``MAX_RENEWALS_FACTOR`` intervals (#231; the deadline is
     rechecked after each wait so a slow cycle can't sneak one more renewal
-    past it). Each attempt is handed to :func:`_attempt_renewal` in its own
-    daemon thread rather than called inline, and a new one is only started
-    once the last is done -- so a ``try_claim`` that stalls (e.g. a DB hang)
-    can't wedge this loop and stop it from noticing ``stop`` or the deadline
-    (#232, #233)."""
+    past it). A failed renewal (e.g. a transient DB error) is logged and
+    retried next cycle instead of killing this thread (#232). A renewal that
+    stalls just stalls this thread: it isn't renewing, so the lease lapses on
+    its own, and ``run_once`` doesn't wait for it past its bounded join (#233)."""
     deadline = time.monotonic() + every.total_seconds() * MAX_RENEWALS_FACTOR
     half = every.total_seconds() / 2
-    attempt_done = threading.Event()
-    attempt_done.set()
-    while True:
-        if time.monotonic() >= deadline:
-            return
-        if stop.wait(half):
-            return
-        if time.monotonic() >= deadline:
-            return
-        if attempt_done.is_set():
-            attempt_done.clear()
-            threading.Thread(
-                target=_attempt_renewal,
-                args=(claims, key, holder, every, attempt_done),
-                daemon=True,
-            ).start()
-        # else: the previous attempt is still stuck (e.g. a stalled DB call
-        # holding a pooled connection); skip this cycle rather than start a
-        # second one on top of it.
+    while not stop.wait(half) and time.monotonic() < deadline:
+        try:
+            claims.try_claim(key, holder, every)
+        except Exception:
+            logger.warning("periodic: lease renewal failed for %s, retrying", key, exc_info=True)
         # ponytail: no query timeout on the DB call itself, so a permanently
-        # stuck attempt still leaks one connection for the process lifetime.
-        # Upgrade path: a statement_timeout on the claims engine (adapter
-        # layer, out of scope here).
-
-
-def _attempt_renewal(
-    claims: ClaimStore, key: str, holder: str, every: timedelta, done: threading.Event
-) -> None:
-    """One renewal attempt; ``done`` is set on success, refusal or failure so
-    :func:`_renew_until_stopped` knows when it's safe to start the next one.
-    A failure (e.g. a transient DB error) is logged here rather than left to
-    propagate and kill the calling thread (#232)."""
-    try:
-        claims.try_claim(key, holder, every)
-    except Exception:
-        logger.warning("periodic: lease renewal failed for %s, retrying", key, exc_info=True)
-    finally:
-        done.set()
+        # stuck renewal leaks this daemon thread and one connection. Upgrade
+        # path: a statement_timeout on the claims engine (adapter layer).
 
 
 def claims_purge(store_of: Callable[[], ClaimStore]) -> PeriodicJob:
