@@ -23,6 +23,7 @@ from harness.api.v2.deps import (
     replay_or_conflict,
     ws_or_404,
 )
+from harness.api.v2.limits import LLM, rate_limit
 from harness.api.v2.models import Text, V2Model, reject_null
 from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.contract_schemas import ContractSchemas
@@ -129,7 +130,11 @@ def get_drill(service: DrillServiceDep, item_id: str) -> dict[str, PlainJson]:
         raise HTTPException(exc.status, str(exc)) from exc
 
 
-@router.post("/ws/{ws_id}/drills/{item_id}/answers", status_code=201)
+@router.post(
+    "/ws/{ws_id}/drills/{item_id}/answers",
+    status_code=201,
+    dependencies=[Depends(rate_limit(LLM))],
+)
 def answer_drill(
     service: DrillServiceDep,
     store: EventStoreV2Dep,

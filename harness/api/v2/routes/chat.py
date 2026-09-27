@@ -16,6 +16,7 @@ from pydantic import Field
 
 from harness.api.problems import problem
 from harness.api.v2.deps import EventIdDep, EventStoreV2Dep, PackV2Dep, UserIdDep
+from harness.api.v2.limits import LLM, rate_limit
 from harness.api.v2.models import Text, V2Model
 from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.chat import (
@@ -88,7 +89,7 @@ def get_messages(
     }
 
 
-@router.post(PATH, response_model=None)
+@router.post(PATH, response_model=None, dependencies=[Depends(rate_limit(LLM))])
 def post_message(
     ws_id: str,
     thread_id: str,

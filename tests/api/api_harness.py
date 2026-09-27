@@ -12,8 +12,11 @@ from collections.abc import Sequence
 from fastapi import FastAPI
 
 from harness.api.app import AppExtension, create_app
+from harness.testing.claims import InMemoryClaimStore
 
 
 def build_app(*, extensions: Sequence[AppExtension] = ()) -> FastAPI:
-    """The real FastAPI app with ``extensions``."""
-    return create_app(extensions=extensions)
+    """The real FastAPI app with ``extensions``; claims (limits, leases) in memory."""
+    app = create_app(extensions=extensions)
+    app.state.claims = InMemoryClaimStore()
+    return app

@@ -22,6 +22,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
 from harness.api.v2.deps import GeneratedDocumentsDep, PackV2Dep
+from harness.api.v2.limits import LLM, rate_limit
 from harness.api.v2.models import V2Model
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.generator.runtime import GeneratedResource, GenerateRequest, PreGenerator
@@ -70,7 +71,11 @@ def pregenerator_of(
     return generator
 
 
-@router.post("/notebook/generate", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/notebook/generate",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(rate_limit(LLM))],
+)
 def generate(
     body: GenerateBody,
     background: BackgroundTasks,
