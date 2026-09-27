@@ -201,15 +201,16 @@ which wins) or with env vars. Unset: auth=`dev` (refused in production), db=`pos
 2. From *Connect*, copy two connection strings: the **transaction pooler** (Supavisor,
    port 6543) for the app and the **direct connection** (port 5432) for migrations.
    Use the `postgresql+psycopg://` scheme for both.
-3. **Close the Data API to the SDK's tables.** The migrations create tables in
-   `public` without row-level security, and Supabase's Data API (PostgREST) exposes
-   `public` to the `anon` and `authenticated` roles by default, which would bypass
-   the SDK's authorization. The SDK never uses the Data API: under *Project Settings
-   → Data API*, disable it or remove `public` from *Exposed schemas* before migrating.
-
-   If another client needs the Data API on `public`, leave it enabled here and see
-   step 5 below instead — the SDK's tables don't exist yet, so revoking access to
-   them by name has nothing to act on until after migrating.
+3. **Close the Data API before migrating.** The migrations create tables in `public`
+   without row-level security, and Supabase's Data API (PostgREST) exposes `public`
+   to the `anon` and `authenticated` roles by default, which would bypass the SDK's
+   authorization. The SDK never uses the Data API: under *Project Settings → Data
+   API*, disable it (or remove `public` from *Exposed schemas*) before migrating —
+   even if another client normally needs it there. A table can't be named in a
+   `revoke` before it exists, so there's no way to close only the SDK's tables ahead
+   of migrating; leaving the Data API open for that window would expose the new,
+   RLS-less tables to `anon`/`authenticated` until the revoke in step 5 runs. Reopen
+   it once step 5 is done.
 
 4. Set the env vars and migrate over the direct URL:
 
@@ -230,13 +231,13 @@ from harness.sdk import create_app, supabase_auth, supabase_engine
 app = create_app(auth=supabase_auth(project_ref="<ref>"), db=supabase_engine)
 ```
 
-5. **If you share the Data API and left it enabled in step 3**, revoke `anon` and
-   `authenticated` from just the SDK's own tables now that migration created them —
-   not the whole schema. `revoke ... on all tables in schema public` and
-   `alter default privileges ... in schema public` apply to every table in the
-   schema (Postgres has no per-table form of `alter default privileges`; it always
-   grants/revokes for a whole schema or database), so either would also strip that
-   other client's own tables and future-table grants. PostgREST only ever serves
+5. **Before reopening the Data API**, revoke `anon` and `authenticated` from just the
+   SDK's own tables now that migration created them — not the whole schema.
+   `revoke ... on all tables in schema public` and `alter default privileges ...
+   in schema public` apply to every table in the schema (Postgres has no per-table
+   form of `alter default privileges`; it always grants/revokes for a whole schema
+   or database), so either would also strip that other client's own tables and
+   future-table grants. PostgREST only ever serves
    tables and views, never raw sequences, so a table-level revoke closes the Data
    API path without touching sequences either (SQL editor):
 
@@ -248,12 +249,13 @@ app = create_app(auth=supabase_auth(project_ref="<ref>"), db=supabase_engine)
    from anon, authenticated;
    ```
 
-   This is the table list as of this SDK version (see `migrations/versions/`);
-   re-run it after upgrading if a later migration adds tables. Supabase is
-   separately rolling out opt-in Data API exposure for newly created tables (no
-   auto-grant unless you `grant` explicitly), the default for new projects since
-   2026-05-30 and for all existing projects from 2026-10-30, so once your project
-   is past that rollout, tables from future SDK migrations won't need this revoke.
+   This is the table list as of this SDK version (see `migrations/versions/`); an
+   upgrade that adds tables needs the close/migrate/revoke/reopen sequence again,
+   naming the new tables too. Supabase is separately rolling out opt-in Data API
+   exposure for newly created tables (no auto-grant unless you `grant` explicitly),
+   the default for new projects since 2026-05-30 and for all existing projects from
+   2026-10-30, so once your project is past that rollout this sequence is no longer
+   needed at all.
 
 ## Core idea
 
