@@ -103,6 +103,41 @@ def test_japanese_substring_is_findable_via_pg_trgm(index: PostgresSearchIndex) 
     assert index.search(_req("存在しない単語列", resources=(kind,))) == []
 
 
+def test_query_with_percent_is_literal_not_a_wildcard(index: PostgresSearchIndex) -> None:
+    kind = _kind("memo_entry")
+    index.upsert(
+        [
+            SearchDocument(kind=kind, id="lit", owner_user_id="u1", text="scored 100% today"),
+            SearchDocument(kind=kind, id="other", owner_user_id="u1", text="unrelated widget"),
+        ]
+    )
+    hits = index.search(_req("100%", resources=(kind,)))
+    assert [h.id for h in hits] == ["lit"]
+
+
+def test_query_with_underscore_is_literal_not_a_single_char_wildcard(
+    index: PostgresSearchIndex,
+) -> None:
+    kind = _kind("memo_entry")
+    index.upsert(
+        [
+            SearchDocument(kind=kind, id="lit", owner_user_id="u1", text="zz a_b zz"),
+            SearchDocument(kind=kind, id="other", owner_user_id="u1", text="zz axb zz"),
+        ]
+    )
+    hits = index.search(_req("a_b", resources=(kind,)))
+    assert [h.id for h in hits] == ["lit"]
+
+
+def test_query_with_backslash_is_literal(index: PostgresSearchIndex) -> None:
+    kind = _kind("memo_entry")
+    index.upsert(
+        [SearchDocument(kind=kind, id="lit", owner_user_id="u1", text="path is C:\\temp\\file")]
+    )
+    hits = index.search(_req("C:\\temp", resources=(kind,)))
+    assert [h.id for h in hits] == ["lit"]
+
+
 def test_upsert_is_idempotent_by_kind_and_id(index: PostgresSearchIndex, engine: Engine) -> None:
     kind = _kind("memo_entry")
     index.upsert([SearchDocument(kind=kind, id="e1", owner_user_id="u1", text="first version")])

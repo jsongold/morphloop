@@ -15,7 +15,11 @@ The ``'simple'`` config has no stemmer or stopwords and does not segment CJK tex
 input with no spaces becomes one long lexeme, so ``plainto_tsquery`` alone would only match a
 query equal to the whole string. The ``WHERE`` clause's second arm, ``text ILIKE '%'||query||'%'``,
 is the partial-match path that actually finds Japanese substrings; the same ``pg_trgm`` GIN
-index accelerates it (trigram indexes serve ``LIKE``/``ILIKE``, not only the ``%`` operator).
+index accelerates it (trigram indexes serve ``LIKE``/``ILIKE``, not only the ``%`` operator). The
+query has its backslashes, then its ``%``/``_``, escaped before that arm only (``ESCAPE`` with a
+backslash) -- so a learner searching for a literal ``%``/``_`` gets a literal substring match, not
+a wildcard; the tsquery/similarity arms take the raw query, since neither treats those characters
+specially.
 Both legs are library-free: no tokenizer dependency needed for v0.4 (fugashi/janome are S3c's
 concern, tokenizing before indexing, not this query).
 
@@ -67,7 +71,10 @@ _SEARCH_SQL = """
            ) AS score
     FROM search_documents
     WHERE (owner_user_id IS NULL OR owner_user_id = :user_id)
-      AND (search_tsv @@ plainto_tsquery('simple', :q) OR text ILIKE '%' || :q || '%')
+      AND (
+          search_tsv @@ plainto_tsquery('simple', :q)
+          OR text ILIKE '%' || :q_like || '%' ESCAPE '\\'
+      )
       {resource_clause}
     ORDER BY score DESC, resource, source_id
     LIMIT :limit
@@ -76,6 +83,11 @@ _SEARCH = text(_SEARCH_SQL.format(resource_clause=""))
 _SEARCH_BY_RESOURCE = text(
     _SEARCH_SQL.format(resource_clause="AND resource IN :resources")
 ).bindparams(bindparam("resources", expanding=True))
+
+
+def _escape_like(query: str) -> str:
+    """Escape ``\\``, ``%`` and ``_`` so an ILIKE pattern treats ``query`` literally."""
+    return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class PostgresSearchIndex:
@@ -113,6 +125,7 @@ class PostgresSearchIndex:
     def search(self, request: KeywordSearchRequest) -> Sequence[SearchHit]:
         params: dict[str, object] = {
             "q": request.text,
+            "q_like": _escape_like(request.text),
             "user_id": request.user_id,
             "limit": request.limit,
         }
