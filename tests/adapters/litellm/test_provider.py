@@ -188,6 +188,23 @@ def test_provenance_echoes_the_max_retries_actually_sent() -> None:
     assert provenance.generation_parameters["max_retries"] == MAX_RETRIES
 
 
+def test_a_pack_declared_num_retries_does_not_override_max_retries() -> None:
+    # #258: litellm treats "num_retries" as an alias for "max_retries" and
+    # gives it precedence, so a pack declaring it instead could otherwise
+    # silently raise the effective retry count above what the startup check
+    # (harness.api.app.check_llm_timeout_under_lease) assumes.
+    completion = _FakeCompletion([_response('{"rationale": "ok", "confidence": 0.5}')])
+    llm = _provenance(generation_parameters={"num_retries": 10})
+
+    response = LiteLLMProvider(completion=completion).complete_structured(_request(llm=llm))
+
+    call = completion.calls[0]
+    assert call["max_retries"] == MAX_RETRIES
+    assert "num_retries" not in call
+    assert response.provenance.generation_parameters["max_retries"] == MAX_RETRIES
+    assert "num_retries" not in response.provenance.generation_parameters
+
+
 # --- Success --------------------------------------------------------------
 
 

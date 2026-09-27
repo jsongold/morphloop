@@ -147,15 +147,25 @@ class LiteLLMProvider:
     def _kwargs(self, llm: LLMProvenance) -> dict[str, GenerationParameter]:
         """``generation_parameters`` plus this provider's timeout and retry count.
 
-        Ours wins over a pack-declared ``timeout``: the safety margin under
-        the judge lease (#203) is an app concern (ADR-0010), not a pack's to
-        override, and a duplicate ``timeout=`` keyword would otherwise raise.
-        This is also the single dict actually sent to ``litellm.completion``,
-        so ``_echo`` reuses it verbatim for provenance (#243): what a pack
-        declared never overrides what was actually sent.
+        Ours wins over a pack-declared ``timeout``, ``max_retries`` or
+        ``num_retries``: the lease-safety margin (#203, #242) is an app
+        concern (ADR-0010), not a pack's to override. ``num_retries`` is
+        litellm's alternate spelling for ``max_retries`` and takes precedence
+        over it when both are present (verified in the installed
+        ``litellm/main.py``: ``if num_retries is not None: max_retries =
+        num_retries``), so a pack declaring it instead of ``max_retries``
+        would otherwise silently raise the effective retry count above what
+        ``check_llm_timeout_under_lease`` assumes (#258) -- both keys are
+        dropped from the pack's parameters before ours are set. This is also
+        the single dict actually sent to ``litellm.completion``, so ``_echo``
+        reuses it verbatim for provenance (#243): what a pack declared never
+        overrides what was actually sent.
         """
+        params = dict(llm.generation_parameters)
+        params.pop("max_retries", None)
+        params.pop("num_retries", None)
         return {
-            **dict(llm.generation_parameters),
+            **params,
             "timeout": self._timeout,
             "max_retries": MAX_RETRIES,
         }
