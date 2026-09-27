@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from harness.core.ports.claims import ClaimStore, check_positive, check_window, slot_key
+from harness.core.ports.claims import ClaimStore, Refused, check_positive, check_window, slot_key
 
 _CLAIM = text(
     """
@@ -46,6 +46,16 @@ _CONSUME = text(
     RETURNING n
     """
 )
+# Seconds left in the current fixed window (same bucketing as _CONSUME), read
+# off the database clock -- only run on refusal, for Retry-After (#240).
+_WINDOW_LEFT = text(
+    """
+    SELECT :secs - (
+        extract(epoch FROM clock_timestamp())
+        - floor(extract(epoch FROM clock_timestamp()) / :secs) * :secs
+    )
+    """
+)
 _PURGE_CLAIMS = text("DELETE FROM claims WHERE expires_at < clock_timestamp()")
 _PURGE_COUNTERS = text("DELETE FROM usage_counters WHERE window_start < clock_timestamp() - :age")
 
@@ -64,12 +74,14 @@ class PostgresClaimStore:
         with self._engine.begin() as conn:
             conn.execute(_RELEASE, {"key": key, "holder": holder})
 
-    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool:
+    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool | Refused:
         secs = check_window(window)
         check_positive(limit=limit)
         params = {"subject": subject, "name": name, "limit": limit, "secs": secs}
         with self._engine.begin() as conn:
-            return conn.execute(_CONSUME, params).one_or_none() is not None
+            if conn.execute(_CONSUME, params).one_or_none() is not None:
+                return True
+            return Refused(conn.execute(_WINDOW_LEFT, {"secs": secs}).scalar_one())
 
     def acquire_slot(
         self, subject: str, name: str, *, holder: str, cap: int, ttl: timedelta

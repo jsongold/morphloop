@@ -55,6 +55,20 @@ def check_window(window: timedelta) -> float:
     return window.total_seconds()
 
 
+class Refused(float):
+    """The seconds left in the current window, read off the store's own clock,
+    when :meth:`ClaimStore.consume` refuses a call (#240).
+
+    Falsy like the ``False`` it replaces, so ``if not store.consume(...)``
+    still detects a refusal; the number itself is how long the caller
+    (e.g. ``Retry-After``) should wait -- computed by the store, never the
+    caller's own clock.
+    """
+
+    def __bool__(self) -> bool:
+        return False
+
+
 class ClaimStore(Protocol):
     """Cross-process leases and counters."""
 
@@ -67,10 +81,11 @@ class ClaimStore(Protocol):
         """Drop ``holder``'s lease on ``key``; a no-op if it holds none."""
         ...
 
-    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool:
-        """Count one call in the current window; ``False`` (not counted) once
-        ``limit`` calls are already counted there. ``ValueError`` if ``window``
-        exceeds :data:`MAX_COUNTER_WINDOW`."""
+    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool | Refused:
+        """Count one call in the current window; ``True`` once counted. Past
+        ``limit`` calls already counted there, refuse without counting and
+        return a :class:`Refused` -- the seconds left in the window. ``ValueError``
+        if ``window`` exceeds :data:`MAX_COUNTER_WINDOW`."""
         ...
 
     def acquire_slot(
