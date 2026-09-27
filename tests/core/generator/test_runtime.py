@@ -30,6 +30,7 @@ from harness.core.ports import (
     LLMError,
     ResourceLimits,
 )
+from harness.testing.claims import InMemoryClaimStore
 from harness.testing.fakes import (
     FakeDomainAdapter,
     FakeFixtureProvider,
@@ -255,6 +256,7 @@ def test_post_generate_runs_in_the_background() -> None:
     app.state.pack_v2 = _PACK  # no generator role
     app.state.generated_documents = store
     app.state.llm = llm
+    app.state.claims = InMemoryClaimStore()  # the route's per-user LLM limit
     client = TestClient(app)
     assert client.post("/v2/notebook/generate", json={"resource": "drill"}).status_code == 503
     app.state.pack_v2 = PACK
