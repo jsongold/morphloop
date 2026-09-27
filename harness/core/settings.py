@@ -99,6 +99,8 @@ class Settings(BaseSettings):
     # v0.4 (#169): per-user limits (#152 "Per-user lab / LLM call limits").
     morphloop_user_max_concurrent_labs: int = Field(default=1, gt=0)
     morphloop_user_llm_calls_per_minute: int = Field(default=20, gt=0)
+    # #197: caps POST /v2/auth/socket-tickets issues per caller per minute.
+    morphloop_user_socket_tickets_per_minute: int = Field(default=30, gt=0)
 
     # v0.4 (#180): the pgvector column size, fixed when the search migration
     # runs. <=1536 keeps a plain ``vector`` HNSW-indexable (the cap is 2000);
