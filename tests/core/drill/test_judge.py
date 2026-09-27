@@ -476,6 +476,44 @@ def test_judgment_id_is_validated_and_recording_is_race_safe() -> None:
         assert stored_judgment(tx, other.id) == first
 
 
+class _StaleRead:
+    """A transaction whose pre-append read ran before a concurrent writer committed."""
+
+    def __init__(self, tx: object) -> None:
+        self.tx = tx
+
+    def get(self, event_id: str) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.tx, name)
+
+
+def test_a_judgment_committed_after_the_read_wins_instead_of_409() -> None:
+    # #222: a retry past the lease judged concurrently and committed first with
+    # different output; the loser's append conflicts but a valid judgment exists.
+    schemas = ContractSchemas.load()
+    pack = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    item = next(i for i in pack_items(pack) if i.id == "dns-record-choice")
+    answer = _event(item.id, "choice", actual="AAAA")
+    gap, _ = compute_gap(answer=answer, item=item, pack=pack, schemas=schemas)
+    store = InMemoryEventStoreV2(schemas)
+    with store.transaction() as tx:
+        first = record_judgment(
+            tx, answer=answer, gap=gap, pack=pack, harness_version="0.2.0", llm_provenance=None
+        )
+    with store.transaction() as tx:
+        loser = record_judgment(
+            _StaleRead(tx),  # type: ignore[arg-type]
+            answer=answer,
+            gap={"missing": []},
+            pack=pack,
+            harness_version="0.2.1",
+            llm_provenance=PROVENANCE,
+        )
+    assert loser == first
+
+
 def test_claim_judgment_is_single_flight_per_answer() -> None:
     claims = InMemoryClaimStore()
     with claim_judgment(claims, "a") as first:
