@@ -108,17 +108,41 @@ def test_create_list_remove_flow(client: TestClient, store: InMemoryEventStoreV2
     listed = client.get(f"/v2/ws/{WS_ID}/highlights")
     assert listed.status_code == 200
     _check(listed.json(), "/ws/{ws_id}/highlights", "get", "200")
-    assert listed.json() == {"highlights": [body]}
+    assert listed.json() == {"highlights": [body], "next_cursor": None}
 
     removed = client.delete(f"/v2/ws/{WS_ID}/highlights/{highlight_id}")
     assert removed.status_code == 204
 
     listed_after = client.get(f"/v2/ws/{WS_ID}/highlights")
-    assert listed_after.json() == {"highlights": []}
+    assert listed_after.json() == {"highlights": [], "next_cursor": None}
 
     removed_again = client.delete(f"/v2/ws/{WS_ID}/highlights/{highlight_id}")
     assert removed_again.status_code == 404
     assert removed_again.json()["code"] == "not-found"
+
+
+def test_list_pages_with_cursor_and_limit(client: TestClient) -> None:
+    first = client.post(
+        f"/v2/ws/{WS_ID}/highlights",
+        json={"anchor": _anchor()},
+        headers={"Idempotency-Key": "00000000-0000-4000-8000-000000000001"},
+    ).json()
+    second = client.post(
+        f"/v2/ws/{WS_ID}/highlights",
+        json={"anchor": _anchor()},
+        headers={"Idempotency-Key": "00000000-0000-4000-8000-000000000002"},
+    ).json()
+
+    page1 = client.get(f"/v2/ws/{WS_ID}/highlights", params={"limit": 1})
+    assert page1.status_code == 200
+    _check(page1.json(), "/ws/{ws_id}/highlights", "get", "200")
+    assert page1.json()["highlights"] == [first]
+    cursor = page1.json()["next_cursor"]
+    assert cursor is not None
+
+    page2 = client.get(f"/v2/ws/{WS_ID}/highlights", params={"limit": 1, "cursor": cursor})
+    assert page2.json()["highlights"] == [second]
+    assert page2.json()["next_cursor"] is None
 
 
 def test_create_defaults_labels_to_empty(client: TestClient) -> None:
@@ -187,7 +211,7 @@ def test_malformed_ws_id_is_400(client: TestClient) -> None:
 def test_highlights_are_scoped_to_their_ws(client: TestClient) -> None:
     client.post("/v2/ws/ws_a/highlights", json={"anchor": _anchor()})
     other_ws = client.get("/v2/ws/ws_b/highlights")
-    assert other_ws.json() == {"highlights": []}
+    assert other_ws.json() == {"highlights": [], "next_cursor": None}
 
 
 def test_create_resend_with_same_key_replays(client: TestClient) -> None:
