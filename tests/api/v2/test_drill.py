@@ -16,6 +16,7 @@ from jsonschema import Draft202012Validator
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.v2.deps import event_store_v2_of, user_id_of
+from harness.api.v2.pagination import encode_cursor
 from harness.api.v2.routes.drill import drill_judge_config_of, drill_service_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.drill import DrillItem, DrillService
@@ -126,6 +127,23 @@ def test_list_pages_by_cursor_and_never_lists_holdout(client: Any) -> None:
     assert len(seen) == 3 and seen == sorted(seen)
     assert "dns-fix-resolver-lab" not in seen
     assert client.get("/v2/drills/dns-fix-resolver-lab").status_code == 200
+
+
+def test_list_drills_invented_cursor_is_400(client: Any) -> None:
+    # #245: an invented id (never issued as a next_cursor for this
+    # collection) must be rejected, not silently page from wherever it sorts.
+    response = client.get("/v2/drills", params={"cursor": encode_cursor("not-a-real-item")})
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid-request"
+
+
+def test_list_drills_cursor_from_a_different_view_is_400(client: Any) -> None:
+    # #245: a syntactically valid cursor issued for the ws-scoped answers view
+    # (keyed "<ws_id>/<position>") is not one of this collection's item ids.
+    foreign_cursor = encode_cursor("ws_1/000000000001")
+    response = client.get("/v2/drills", params={"cursor": foreign_cursor})
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid-request"
 
 
 def test_get_item(client: Any) -> None:
@@ -284,6 +302,16 @@ def test_list_answers_on_missing_or_other_users_ws_is_404(client: Any) -> None:
     finally:
         del client.app.dependency_overrides[user_id_of]
     assert other_user.status_code == 404
+
+
+def test_list_answers_cursor_from_another_ws_is_400(client: Any) -> None:
+    # #245: same class as #221/#226 -- a syntactically valid cursor for a
+    # different ws's answers view must not silently page ws_1's key range.
+    seed_ws(client.store, "ws_2")
+    foreign_cursor = encode_cursor("ws_2/000000000001")
+    response = client.get(ANSWERS_URL, params={"cursor": foreign_cursor})
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid-request"
 
 
 def test_answer_resend_after_pack_change_returns_stored_result(client: Any) -> None:
