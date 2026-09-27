@@ -21,6 +21,7 @@ from harness.core.drill import (
     list_answers,
     pack_items,
 )
+from harness.core.drill.store import learner_items_page
 from harness.core.pack.v2 import PackV2ImportError, import_pack_v2
 from harness.core.ports.generated_documents import GeneratedDocument
 from harness.core.ports.json_types import JsonObject
@@ -100,8 +101,8 @@ def test_answer_appends_event_and_view_once(service: DrillService) -> None:
     }
     assert len(store.read(ws_id="ws_1")) == 1
     with store.transaction() as tx:
-        docs = DrillAnswersView.list(tx, key_prefix="ws_1/dns-record-choice/")
-    assert [d["actual"] for _, d in docs] == ["A"]
+        docs = DrillAnswersView.list(tx, key_prefix="ws_1/")
+    assert [(k, d["actual"]) for k, d in docs] == [(f"ws_1/{event.position:012d}", "A")]
 
 
 def test_list_answers_is_creation_order_without_actual_or_expected(
@@ -113,7 +114,8 @@ def test_list_answers_is_creation_order_without_actual_or_expected(
     first = _answer(service, store, item_id="dns-resolver-text", actual="x")
     second = _answer(service, store, item_id="dns-record-choice", actual="A")
     with store.transaction() as tx:
-        answers = list_answers(tx, "ws_1")
+        answers, next_cursor = list_answers(tx, "ws_1", limit=10)
+    assert next_cursor is None
     assert answers == [
         {
             "item_id": "dns-resolver-text",
@@ -135,7 +137,32 @@ def test_list_answers_is_scoped_to_its_ws(service: DrillService) -> None:
     store = InMemoryEventStoreV2(ContractSchemas.load())
     _answer(service, store, item_id="dns-record-choice", actual="A")
     with store.transaction() as tx:
-        assert list_answers(tx, "ws_other") == []
+        assert list_answers(tx, "ws_other", limit=10) == ([], None)
+
+
+def test_list_answers_pages_in_creation_order(service: DrillService) -> None:
+    # #178: keyset pages by position, not grouped by item.
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    items = ["dns-resolver-text", "dns-record-choice", "dns-resolver-text"]
+    ids = [_answer(service, store, item_id=i, actual="A").id for i in items]
+    seen, after = [], None
+    with store.transaction() as tx:
+        while True:
+            page, after = list_answers(tx, "ws_1", after=after, limit=2)
+            seen += [a["answer_event_id"] for a in page]
+            if after is None:
+                break
+    assert seen == ids
+
+
+def test_learner_items_page_hides_holdout_and_pages_by_id(service: DrillService) -> None:
+    items = service.list_items()
+    assert any("sys:holdout" in i.labels for i in items)
+    first, after = learner_items_page(items, after=None, limit=2)
+    rest, end = learner_items_page(items, after=after, limit=2)
+    ids = [i.id for i in first + rest]
+    assert end is None and ids == sorted(ids)
+    assert ids == sorted(i.id for i in items if "sys:holdout" not in i.labels)
 
 
 def test_answer_must_fit_the_answer_mode(service: DrillService) -> None:

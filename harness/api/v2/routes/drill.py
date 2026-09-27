@@ -24,6 +24,7 @@ from harness.api.v2.deps import (
     ws_or_404,
 )
 from harness.api.v2.models import Text, V2Model, reject_null
+from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.drill import (
     ANSWERED,
@@ -43,6 +44,7 @@ from harness.core.drill.judge import (
     save_judge_inputs,
     stored_judgment,
 )
+from harness.core.drill.store import learner_items_page
 from harness.core.ports.events_v2 import EventV2
 from harness.core.ports.json_types import JsonObject, PlainJson
 from harness.core.ports.llm import LLMProvenance, LLMProvider
@@ -106,9 +108,17 @@ class AnswerRequest(V2Model):
 
 @router.get("/drills")
 def list_drills(
-    service: DrillServiceDep, labels: Annotated[list[str] | None, Query()] = None
+    service: DrillServiceDep,
+    page: CursorQuery,
+    labels: Annotated[list[str] | None, Query()] = None,
 ) -> dict[str, PlainJson]:
-    return {"items": [item.for_learner() for item in service.list_items(labels or ())]}
+    items, next_cursor = learner_items_page(
+        service.list_items(labels or ()), after=page.after, limit=page.limit
+    )
+    return {
+        "items": [item.for_learner() for item in items],
+        "next_cursor": encode_cursor(next_cursor) if next_cursor else None,
+    }
 
 
 @router.get("/drills/{item_id}")
@@ -229,6 +239,12 @@ def answer_drill(
 
 
 @router.get("/ws/{ws_id}/drills/answers")
-def get_answers(tx: EventTransactionV2Dep, user_id: UserIdDep, ws_id: str) -> JsonObject:
+def get_answers(
+    tx: EventTransactionV2Dep, user_id: UserIdDep, ws_id: str, page: CursorQuery
+) -> JsonObject:
     ws_or_404(tx, ws_id, user_id=user_id)
-    return {"items": list_answers(tx, ws_id)}
+    answers, next_cursor = list_answers(tx, ws_id, after=page.after, limit=page.limit)
+    return {
+        "items": answers,
+        "next_cursor": encode_cursor(next_cursor) if next_cursor else None,
+    }
