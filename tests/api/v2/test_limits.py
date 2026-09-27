@@ -19,6 +19,7 @@ from harness.api.v2.deps import event_store_v2_of
 from harness.api.v2.limits import LLM, concurrency_slot, rate_limit
 from harness.api.v2.routes.chat import chat_llm_of
 from harness.api.v2.routes.drill import drill_judge_config_of
+from harness.api.v2.routes.notebook_generate import pregenerator_of
 from harness.core.contract_schemas import ContractSchemas
 from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.auth import AuthError
@@ -160,7 +161,17 @@ def test_notebook_generate_is_rate_limited(
 ) -> None:
     # One generate is one LLM call, run after the 202: charged at the door.
     exhaust_llm_quota(claims, monkeypatch, "usr_alice")
-    assert_rate_limited(client.post("/v2/notebook/generate", json={}, headers=as_user("alice")))
+    client.app.state.pack_v2 = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)  # type: ignore[attr-defined]
+    client.app.state.llm = JudgeLLM()  # type: ignore[attr-defined]
+    client.app.state.generated_documents = InMemoryGeneratedDocumentStore()  # type: ignore[attr-defined]
+    url, headers = "/v2/notebook/generate", as_user("alice")
+    body = {"resource": "drill"}
+    # Failures before the charge are not refused: no generator role (503), then
+    # with a generator, an invalid body (422).
+    assert client.post(url, json=body, headers=headers).status_code == 503
+    client.app.dependency_overrides[pregenerator_of] = lambda: None  # type: ignore[attr-defined]
+    assert client.post(url, json={}, headers=headers).status_code == 422
+    assert_rate_limited(client.post(url, json=body, headers=headers))
 
 
 CHAT_URL = f"/v2/ws/{WS}/threads/{THREAD}/messages"
