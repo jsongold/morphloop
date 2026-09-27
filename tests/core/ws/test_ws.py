@@ -347,6 +347,57 @@ def test_list_threads_filter_pages_past_non_matching_threads(store: InMemoryEven
     assert cursor is not None  # the match's own key; more (non-matching) range remains
 
 
+def test_list_threads_filter_scan_batch_independent_of_limit(
+    store: InMemoryEventStoreV2, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A small ``limit`` must not shrink the internal scan page size (#241):
+    otherwise a rare/absent highlight in a large ws costs one underlying page
+    read per thread instead of a handful of ``_HIGHLIGHT_SCAN_BATCH`` reads."""
+    with store.transaction() as tx:
+        ws = create_ws(tx, event_id=str(uuid.uuid4()), user_id=USER, session_id=SESSION)
+    with store.transaction() as tx:
+        for _ in range(250):
+            create_thread(
+                tx,
+                event_id=str(uuid.uuid4()),
+                user_id=USER,
+                ws_id=ws.ws_id,
+                target={"kind": "artifact"},
+            )
+        match = create_thread(
+            tx,
+            event_id=str(uuid.uuid4()),
+            user_id=USER,
+            ws_id=ws.ws_id,
+            target={
+                "kind": "textbook_block",
+                "doc_id": "d",
+                "block_id": "b",
+                "highlight_id": "hl_1",
+            },
+        )
+
+    real_list = ThreadsView.list
+    scan_limits: list[int] = []
+
+    def counting_list(
+        tx: object, *, key_prefix: str = "", after: str | None = None, limit: int | None = None
+    ) -> object:
+        assert limit is not None
+        scan_limits.append(limit)
+        return real_list(tx, key_prefix=key_prefix, after=after, limit=limit)
+
+    monkeypatch.setattr(ThreadsView, "list", counting_list)
+    with store.transaction() as tx:
+        threads, _cursor = list_threads(
+            tx, ws.ws_id, user_id=USER, target_highlight_id="hl_1", limit=1
+        )
+    assert [t["thread_id"] for t in threads] == [match.payload["thread_id"]]
+    # 251 threads at a fixed scan batch takes a couple of reads, not 251.
+    assert len(scan_limits) < 5
+    assert all(scan_limit > 1 for scan_limit in scan_limits)
+
+
 def test_list_threads_filter_returns_empty_and_no_cursor_past_end_of_range(
     store: InMemoryEventStoreV2,
 ) -> None:
