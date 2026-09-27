@@ -157,3 +157,18 @@ def test_production_requires_a_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")
     with pytest.raises(RuntimeError, match="MORPHLOOP_SOCKET_TICKET_SECRET"):
         socket_tickets_from_settings()
+
+
+def test_production_without_a_secret_refuses_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#217: at startup, not on the first ticket request."""
+    monkeypatch.delenv("MORPHLOOP_SOCKET_TICKET_SECRET")
+    monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")
+    with pytest.raises(RuntimeError, match="MORPHLOOP_SOCKET_TICKET_SECRET"):
+        with make_client(TwoUsers()):
+            pass
+
+
+def test_dev_without_a_secret_starts_and_issues(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MORPHLOOP_SOCKET_TICKET_SECRET")
+    with make_client(TwoUsers()) as client:
+        assert connect(client, f"?ticket={issue(client, 'alice')}") == "usr_alice"

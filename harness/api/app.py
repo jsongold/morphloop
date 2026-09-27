@@ -34,6 +34,7 @@ from harness.api.v2 import build_v2_router
 from harness.api.v2.auth import auth_provider_from_settings
 from harness.api.v2.db import DbProvider, db_of
 from harness.api.v2.deps import user_id_of
+from harness.api.v2.tickets import socket_tickets_from_settings
 from harness.core.artifact import Artifact
 from harness.core.drill.judge import JUDGE_LEASE_TTL
 from harness.core.ports.auth import AuthProvider
@@ -114,6 +115,10 @@ def create_app(
         # or an incomplete oidc/supabase config refuses to start (#171).
         if getattr(app.state, "auth_provider", None) is None:
             app.state.auth_provider = auth_provider_from_settings()
+        # Production without MORPHLOOP_SOCKET_TICKET_SECRET refuses to start,
+        # not on the first ticket request (#217).
+        if getattr(app.state, "socket_tickets", None) is None:
+            app.state.socket_tickets = socket_tickets_from_settings()
         store_of = partial(app_claims, app)
         jobs = (claims_purge(store_of), *(j for e in extensions for j in e.periodic_jobs))
         app.state.scheduler = start_scheduler(jobs, store_of)

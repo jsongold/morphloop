@@ -87,7 +87,8 @@ def socket_tickets_from_settings() -> SocketTickets:
 
 
 def socket_tickets_of(conn: HTTPConnection) -> SocketTickets:
-    """The app's tickets; built from settings and cached on ``app.state`` on first use."""
+    """The app's tickets: built at startup (``create_app``'s lifespan), or here
+    from settings on first use when the app runs without its lifespan."""
     # Locked: two racing builds would hold different dev secrets.
     with _build_lock:
         tickets: SocketTickets | None = getattr(conn.app.state, "socket_tickets", None)

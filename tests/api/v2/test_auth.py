@@ -121,6 +121,7 @@ def test_production_with_dev_provider_refuses_to_start(monkeypatch: pytest.Monke
 def test_explicit_auth_ignores_unused_provider_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MORPHLOOP_ENVIRONMENT", "production")
     monkeypatch.setenv("MORPHLOOP_AUTH_PROVIDER", "oidc")  # incomplete, and unused
+    monkeypatch.setenv("MORPHLOOP_SOCKET_TICKET_SECRET", "s" * 32)
     app = create_app(auth=StubAuth())
     app.dependency_overrides[check_db] = lambda: True
     with probe_app(app) as client:
