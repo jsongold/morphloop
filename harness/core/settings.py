@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     # v0.4 (#169): an optional direct (non-pooled) connection for migrations,
     # for providers whose DATABASE_URL is a pooler (e.g. Supabase's Supavisor
     # on port 6543 vs the direct Postgres port 5432). Unset: migrations use
-    # DATABASE_URL as-is. Supavisor transaction-mode pooling additionally
-    # needs psycopg `prepare_threshold=None`; that wiring is a separate issue.
+    # DATABASE_URL as-is. MORPHLOOP_DB_PROVIDER=supabase (#186) sets psycopg
+    # `prepare_threshold=None` for Supavisor transaction-mode pooling.
     morphloop_database_direct_url: str | None = None
     web_origin: str = "http://localhost:3000"
     # v0.4 (#169): comma-separated extra CORS origins, for a second front-end

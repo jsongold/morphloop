@@ -18,8 +18,9 @@ from contextlib import contextmanager
 
 from harness.adapters.fake_llm import FakeDevLLMProvider
 from harness.adapters.litellm import LiteLLMProvider
-from harness.adapters.postgres.engine import create_engine_from_env, get_database_url
+from harness.adapters.postgres.engine import get_database_url
 from harness.adapters.postgres.event_store_v2 import PostgresEventStoreV2
+from harness.api.v2.db import db_from_settings
 from harness.cli.errors import CommandError
 from harness.core.contract_schemas import ContractSchemas, ContractsNotFoundError
 from harness.core.ports.events_v2 import EventStoreV2
@@ -36,7 +37,10 @@ def contract_schemas() -> ContractSchemas:
 
 
 def database_url() -> str:
-    return get_database_url()
+    """The URL migrations run against: ``MORPHLOOP_DATABASE_DIRECT_URL`` when set
+    (a pooler such as Supabase's Supavisor can't run DDL migrations), else
+    ``DATABASE_URL``."""
+    return Settings().morphloop_database_direct_url or get_database_url()
 
 
 def llm_provider() -> LiteLLMProvider | FakeDevLLMProvider:
@@ -66,8 +70,8 @@ def llm_provider() -> LiteLLMProvider | FakeDevLLMProvider:
 
 @contextmanager
 def event_store_v2() -> Iterator[EventStoreV2]:
-    """The v2 Postgres event store built from ``DATABASE_URL``; disposes the engine."""
-    engine = create_engine_from_env()
+    """The v2 Postgres event store from ``MORPHLOOP_DB_PROVIDER``; disposes the engine."""
+    engine = db_from_settings()()
     try:
         yield PostgresEventStoreV2(engine, contract_schemas())
     finally:

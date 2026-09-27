@@ -24,6 +24,7 @@ from harness.api.v2.deps import (
     ws_or_404,
 )
 from harness.api.v2.models import Text, V2Model
+from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.labels import LabelError
 from harness.core.memo.entries import (
     MemoEntries,
@@ -106,6 +107,14 @@ def append_entry(
 
 
 @router.get("/entries")
-def list_entries(ws_id: _WsId, tx: EventTransactionV2Dep, user_id: UserIdDep) -> dict[str, Any]:
+def list_entries(
+    ws_id: _WsId, tx: EventTransactionV2Dep, user_id: UserIdDep, page: CursorQuery
+) -> dict[str, Any]:
     ws_or_404(tx, ws_id, user_id=user_id)
-    return {"entries": MemoEntries.list_for_ws(tx, ws_id)}
+    entries, next_cursor = MemoEntries.list_for_ws_page(
+        tx, ws_id, after=page.after, limit=page.limit
+    )
+    return {
+        "entries": entries,
+        "next_cursor": encode_cursor(next_cursor) if next_cursor is not None else None,
+    }

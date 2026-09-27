@@ -37,7 +37,7 @@ from harness.core.ports.events_v2 import (
 )
 from harness.core.ports.json_types import JsonObject, PlainJson, to_plain_object
 from harness.core.view import dispatch
-from harness.core.ws.view import THREAD_CREATED, WS_CREATED, ThreadsView, WsView
+from harness.core.ws.view import THREAD_CREATED, WS_CREATED, ThreadsView, WsByUserView, WsView
 
 WsActor = Literal["learner", "system"]
 """Actors the ``ws.created`` contract allows (narrower than ``ActorV2``:
@@ -109,20 +109,28 @@ def get_ws(tx: EventTransactionV2, ws_id: str, *, user_id: str) -> JsonObject:
 
 
 def list_ws(
-    tx: EventTransactionV2, *, user_id: str, session_id: str | None = None
-) -> list[JsonObject]:
-    """The learner's workspaces, most recently created first.
+    tx: EventTransactionV2,
+    *,
+    user_id: str,
+    session_id: str | None = None,
+    after: str | None = None,
+    limit: int,
+) -> tuple[list[JsonObject], str | None]:
+    """One page of the learner's workspaces, most recently created first,
+    plus the next page's ``after`` key (``None`` on the last page).
 
-    ``WsView.list`` sorts by the opaque ``ws_id`` key, not creation order, so
-    this sorts by the stored ``position`` instead (Codex finding on #90).
+    Reads the per-user :class:`WsByUserView` key range only (#175); an
+    ``after`` outside that range can never reach another user's ws.
     """
-    matches = [
-        doc
-        for _, doc in WsView.list(tx)
-        if doc["user_id"] == user_id and (session_id is None or doc["session_id"] == session_id)
-    ]
-    matches.sort(key=lambda doc: int(doc["position"]), reverse=True)  # type: ignore[arg-type]
-    return matches
+    prefix = WsByUserView.prefix(user_id, session_id)
+    page, next_key = WsByUserView.list(tx, key_prefix=prefix, after=after, limit=limit)
+    docs = []
+    for _key, ref in page:
+        doc = WsView.get(tx, str(ref["ws_id"]))
+        if doc is None:
+            raise LookupError(f"ws index names a missing ws {ref['ws_id']!r}")
+        docs.append(doc)
+    return docs, next_key
 
 
 def create_thread(
@@ -177,9 +185,16 @@ def create_thread(
 
 
 def list_threads(
-    tx: EventTransactionV2, ws_id: str, *, user_id: str, target_highlight_id: str | None = None
-) -> list[JsonObject]:
-    """The ws's threads, in creation order. Raises :class:`WsNotFoundError`.
+    tx: EventTransactionV2,
+    ws_id: str,
+    *,
+    user_id: str,
+    target_highlight_id: str | None = None,
+    after: str | None = None,
+    limit: int,
+) -> tuple[list[JsonObject], str | None]:
+    """One page of the ws's threads in creation order, plus the next page's
+    ``after`` key. Raises :class:`WsNotFoundError`.
 
     ``target_highlight_id`` filters to threads whose ``target`` carries that
     ``highlight_id`` -- a highlight-scoped thread's own extra field on
@@ -187,12 +202,15 @@ def list_threads(
     e.g. the popup thread a highlight is discussed in.
     """
     get_ws(tx, ws_id, user_id=user_id)
-    threads = ThreadsView.list_for_ws(tx, ws_id)
+    page, next_key = ThreadsView.list(tx, key_prefix=f"{ws_id}/", after=after, limit=limit)
+    threads = [doc for _key, doc in page]
     if target_highlight_id is None:
-        return threads
+        return threads, next_key
+    # ponytail: filtered within the page, so a page can hold fewer than
+    # `limit` items; add a per-highlight index if that matters to clients.
     matches = []
     for doc in threads:
         target = doc.get("target")
         if isinstance(target, dict) and target.get("highlight_id") == target_highlight_id:
             matches.append(doc)
-    return matches
+    return matches, next_key
