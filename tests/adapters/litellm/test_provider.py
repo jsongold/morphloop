@@ -124,6 +124,24 @@ def test_defaults_to_litellm_completion() -> None:
     assert LiteLLMProvider() is not None
 
 
+def test_timeout_defaults_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_LLM_TIMEOUT_SECONDS", "45")
+    completion = _FakeCompletion([_response('{"rationale": "ok", "confidence": 0.5}')])
+
+    LiteLLMProvider(completion=completion).complete_structured(_request())
+
+    assert completion.calls[0]["timeout"] == 45.0
+
+
+def test_timeout_argument_overrides_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MORPHLOOP_LLM_TIMEOUT_SECONDS", "45")
+    completion = _FakeCompletion([_response('{"rationale": "ok", "confidence": 0.5}')])
+
+    LiteLLMProvider(completion=completion, timeout=10).complete_structured(_request())
+
+    assert completion.calls[0]["timeout"] == 10
+
+
 # --- Success --------------------------------------------------------------
 
 

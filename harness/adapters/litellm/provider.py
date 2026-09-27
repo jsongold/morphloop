@@ -100,6 +100,7 @@ from harness.core.ports.llm import (
     LLMToolResponse,
     LLMToolResult,
 )
+from harness.core.settings import Settings
 
 
 class CompletionCallable(Protocol):
@@ -117,13 +118,21 @@ class LiteLLMProvider:
     """:class:`~harness.core.ports.LLMProvider` backed by litellm.
 
     ``completion`` defaults to :func:`litellm.completion`; pass one in to test
-    without a network.
+    without a network. ``timeout`` (seconds) defaults to
+    ``Settings().morphloop_llm_timeout_seconds`` (ADR-0010: the SDK offers,
+    the app chooses via env var; pass one in to override per instance) --
+    without it litellm falls back to its own 600 s default, which leaves no
+    safe margin under the judge single-flight lease (#203,
+    :data:`harness.core.drill.judge.JUDGE_LEASE_TTL`).
     """
 
-    def __init__(self, *, completion: CompletionCallable | None = None) -> None:
+    def __init__(
+        self, *, completion: CompletionCallable | None = None, timeout: float | None = None
+    ) -> None:
         self._completion: CompletionCallable = completion or cast(
             CompletionCallable, litellm.completion
         )
+        self._timeout = Settings().morphloop_llm_timeout_seconds if timeout is None else timeout
 
     def complete_structured(self, request: LLMRequest) -> LLMResponse:
         llm = request.llm
@@ -143,6 +152,7 @@ class LiteLLMProvider:
                         "schema": to_plain_object(request.output_schema),
                     },
                 },
+                timeout=self._timeout,
                 **dict(llm.generation_parameters),
             )
         except Exception as exc:
@@ -162,6 +172,7 @@ class LiteLLMProvider:
                 messages=[_wire_message(message) for message in request.messages],
                 tools=[_wire_tool(tool) for tool in request.tools],
                 tool_choice=request.tool_choice,
+                timeout=self._timeout,
                 **dict(llm.generation_parameters),
             )
         except Exception as exc:

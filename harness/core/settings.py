@@ -3,7 +3,8 @@
 One :class:`Settings` model for the env vars the harness reads:
 ``MORPHLOOP_CONTRACTS_DIR``, ``DATABASE_URL``, ``WEB_ORIGIN``, ``WEB_ORIGINS``,
 ``HARNESS_VERSION``, ``MORPHLOOP_PACK_V2_DIR``, ``MORPHLOOP_USER_ID``,
-``MORPHLOOP_LLM_PROVIDER``, ``MORPHLOOP_ENVIRONMENT``, ``MORPHLOOP_EMBEDDING_DIMS``, the
+``MORPHLOOP_LLM_PROVIDER``, ``MORPHLOOP_LLM_TIMEOUT_SECONDS``, ``MORPHLOOP_ENVIRONMENT``,
+``MORPHLOOP_EMBEDDING_DIMS``, the
 ``MORPHLOOP_AUTH_PROVIDER`` / ``MORPHLOOP_DB_PROVIDER`` / ``MORPHLOOP_OIDC_*``
 / ``MORPHLOOP_SUPABASE_*`` / ``MORPHLOOP_SOCKET_TICKET_*`` / ``MORPHLOOP_USER_*``
 auth-platform settings (#169; this issue is settings only -- the provider
@@ -54,6 +55,13 @@ class Settings(BaseSettings):
     # (harness.cli.wiring.llm_provider); refused when morphloop_environment is
     # "production".
     morphloop_llm_provider: str = "litellm"
+    # #203: the LLM call timeout ``LiteLLMProvider`` passes to litellm, in
+    # place of litellm's own default (600 s -- verified against the installed
+    # source, ``litellm/main.py``). Must stay under
+    # ``harness.core.drill.judge.JUDGE_LEASE_TTL`` (10 min) with real margin,
+    # or a judge call can outlive the single-flight lease and a retry burns a
+    # second LLM call; ``harness.api.app`` refuses to start otherwise.
+    morphloop_llm_timeout_seconds: float = Field(default=60.0, gt=0)
     morphloop_environment: str = "development"
 
     # v0.4 (#169): provider selectors for the auth platform (#152), the same
