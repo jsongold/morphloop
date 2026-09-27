@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -113,3 +114,48 @@ def test_search_owner_parent_revision_downgrades_and_upgrades(
     with pg_engine.connect() as conn:
         assert sorted(conn.execute(columns).scalars()) == ["owner_user_id", "parent_id"]
         assert conn.execute(text("select to_regclass('search_documents_owner_idx')")).scalar()
+
+
+def test_highlight_by_position_revision_rekeys_existing_documents(
+    pg_url: str, pg_engine: Engine
+) -> None:
+    """#220: old ``<ws_id>:<highlight_id>`` docs move to position keys with an
+    id lookup; old tombstones are dropped; downgrade restores the old keys."""
+    config = Config()
+    config.set_main_option("script_location", str(locate_migrations_dir()))
+    ws = "ws_migrate220"
+    active = {"highlight_id": "hl_b", "ws_id": ws, "removed": False, "position": 7}
+    tombstone = {"highlight_id": "hl_a", "ws_id": ws, "removed": True}
+    rows = text(
+        "select key, document from view_documents_v2 "
+        "where view = 'highlight' and key like :pattern order by key"
+    )
+    patterns = {"pattern": f"%{ws}:%"}
+    cleanup = text("delete from view_documents_v2 where view = 'highlight' and key like :pattern")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("DATABASE_URL", pg_url)
+        try:
+            command.downgrade(config, "c9e1f3a5b7d0")
+            with pg_engine.begin() as conn:
+                conn.execute(cleanup, patterns)
+                for doc in (active, tombstone):
+                    conn.execute(
+                        text(
+                            "insert into view_documents_v2 (view, key, document) "
+                            "values ('highlight', :key, cast(:doc as jsonb))"
+                        ),
+                        {"key": f"{ws}:{doc['highlight_id']}", "doc": json.dumps(doc)},
+                    )
+            command.upgrade(config, "head")
+            with pg_engine.connect() as conn:
+                assert [tuple(r) for r in conn.execute(rows, patterns)] == [
+                    (f"id:{ws}:hl_b", {"position": 7}),
+                    (f"{ws}:{7:020d}", active),
+                ]
+            command.downgrade(config, "c9e1f3a5b7d0")
+            with pg_engine.connect() as conn:
+                assert [tuple(r) for r in conn.execute(rows, patterns)] == [(f"{ws}:hl_b", active)]
+        finally:
+            command.upgrade(config, "head")  # shared TEST_DATABASE_URL: always restore (#191)
+            with pg_engine.begin() as conn:
+                conn.execute(cleanup, patterns)

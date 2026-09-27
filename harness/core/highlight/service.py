@@ -26,9 +26,8 @@ from collections.abc import Collection, Sequence
 from harness.core.highlight.view import (
     CREATED,
     REMOVED,
-    HighlightView,
     active_highlights,
-    highlight_key,
+    get_highlight,
 )
 from harness.core.labels import check_labels
 from harness.core.ports.events_v2 import (
@@ -110,8 +109,9 @@ def create_highlight(
         result = tx.append(candidate)
         if result.created:
             dispatch(result.event, tx)
-    doc = HighlightView.get(tx, highlight_key(ws_id, highlight_id))
-    assert doc is not None
+    doc = get_highlight(tx, ws_id, highlight_id)
+    if doc is None:  # dispatch just wrote it, or the replayed create did
+        raise LookupError(f"highlight view has no {highlight_id!r}; rebuild the views")
     return doc
 
 
@@ -142,7 +142,7 @@ def remove_highlight(
         payload={"highlight_id": highlight_id},
     )
     if _replay_or_conflict(tx, candidate) is None:
-        current = HighlightView.get(tx, highlight_key(ws_id, highlight_id))
+        current = get_highlight(tx, ws_id, highlight_id)
         if current is None or current.get("removed"):
             raise HighlightNotFoundError(highlight_id)
         result = tx.append(candidate)
