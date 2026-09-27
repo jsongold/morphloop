@@ -45,6 +45,7 @@ _INSERT = text(
 )
 _SELECT_BY_ID = text(f"SELECT {_COLUMNS} FROM events_v2 WHERE id = :id")
 _GET_VIEW = text("SELECT document FROM view_documents_v2 WHERE view = :view AND key = :key")
+_LOCK_VIEW = text("SELECT 1 FROM view_documents_v2 WHERE view = :view AND key = :key FOR UPDATE")
 _VIEW_DOCUMENTS = table("view_documents_v2", column("view"), column("key"), column("document"))
 _PUT_VIEW = text(
     """
@@ -133,6 +134,9 @@ class _Transaction:
     def get(self, event_id: str) -> StoredEventV2 | None:
         row = self._conn().execute(_SELECT_BY_ID, {"id": event_id}).mappings().one_or_none()
         return None if row is None else _row_to_event(row)
+
+    def lock_view(self, view: str, key: str) -> None:
+        self._conn().execute(_LOCK_VIEW, {"view": view, "key": key})
 
     def get_view(self, view: str, key: str) -> JsonObject | None:
         params = {"view": view, "key": key}
