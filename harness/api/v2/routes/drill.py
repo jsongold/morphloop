@@ -6,6 +6,7 @@ Items are the pack's drill items plus generated documents of resource
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -23,7 +24,7 @@ from harness.api.v2.deps import (
     replay_or_conflict,
     ws_or_404,
 )
-from harness.api.v2.limits import LLM, rate_limit
+from harness.api.v2.limits import LLM, ChargedLLM, quota
 from harness.api.v2.models import Text, V2Model, reject_null
 from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.contract_schemas import ContractSchemas
@@ -133,7 +134,6 @@ def get_drill(service: DrillServiceDep, item_id: str) -> dict[str, PlainJson]:
 @router.post(
     "/ws/{ws_id}/drills/{item_id}/answers",
     status_code=201,
-    dependencies=[Depends(rate_limit(LLM))],
 )
 def answer_drill(
     service: DrillServiceDep,
@@ -142,6 +142,7 @@ def answer_drill(
     llm: Annotated[LLMProvider, Depends(drill_llm_of)],
     judge_config: DrillJudgeConfigDep,
     claims: ClaimsDep,
+    charge: Annotated[Callable[[], None], Depends(quota(LLM))],
     user_id: UserIdDep,
     event_id: EventIdDep,
     ws_id: str,
@@ -224,7 +225,8 @@ def answer_drill(
                 item=item,
                 pack=judge_pack,
                 schemas=ContractSchemas.load(),
-                llm=llm if judge_config is not None else None,
+                # Charged per call: a replay or a choice answer costs nothing.
+                llm=ChargedLLM(llm, charge) if judge_config is not None else None,
                 llm_provenance=judge_config[0] if judge_config is not None else None,
                 prompt=judge_config[1] if judge_config is not None else None,
                 artifact_events=events,

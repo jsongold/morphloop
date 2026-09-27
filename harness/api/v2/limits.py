@@ -1,8 +1,10 @@
 """Per-user limits on `/v2` routes (#182), over the claims store (#174).
 
-- :func:`rate_limit` -- a dependency counting the caller's calls to ``name``
-  in a fixed window; past ``limit`` it refuses with 429 ``rate-limited`` and
-  ``Retry-After`` (seconds until the window ends).
+- :func:`quota` -- a dependency returning ``charge()``, which counts one use
+  of ``name`` by the caller in a fixed window; past ``limit`` it refuses with
+  429 ``rate-limited`` and ``Retry-After`` (seconds until the window ends).
+  :class:`ChargedLLM` charges it on every LLM call; :func:`rate_limit`
+  charges it once per request.
 - :func:`concurrency_slot` -- a dependency holding one of ``cap`` slots of
   ``name`` for the caller while the request runs; 429 when all are held.
   An app puts it on the routes that start its costly work (e.g. its labs).
@@ -21,11 +23,13 @@ import time
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import timedelta
+from typing import Any
 
 from fastapi import HTTPException
 
 from harness.api.v2.claims import ClaimsDep
 from harness.api.v2.deps import UserIdDep
+from harness.core.ports.llm import LLMRequest, LLMResponse, LLMToolRequest, LLMToolResponse
 from harness.core.settings import Settings
 
 LLM = "llm"
@@ -37,24 +41,65 @@ def rate_limited(detail: str, retry_after: int) -> HTTPException:
     return HTTPException(429, detail, headers={"Retry-After": str(max(1, retry_after))})
 
 
-def rate_limit(
+def quota(
     name: str, *, limit: int | None = None, window: timedelta = timedelta(minutes=1)
-) -> Callable[..., None]:
-    """A dependency: count one call of the caller to ``name`` or raise 429.
+) -> Callable[..., Callable[[], None]]:
+    """A dependency returning ``charge()``: each call counts one use of ``name``
+    by the caller in a fixed window, or raises 429 past ``limit``.
 
-    ``limit`` ``None`` reads ``MORPHLOOP_USER_LLM_CALLS_PER_MINUTE`` per request.
-    Windows are aligned to the epoch (the store's rule), so ``Retry-After`` is
-    the time left in the current one.
+    Charge where the cost happens (e.g. each LLM call, via :class:`ChargedLLM`),
+    so a replay or a call-free path is never refused. ``limit`` ``None`` reads
+    ``MORPHLOOP_USER_LLM_CALLS_PER_MINUTE`` per request. Windows are aligned to
+    the epoch (the store's rule), so ``Retry-After`` is the time left in one.
     """
     seconds = window.total_seconds()
 
-    def dependency(claims: ClaimsDep, user_id: UserIdDep) -> None:
+    def dependency(claims: ClaimsDep, user_id: UserIdDep) -> Callable[[], None]:
         cap = limit if limit is not None else Settings().morphloop_user_llm_calls_per_minute
-        if not claims.consume(user_id, name, limit=cap, window=window):
-            left = seconds - time.time() % seconds
-            raise rate_limited(f"more than {cap} {name} calls per {window}", math.ceil(left))
+
+        def charge() -> None:
+            if not claims.consume(user_id, name, limit=cap, window=window):
+                # ponytail: worker clock, not the store's; off by the skew near a boundary.
+                left = seconds - time.time() % seconds
+                raise rate_limited(f"more than {cap} {name} calls per {window}", math.ceil(left))
+
+        return charge
 
     return dependency
+
+
+def rate_limit(
+    name: str, *, limit: int | None = None, window: timedelta = timedelta(minutes=1)
+) -> Callable[..., None]:
+    """A dependency charging one use of ``name`` per request (see :func:`quota`)."""
+    charger = quota(name, limit=limit, window=window)
+
+    def dependency(claims: ClaimsDep, user_id: UserIdDep) -> None:
+        charger(claims, user_id)()
+
+    return dependency
+
+
+class ChargedLLM:
+    """An LLM provider that charges ``charge()`` before every call it forwards.
+
+    Wraps an ``LLMProvider`` or ``LLMToolProvider``; only the method the
+    wrapped provider has is usable.
+    """
+
+    def __init__(self, provider: Any, charge: Callable[[], None]) -> None:
+        self.provider = provider
+        self.charge = charge
+
+    def complete_structured(self, request: LLMRequest) -> LLMResponse:
+        self.charge()
+        response: LLMResponse = self.provider.complete_structured(request)
+        return response
+
+    def complete_with_tools(self, request: LLMToolRequest) -> LLMToolResponse:
+        self.charge()
+        response: LLMToolResponse = self.provider.complete_with_tools(request)
+        return response
 
 
 def concurrency_slot(

@@ -3,17 +3,44 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
+from api_harness import build_app
+from chat.chat_fakes import THREAD, WS, FakeToolProvider, call, store_with_thread, text
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.testclient import TestClient
+from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.app import AppExtension, create_app
+from harness.api.v2.deps import event_store_v2_of
 from harness.api.v2.limits import LLM, concurrency_slot, rate_limit
+from harness.api.v2.routes.chat import chat_llm_of
+from harness.api.v2.routes.drill import drill_judge_config_of
+from harness.core.contract_schemas import ContractSchemas
+from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.auth import AuthError
 from harness.core.ports.claims import slot_key
+from harness.core.ports.llm import LLMProvenance, LLMRequest, LLMResponse
 from harness.testing.claims import InMemoryClaimStore
+from harness.testing.fakes_v2 import InMemoryEventStoreV2, seed_ws
+from harness.testing.generated_documents import InMemoryGeneratedDocumentStore
+
+PACK = Path(__file__).resolve().parents[2] / "contracts/fixtures/pack-v2/valid/dns-pack"
+JUDGE = LLMProvenance(
+    provider="fake",
+    model="fake/model",
+    prompt_id="judge",
+    prompt_version="1",
+    generation_parameters={},
+)
+
+
+class JudgeLLM:
+    def complete_structured(self, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(output={"missing": []}, provenance=JUDGE)
 
 
 class TwoUsers:
@@ -121,17 +148,73 @@ def test_concurrency_slot_reads_settings(
     assert_rate_limited(client.get("/v2/slot-settings", headers=as_user("alice")))
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/v2/ws/ws_1/threads/thr_1/messages",
-        "/v2/ws/ws_1/drills/item-1/answers",
-        "/v2/notebook/generate",
-    ],
-)
-def test_llm_routes_are_rate_limited(
-    client: TestClient, claims: InMemoryClaimStore, monkeypatch: pytest.MonkeyPatch, path: str
+def exhaust_llm_quota(
+    claims: InMemoryClaimStore, monkeypatch: pytest.MonkeyPatch, user: str
 ) -> None:
     monkeypatch.setenv("MORPHLOOP_USER_LLM_CALLS_PER_MINUTE", "1")
-    assert claims.consume("usr_alice", LLM, limit=1, window=timedelta(minutes=1))
-    assert_rate_limited(client.post(path, json={}, headers=as_user("alice")))
+    assert claims.consume(user, LLM, limit=1, window=timedelta(minutes=1))
+
+
+def test_notebook_generate_is_rate_limited(
+    client: TestClient, claims: InMemoryClaimStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # One generate is one LLM call, run after the 202: charged at the door.
+    exhaust_llm_quota(claims, monkeypatch, "usr_alice")
+    assert_rate_limited(client.post("/v2/notebook/generate", json={}, headers=as_user("alice")))
+
+
+CHAT_URL = f"/v2/ws/{WS}/threads/{THREAD}/messages"
+
+
+@pytest.fixture
+def chat(tmp_path: Path) -> tuple[TestClient, FakeToolProvider]:
+    llm = FakeToolProvider([])
+    app = build_app()
+    store = store_with_thread(tmp_path)
+    app.dependency_overrides[event_store_v2_of] = lambda: store
+    app.dependency_overrides[chat_llm_of] = lambda: llm
+    app.state.pack_v2 = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    return TestClient(app), llm
+
+
+def test_chat_charges_every_llm_round(
+    chat: tuple[TestClient, FakeToolProvider], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, llm = chat
+    monkeypatch.setenv("MORPHLOOP_USER_LLM_CALLS_PER_MINUTE", "3")
+    llm.script[:] = [call("thread_target"), text("hello")]  # two calls
+    assert client.post(CHAT_URL, json={"text": "hi"}).status_code == 200
+    llm.script[:] = [call("thread_target"), text("again")]  # the second is refused
+    assert_rate_limited(client.post(CHAT_URL, json={"text": "more"}))
+    assert llm.script == [text("again")]
+
+
+@pytest.fixture
+def drill() -> TestClient:
+    app = build_app()
+    store = InMemoryEventStoreV2(ContractSchemas.load())
+    seed_ws(store, "ws_1", session_id="ses_1")
+    app.dependency_overrides[event_store_v2_of] = lambda: store
+    app.dependency_overrides[drill_judge_config_of] = lambda: (JUDGE, "Judge the gap.")
+    app.state.pack_v2 = import_pack_v2(PACK, artifact_types=PACK_ARTIFACT_TYPES)
+    app.state.generated_documents = InMemoryGeneratedDocumentStore()
+    app.state.drill_llm = JudgeLLM()
+    return TestClient(app)
+
+
+def test_drill_charges_only_the_judge_call(
+    drill: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    claims = drill.app.state.claims  # type: ignore[attr-defined]
+    exhaust_llm_quota(claims, monkeypatch, "usr_local")
+    # A choice answer calls no LLM: never refused.
+    choice = drill.post("/v2/ws/ws_1/drills/dns-record-choice/answers", json={"actual": "A"})
+    assert choice.status_code == 201, choice.text
+    # A text answer is recorded, but its judge call is refused; a retry of the
+    # same key after the window judges it.
+    key = {"Idempotency-Key": str(uuid.uuid4())}
+    url = "/v2/ws/ws_1/drills/dns-resolver-text/answers"
+    assert_rate_limited(drill.post(url, json={"actual": "no idea"}, headers=key))
+    monkeypatch.setenv("MORPHLOOP_USER_LLM_CALLS_PER_MINUTE", "2")
+    again = drill.post(url, json={"actual": "no idea"}, headers=key)
+    assert again.status_code == 201 and again.json()["judgment_status"] == "complete"

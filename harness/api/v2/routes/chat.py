@@ -8,6 +8,7 @@ and prompt are the pack's `assistant` LLM role (`PackV2Dep`, ADR-0002).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -16,7 +17,7 @@ from pydantic import Field
 
 from harness.api.problems import problem
 from harness.api.v2.deps import EventIdDep, EventStoreV2Dep, PackV2Dep, UserIdDep
-from harness.api.v2.limits import LLM, rate_limit
+from harness.api.v2.limits import LLM, ChargedLLM, quota
 from harness.api.v2.models import Text, V2Model
 from harness.api.v2.pagination import CursorQuery, encode_cursor
 from harness.core.chat import (
@@ -89,7 +90,7 @@ def get_messages(
     }
 
 
-@router.post(PATH, response_model=None, dependencies=[Depends(rate_limit(LLM))])
+@router.post(PATH, response_model=None)
 def post_message(
     ws_id: str,
     thread_id: str,
@@ -99,11 +100,12 @@ def post_message(
     event_id: EventIdDep,
     llm: Annotated[LLMToolProvider, Depends(chat_llm_of)],
     config: Annotated[AssistantConfig, Depends(chat_config_of)],
+    charge: Annotated[Callable[[], None], Depends(quota(LLM))],
 ) -> dict[str, JsonObject] | JSONResponse:
     try:
         result = send_message(
             store,
-            llm,
+            ChargedLLM(llm, charge),  # each tool round is one charged call
             config,
             user_id=user_id,
             ws_id=ws_id,
