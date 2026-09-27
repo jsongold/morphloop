@@ -159,6 +159,16 @@ class EventTransactionV2(ViewDocumentStore, Protocol):
         """The stored event with ``id`` ``event_id``, or ``None`` (idempotent replay lookup)."""
         ...
 
+    def lock_view(self, view: str, key: str) -> None:
+        """Hold a write lock on the document at ``(view, key)`` until this transaction ends.
+
+        Transactions that lock the same document run their remaining work one
+        after another, so appends made after the lock commit in ``position``
+        order (keyset paging by position never skips a late commit, #215).
+        A missing document locks nothing.
+        """
+        ...
+
 
 class EventStoreV2(Protocol):
     """The append-only v2 event log plus view documents."""

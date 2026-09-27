@@ -80,7 +80,12 @@ def get_messages(
 ) -> JsonObject | JSONResponse:
     try:
         messages, next_cursor = list_messages_page(
-            store, user_id, ws_id, thread_id, after=page.after, limit=page.limit
+            store,
+            user_id,
+            ws_id,
+            thread_id,
+            after=page.after_in(f"{ws_id}/{thread_id}/"),
+            limit=page.limit,
         )
     except ThreadNotFoundError as error:
         return _not_found(error)

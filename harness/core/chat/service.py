@@ -128,7 +128,9 @@ def send_message(
 
     The thread lookup, the ``chat.sent`` append and the pre-reply history read
     share one transaction. ``chat.replied`` commits in a second transaction
-    after the LLM call, so a slow or failing call never holds one (#63).
+    after the LLM call, so a slow or failing call never holds one (#63). Both
+    appending transactions first lock the thread's ``chat.thread`` document,
+    so same-thread sends commit in ``position`` order (#215).
 
     Raises :class:`ThreadNotFoundError`, ``EventIdConflictError`` (same id,
     other content), ``LLMError`` / ``AssistantError`` (no reply recorded).
@@ -141,6 +143,8 @@ def send_message(
         "allow_writes": allow_writes,
     }
     with store.transaction() as tx:
+        # Same-thread appends commit in position order, so paging never skips one (#215).
+        tx.lock_view(ChatThreadView.name, thread_id)
         ctx = _find_thread(tx, store, user_id, ws_id, thread_id)
         _append(tx, ctx, event_id, SENT, sent_payload)
         history = list(ChatMessagesView.messages(tx, ws_id, thread_id))
@@ -150,6 +154,7 @@ def send_message(
         answer = reply(provider, config, ctx, history[:upto], allow_writes=allow_writes)
         reply_event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"chat.replied:{event_id}"))
         with store.transaction() as tx:
+            tx.lock_view(ChatThreadView.name, thread_id)
             _append(
                 tx,
                 ctx,

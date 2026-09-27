@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from pack_artifact_types import PACK_ARTIFACT_TYPES
 
 from harness.api.v2.deps import event_store_v2_of
+from harness.api.v2.pagination import encode_cursor
 from harness.api.v2.routes.chat import chat_llm_of
 from harness.core.pack.v2 import import_pack_v2
 from harness.core.ports.llm import LLMError
@@ -114,3 +115,10 @@ def test_messages_page_by_cursor(client: TestClient, llm: FakeToolProvider) -> N
         if cursor is None:
             break
     assert texts == ["q1", "r1", "q2", "r2"]
+
+
+def test_cursor_from_another_thread_is_400(client: TestClient) -> None:
+    # #215: GET messages checks the cursor against its own thread (CursorPage.after_in).
+    cursor = encode_cursor(f"{WS}/thr_other/{1:020d}")
+    resp = client.get(URL, params={"cursor": cursor})
+    assert resp.status_code == 400, resp.text
