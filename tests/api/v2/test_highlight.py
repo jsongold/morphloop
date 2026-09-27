@@ -122,10 +122,12 @@ def test_create_list_remove_flow(client: TestClient, store: InMemoryEventStoreV2
 
 
 def test_list_pages_with_cursor_and_limit(client: TestClient) -> None:
+    """Pages follow creation order (#220): the first-created highlight has the
+    lexically larger highlight_id, so id order would reverse them."""
     first = client.post(
         f"/v2/ws/{WS_ID}/highlights",
         json={"anchor": _anchor()},
-        headers={"Idempotency-Key": "00000000-0000-4000-8000-000000000001"},
+        headers={"Idempotency-Key": "ffffffff-ffff-4fff-8fff-ffffffffffff"},
     ).json()
     second = client.post(
         f"/v2/ws/{WS_ID}/highlights",

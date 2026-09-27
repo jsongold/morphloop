@@ -16,7 +16,7 @@ from harness.core.highlight.view import (
     HighlightView,
     active_highlights,
     active_highlights_page,
-    highlight_key,
+    get_highlight,
 )
 from harness.core.labels import LabelError
 from harness.core.ports.json_types import JsonObject
@@ -82,7 +82,7 @@ def test_create_highlight_stores_a_view_document(schemas: ContractSchemas) -> No
 
     with store.transaction() as tx:
         assert list_highlights(tx, WS_ID) == [doc]
-        assert HighlightView.get(tx, highlight_key(WS_ID, highlight_id)) == doc
+        assert get_highlight(tx, WS_ID, highlight_id) == doc
 
 
 def test_create_highlight_rejects_a_label_outside_the_vocabulary(
@@ -133,10 +133,11 @@ def test_remove_highlight_tombstones_it(schemas: ContractSchemas) -> None:
         )
     with store.transaction() as tx:
         assert list_highlights(tx, WS_ID) == []
-        assert HighlightView.get(tx, highlight_key(WS_ID, highlight_id)) == {
+        assert get_highlight(tx, WS_ID, highlight_id) == {
             "highlight_id": highlight_id,
             "ws_id": WS_ID,
             "removed": True,
+            "position": doc["position"],
         }
 
 
@@ -400,3 +401,72 @@ def test_active_highlights_page_does_not_stop_early_on_an_all_removed_page(
         page2, cursor2 = active_highlights_page(tx, WS_ID, after=cursor, limit=1)
         assert [doc["highlight_id"] for doc in page2] == [second["highlight_id"]]
         assert cursor2 is None
+
+
+def test_active_highlights_page_is_in_creation_order(schemas: ContractSchemas) -> None:
+    """A keyset page follows creation order, not the uuid-derived highlight_id
+    order (#220): first-created has the lexically largest highlight_id."""
+    store = InMemoryEventStoreV2(schemas)
+    event_ids = ["ffffffff-ffff-4fff-8fff-ffffffffffff", "00000000-0000-4000-8000-000000000000"]
+    with store.transaction() as tx:
+        created = [
+            create_highlight(
+                tx,
+                event_id=event_id,
+                user_id="usr_01",
+                session_id="ses_01",
+                ws_id=WS_ID,
+                anchor=_anchor(),
+                labels=[],
+                label_vocabulary=VOCAB,
+                topic_ids=TOPIC_IDS,
+            )
+            for event_id in event_ids
+        ]
+    with store.transaction() as tx:
+        page, cursor = active_highlights_page(tx, WS_ID, after=None, limit=1)
+        page2, _ = active_highlights_page(tx, WS_ID, after=cursor, limit=1)
+    assert [doc["highlight_id"] for doc in page + page2] == [d["highlight_id"] for d in created]
+
+
+def test_rebuild_restores_highlights_and_tombstones(schemas: ContractSchemas) -> None:
+    """Rebuild replays created/removed into the same documents, and a removed
+    highlight is still found by id (so a second DELETE stays a 404)."""
+    store = InMemoryEventStoreV2(schemas)
+    with store.transaction() as tx:
+        kept, gone = (
+            create_highlight(
+                tx,
+                event_id=_paging_event_id(n),
+                user_id="usr_01",
+                session_id="ses_01",
+                ws_id=WS_ID,
+                anchor=_anchor(),
+                labels=[],
+                label_vocabulary=VOCAB,
+                topic_ids=TOPIC_IDS,
+            )
+            for n in (1, 2)
+        )
+        remove_highlight(
+            tx,
+            event_id=_paging_event_id(3),
+            user_id="usr_01",
+            session_id="ses_01",
+            ws_id=WS_ID,
+            highlight_id=str(gone["highlight_id"]),
+        )
+        before = list(HighlightView.list(tx))
+    with store.transaction() as tx:
+        HighlightView.rebuild(store.read(), tx)
+        assert list(HighlightView.list(tx)) == before
+        assert active_highlights(tx, WS_ID) == [kept]
+        with pytest.raises(HighlightNotFoundError):
+            remove_highlight(
+                tx,
+                event_id=_paging_event_id(4),
+                user_id="usr_01",
+                session_id="ses_01",
+                ws_id=WS_ID,
+                highlight_id=str(gone["highlight_id"]),
+            )

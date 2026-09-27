@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import uuid
 
 import pytest
 from alembic import command
@@ -113,3 +115,74 @@ def test_search_owner_parent_revision_downgrades_and_upgrades(
     with pg_engine.connect() as conn:
         assert sorted(conn.execute(columns).scalars()) == ["owner_user_id", "parent_id"]
         assert conn.execute(text("select to_regclass('search_documents_owner_idx')")).scalar()
+
+
+def test_highlight_by_position_revision_rekeys_existing_documents(
+    pg_url: str, pg_engine: Engine
+) -> None:
+    """#220: old ``<ws_id>:<highlight_id>`` docs move to position keys with an
+    id lookup; a tombstone gets its position from the created event; downgrade
+    restores the old keys."""
+    config = Config()
+    config.set_main_option("script_location", str(locate_migrations_dir()))
+    ws = f"ws_{uuid.uuid4().hex}"
+    active = {"highlight_id": "hl_b", "ws_id": ws, "removed": False, "position": 0}
+    tombstone = {"highlight_id": "hl_a", "ws_id": ws, "removed": True}
+    rows = text(
+        "select key, document from view_documents_v2 "
+        "where view = 'highlight' and key like :pattern order by key"
+    )
+    pattern = {"pattern": f"%{ws}:%"}
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("DATABASE_URL", pg_url)
+        try:
+            command.downgrade(config, "c9e1f3a5b7d0")
+            with pg_engine.begin() as conn:
+                # events_v2 is append-only: a fresh ws keeps reruns independent.
+                removed_at = conn.execute(
+                    text(
+                        "insert into events_v2 (id, type, actor, user_id, ws_id, payload) "
+                        "values (:id, 'highlight.created', 'learner', 'usr_local', :ws, "
+                        "cast(:payload as jsonb)) returning position"
+                    ),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "ws": ws,
+                        "payload": json.dumps({"highlight_id": "hl_a", "labels": []}),
+                    },
+                ).scalar_one()
+                active["position"] = removed_at + 1  # distinct from the tombstone's
+                for doc in (active, tombstone):
+                    conn.execute(
+                        text(
+                            "insert into view_documents_v2 (view, key, document) "
+                            "values ('highlight', :key, cast(:doc as jsonb))"
+                        ),
+                        {"key": f"{ws}:{doc['highlight_id']}", "doc": json.dumps(doc)},
+                    )
+            command.upgrade(config, "head")
+            with pg_engine.connect() as conn:
+                assert sorted(tuple(r) for r in conn.execute(rows, pattern)) == sorted(
+                    [
+                        (f"id:{ws}:hl_a", {"position": removed_at}),
+                        (f"id:{ws}:hl_b", {"position": removed_at + 1}),
+                        (f"{ws}:{removed_at:020d}", {**tombstone, "position": removed_at}),
+                        (f"{ws}:{removed_at + 1:020d}", active),
+                    ]
+                )
+            command.downgrade(config, "c9e1f3a5b7d0")
+            with pg_engine.connect() as conn:
+                assert sorted(tuple(r) for r in conn.execute(rows, pattern)) == [
+                    (f"{ws}:hl_a", {**tombstone, "position": removed_at}),
+                    (f"{ws}:hl_b", active),
+                ]
+        finally:
+            command.upgrade(config, "head")  # shared TEST_DATABASE_URL: always restore (#191)
+            with pg_engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "delete from view_documents_v2 "
+                        "where view = 'highlight' and key like :pattern"
+                    ),
+                    pattern,
+                )
