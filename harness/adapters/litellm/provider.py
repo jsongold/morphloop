@@ -134,6 +134,15 @@ class LiteLLMProvider:
         )
         self._timeout = Settings().morphloop_llm_timeout_seconds if timeout is None else timeout
 
+    def _kwargs(self, llm: LLMProvenance) -> dict[str, PlainJson]:
+        """``generation_parameters`` plus this provider's timeout.
+
+        Ours wins over a pack-declared ``timeout``: the safety margin under
+        the judge lease (#203) is an app concern (ADR-0010), not a pack's to
+        override, and a duplicate ``timeout=`` keyword would otherwise raise.
+        """
+        return {**dict(llm.generation_parameters), "timeout": self._timeout}
+
     def complete_structured(self, request: LLMRequest) -> LLMResponse:
         llm = request.llm
         provider = _provider_of(llm.model)
@@ -152,8 +161,7 @@ class LiteLLMProvider:
                         "schema": to_plain_object(request.output_schema),
                     },
                 },
-                timeout=self._timeout,
-                **dict(llm.generation_parameters),
+                **self._kwargs(llm),
             )
         except Exception as exc:
             raise LLMError(f"litellm call to {llm.model!r} failed: {exc}") from exc
@@ -172,8 +180,7 @@ class LiteLLMProvider:
                 messages=[_wire_message(message) for message in request.messages],
                 tools=[_wire_tool(tool) for tool in request.tools],
                 tool_choice=request.tool_choice,
-                timeout=self._timeout,
-                **dict(llm.generation_parameters),
+                **self._kwargs(llm),
             )
         except Exception as exc:
             raise LLMError(f"litellm call to {llm.model!r} failed: {exc}") from exc
