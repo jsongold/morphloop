@@ -14,6 +14,39 @@ from harness.testing.claims import InMemoryClaimStore
 EVERY = timedelta(minutes=5)
 
 
+class _FlakyRenewalStore(InMemoryClaimStore):
+    """``try_claim`` raises once, on its ``fail_at``-th call, then behaves
+    normally (simulates a transient DB failure during renewal, #232)."""
+
+    def __init__(self, fail_at: int) -> None:
+        super().__init__()
+        self._calls = 0
+        self._fail_at = fail_at
+
+    def try_claim(self, key: str, holder: str, ttl: timedelta) -> bool:
+        self._calls += 1
+        if self._calls == self._fail_at:
+            raise RuntimeError("transient db failure")
+        return super().try_claim(key, holder, ttl)
+
+
+class _StallingRenewalStore(InMemoryClaimStore):
+    """``try_claim`` blocks on ``stall`` on its ``stall_at``-th call (simulates
+    a renewal DB call that stalls, #233)."""
+
+    def __init__(self, stall: threading.Event, stall_at: int) -> None:
+        super().__init__()
+        self._calls = 0
+        self._stall = stall
+        self._stall_at = stall_at
+
+    def try_claim(self, key: str, holder: str, ttl: timedelta) -> bool:
+        self._calls += 1
+        if self._calls == self._stall_at:
+            self._stall.wait(5)
+        return super().try_claim(key, holder, ttl)
+
+
 class Clock:
     def __init__(self) -> None:
         self.now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -68,6 +101,69 @@ def test_run_once_renews_the_lease_while_the_job_outruns_its_interval() -> None:
     # Once "a" stops renewing and its last lease expires, "b" can take over.
     time.sleep(every.total_seconds() * 1.5)
     assert run_once(PeriodicJob("slow", every, lambda: None), store, "b") is True
+
+
+def test_renewer_stops_renewing_a_hung_job_so_another_worker_takes_over() -> None:
+    # A job.run() that never returns must not keep the renewer thread renewing
+    # forever: it gives up after MAX_RENEWALS_FACTOR intervals, so the lease
+    # lapses and another worker can take over even though "a" is still stuck (#231).
+    store = InMemoryClaimStore()
+    every = timedelta(milliseconds=80)
+    finish = threading.Event()
+    job = PeriodicJob("hung", every, lambda: finish.wait(5))
+
+    runner = threading.Thread(target=run_once, args=(job, store, "a"))
+    runner.start()
+    try:
+        deadline = time.monotonic() + 3
+        took_over = False
+        while time.monotonic() < deadline:
+            if run_once(PeriodicJob("hung", every, lambda: None), store, "b"):
+                took_over = True
+                break
+            time.sleep(every.total_seconds())
+        assert took_over, "another worker never took over from the hung holder"
+    finally:
+        finish.set()
+        runner.join(1)
+
+
+def test_renewer_retries_after_a_try_claim_exception_instead_of_dying() -> None:
+    # The first renewal attempt (the try_claim call after the initial claim)
+    # raises; the renewer must keep going, not die and let the lease lapse (#232).
+    every = timedelta(milliseconds=80)
+    store = _FlakyRenewalStore(fail_at=2)
+    finish = threading.Event()
+    job = PeriodicJob("flaky", every, lambda: finish.wait(2))
+
+    runner = threading.Thread(target=run_once, args=(job, store, "a"))
+    runner.start()
+    try:
+        # Outlast the failing renewal and a couple of recovered ones, well
+        # short of MAX_RENEWALS_FACTOR intervals.
+        time.sleep(every.total_seconds() * 3)
+        assert run_once(PeriodicJob("flaky", every, lambda: None), store, "b") is False
+    finally:
+        finish.set()
+        runner.join(1)
+
+
+def test_run_once_returns_even_if_a_renewal_call_stalls() -> None:
+    # A renewal call stalled in the claim store must not block run_once (an
+    # APScheduler job-executor thread) past a bound tied to the job's own
+    # interval, or APScheduler would skip future ticks for this job (#233).
+    every = timedelta(milliseconds=80)
+    stall = threading.Event()
+    store = _StallingRenewalStore(stall, stall_at=2)
+    job = PeriodicJob("stalled", every, lambda: time.sleep(every.total_seconds() * 1.5))
+
+    start = time.monotonic()
+    try:
+        assert run_once(job, store, "a") is True
+        elapsed = time.monotonic() - start
+        assert elapsed < 1.0
+    finally:
+        stall.set()
 
 
 def test_claims_purge_keeps_the_longest_window_until_it_ends() -> None:
