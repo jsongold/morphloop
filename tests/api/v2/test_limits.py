@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -116,6 +116,18 @@ def test_rate_limit_refuses_past_limit_per_user(client: TestClient) -> None:
     assert client.get("/v2/fixed", headers=as_user("bob")).status_code == 200
 
 
+def test_rate_limit_retry_after_comes_from_the_store_s_clock() -> None:
+    """#240: Retry-After must be the store's own clock and window, not the worker's."""
+    clock_time = datetime(2030, 1, 1, 0, 0, 10, tzinfo=UTC)  # far from wall-clock "now"
+    client = make_client(InMemoryClaimStore(clock=lambda: clock_time))
+    for _ in range(2):
+        assert client.get("/v2/fixed", headers=as_user("alice")).status_code == 200
+    response = client.get("/v2/fixed", headers=as_user("alice"))
+    assert response.status_code == 429
+    # 1-minute window aligned to the epoch; 10s in, so 50s left on the store's clock.
+    assert response.headers["Retry-After"] == "50"
+
+
 def test_rate_limit_reads_settings(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MORPHLOOP_USER_LLM_CALLS_PER_MINUTE", "1")
     assert client.get("/v2/from-settings", headers=as_user("alice")).status_code == 200
@@ -153,7 +165,7 @@ def exhaust_llm_quota(
     claims: InMemoryClaimStore, monkeypatch: pytest.MonkeyPatch, user: str
 ) -> None:
     monkeypatch.setenv("MORPHLOOP_USER_LLM_CALLS_PER_MINUTE", "1")
-    assert claims.consume(user, LLM, limit=1, window=timedelta(minutes=1))
+    assert claims.consume(user, LLM, limit=1, window=timedelta(minutes=1)) is None
 
 
 def test_notebook_generate_is_rate_limited(

@@ -43,18 +43,18 @@ class InMemoryClaimStore:
             if current is not None and current[0] == holder:
                 del self._leases[key]
 
-    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool:
+    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> float | None:
         secs = check_window(window)
         check_positive(limit=limit)
         with self._lock:
             epoch = self._clock().timestamp()
-            start = datetime.fromtimestamp(epoch // secs * secs, UTC)
-            key = (subject, name, start)
+            start_epoch = epoch // secs * secs
+            key = (subject, name, datetime.fromtimestamp(start_epoch, UTC))
             n = self._counters.get(key, 0)
             if n >= limit:
-                return False
+                return start_epoch + secs - epoch
             self._counters[key] = n + 1
-            return True
+            return None
 
     def acquire_slot(
         self, subject: str, name: str, *, holder: str, cap: int, ttl: timedelta

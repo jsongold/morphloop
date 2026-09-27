@@ -73,13 +73,13 @@ def test_run_once_renews_the_lease_while_the_job_outruns_its_interval() -> None:
 def test_claims_purge_keeps_the_longest_window_until_it_ends() -> None:
     clock = Clock()
     store = InMemoryClaimStore(clock)
-    assert store.consume("u", "calls", limit=1, window=MAX_COUNTER_WINDOW)
+    assert store.consume("u", "calls", limit=1, window=MAX_COUNTER_WINDOW) is None
     job = claims_purge(lambda: store)
     # Hourly purges during the window never reset the counter.
     for _ in range(int(MAX_COUNTER_WINDOW / timedelta(hours=1)) - 1):
         clock.now += timedelta(hours=1)
         job.run()
-        assert not store.consume("u", "calls", limit=1, window=MAX_COUNTER_WINDOW)
+        assert store.consume("u", "calls", limit=1, window=MAX_COUNTER_WINDOW) is not None
 
 
 def test_claims_purge_deletes_expired_leases() -> None:

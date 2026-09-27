@@ -1,13 +1,16 @@
 """PostgreSQL implementation of the ClaimStore Port (#174).
 
 Tables ``claims`` and ``usage_counters`` from migration ``d7b1e3f5a9c2``.
-Each operation is one atomic statement, so concurrent callers need no lock:
+``try_claim``/``release`` are one statement each, so concurrent callers need
+no lock:
 
 - lease: ``INSERT ... ON CONFLICT (key) DO UPDATE ... WHERE expired OR same
   holder RETURNING`` -- a row comes back only for the winner.
 - counter: ``INSERT ... ON CONFLICT DO UPDATE SET n = n + 1 WHERE n < :limit
   RETURNING`` -- under READ COMMITTED the WHERE is re-checked on the latest
-  row version, so ``n`` never passes ``limit``.
+  row version, so ``n`` never passes ``limit``. ``consume()`` reads
+  ``clock_timestamp()`` once first so the bucket it writes to and the
+  remainder it returns on refusal always agree (#240, #254).
 
 Hand-rolled on purpose (#174 "Library considered"): pyrate-limiter's
 PostgresBucket is one table per bucket with a table lock, ``limits`` has no
@@ -16,7 +19,7 @@ SQL storage, and procrastinate locks are job-queue locks.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import text
@@ -34,13 +37,14 @@ _CLAIM = text(
     """
 )
 _RELEASE = text("DELETE FROM claims WHERE key = :key AND holder = :holder")
+# ``window_start`` is passed in, computed in Python from one clock reading
+# (see consume()), so the row a refusal lands in and the remainder returned
+# for it can never straddle a window boundary (#240, #254).
+_NOW = text("SELECT clock_timestamp()")
 _CONSUME = text(
     """
     INSERT INTO usage_counters (subject, name, window_start, n)
-    VALUES (
-        :subject, :name,
-        to_timestamp(floor(extract(epoch FROM clock_timestamp()) / :secs) * :secs), 1
-    )
+    VALUES (:subject, :name, :window_start, 1)
     ON CONFLICT (subject, name, window_start) DO UPDATE SET n = usage_counters.n + 1
     WHERE usage_counters.n < :limit
     RETURNING n
@@ -64,12 +68,21 @@ class PostgresClaimStore:
         with self._engine.begin() as conn:
             conn.execute(_RELEASE, {"key": key, "holder": holder})
 
-    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> bool:
+    def consume(self, subject: str, name: str, *, limit: int, window: timedelta) -> float | None:
         secs = check_window(window)
         check_positive(limit=limit)
-        params = {"subject": subject, "name": name, "limit": limit, "secs": secs}
         with self._engine.begin() as conn:
-            return conn.execute(_CONSUME, params).one_or_none() is not None
+            epoch: float = conn.execute(_NOW).scalar_one().timestamp()
+            start_epoch = epoch // secs * secs
+            params = {
+                "subject": subject,
+                "name": name,
+                "limit": limit,
+                "window_start": datetime.fromtimestamp(start_epoch, UTC),
+            }
+            if conn.execute(_CONSUME, params).one_or_none() is not None:
+                return None
+            return start_epoch + secs - epoch
 
     def acquire_slot(
         self, subject: str, name: str, *, holder: str, cap: int, ttl: timedelta
